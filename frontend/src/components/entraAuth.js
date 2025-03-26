@@ -1,4 +1,5 @@
 import { LogLevel } from '@azure/msal-browser';
+import { PublicClientApplication } from '@azure/msal-browser';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
 import appInsights from './appInsights';
@@ -26,7 +27,10 @@ export const msalConfig = () =>{
     },
   };
 };
-const permission = tfconfig.requested_graph_api_delegated_permissions.value
+
+// mock out instance if available
+export const msalInstance = window.useMockMsal ? window.mockMsalInstance : new PublicClientApplication(msalConfig);
+
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };

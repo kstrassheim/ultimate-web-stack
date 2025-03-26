@@ -34,13 +34,13 @@ const EntraLogon = () => {
     await instance.logoutPopup();
   }
 
-  return <div className="logon-buttons">
+  return <div className="logon-buttons" data-testid="entra-logon">
       <AuthenticatedTemplate>
-        <button onClick={logoutFunc}>Sign Out</button>
-        <button onClick={()=>logonFunc(true)}>Change Account</button>
+        <button onClick={logoutFunc} data-testid="sign-out-button">Sign Out</button>
+        <button onClick={()=>logonFunc(true)} data-testid="change-account-button">Change Account</button>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        <button onClick={logonFunc}>Sign In</button>
+        <button onClick={logonFunc} data-testid="sign-in-button">Sign In</button>
       </UnauthenticatedTemplate>
     </div>
 };

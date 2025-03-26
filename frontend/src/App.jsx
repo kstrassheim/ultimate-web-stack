@@ -14,32 +14,32 @@ import Admin from './pages/Admin';
 function App() {
   return (
     <>
-      <nav className="navbar">
+      <nav className="navbar" data-testid="main-navigation">
         <div className="navbar-logo">
-          <a href="https://github.com/kstrassheim/entraid-web-auth-reference" target="_blank">
-            <img src='logo.png' className="logo" alt="logo" />
+          <a href="https://github.com/kstrassheim/ultimate-web-stack" target="_blank" data-testid="logo-link">
+            <img src='logo.png' className="logo" alt="logo" data-testid="logo-image" />
           </a>
           Ultimate Web Stack
         </div>
         
         {/* Separate navigation for pages */}
-        <ul className="navbar-pages">
-          <li><Link to="/" className="nav-link">Home</Link></li>
-          <li><Link to="/admin" className="nav-link">Admin</Link></li>
+        <ul className="navbar-pages" data-testid="page-navigation">
+          <li><Link to="/" className="nav-link" data-testid="nav-home">Home</Link></li>
+          <li><Link to="/admin" className="nav-link" data-testid="nav-admin">Admin</Link></li>
         </ul>
 
         {/* Existing navbar links for auth components */}
-        <ul className="navbar-links">
+        <ul className="navbar-links" data-testid="auth-navigation">
           <li>
-            <EntraLogon />
+            <EntraLogon data-testid="entra-logon" />
           </li>
           <li>
-            <EntraProfile />
+            <EntraProfile data-testid="entra-profile" />
           </li>
         </ul>
       </nav>
       
-      <div className="main-content">
+      <div className="main-content" data-testid="main-content">
         <Routes>
           <Route
             path="/"
