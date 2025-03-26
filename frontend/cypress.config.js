@@ -5,12 +5,9 @@ export default defineConfig({
     baseUrl: 'http://localhost:5175',
     specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}',
     supportFile: 'cypress/support/e2e.js',
-    chromeWebSecurity: false,
     // You can add launch options:
     // For example, to include the remote debugging flag:
-    launchOptions: {
-      args: ["--remote-debugging-port=9222"]
-    },
+
     // Configure dev server to start before tests
     devServer: {
         command: 'npm run dev',

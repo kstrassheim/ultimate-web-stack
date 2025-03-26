@@ -22,13 +22,15 @@
             "console": "integratedTerminal"
         },
         {
-            "type": "chrome",
+            "name": "Attach to Cypress (Chrome)",
+            "type": "pwa-chrome",         // Use "pwa-chrome" for VS Code built-in debugger (VS Code 1.46+)
             "request": "attach",
-            "name": "Attach to Cypress Chrome",
-            "port": 61961,
-            "urlFilter": "*localhost*",
-            "webRoot": "${workspaceFolder}"
-          },
+            "port": 9222,                 // must match CYPRESS_REMOTE_DEBUGGING_PORT
+            "webRoot": "${workspaceFolder}/frontend",   // root of your web app source code
+            "urlFilter": "http://localhost*",  // (optional) only attach to your app's URLs
+            "skipFiles": ["cypress_runner.js"],// skip Cypress internal script in debugger
+            "sourceMaps": true             // ensure VS Code uses source maps
+          }
         {
             "name": "Chrome Debug",
             "type": "chrome",
