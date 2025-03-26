@@ -22,7 +22,7 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Attach to Cypress (Chrome)",
+            "name": "Attach to (Chrome)",
             "type": "pwa-chrome",         // Use "pwa-chrome" for VS Code built-in debugger (VS Code 1.46+)
             "request": "attach",
             "port": 9222,                 // must match CYPRESS_REMOTE_DEBUGGING_PORT

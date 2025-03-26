@@ -2,6 +2,18 @@ import { backendUrl } from '../config';
 import { retreiveTokenForBackend, retreiveTokenForGraph } from './entraAuth';
 import appInsights from './appInsights'; 
 
+import mockGraphApi from '../mock/graphApiMock';
+if (__DEBUG__) {
+  // import('../mock/graphApiMock').then(module => {
+  //   console.log('Debug mode is enabled! Applying mock Graph API instance...');
+  //   // Use the default export from the dynamically imported module
+  //   const mockGraphApi = module.default;
+  //   mockGraphApi(__MOCKROLE__);
+  // });
+  console.log('Debug mode is enabled! Applying mock Graph API instance...');
+  mockGraphApi(__MOCKROLE__);
+}
+
 export const getUserData = async (instance) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getUserData' });
@@ -42,8 +54,8 @@ export const getAdminData = async (instance) => {
   }
 };
 
-// Custom function to receive the profile photo
-export const getProfilePhoto = async (instance, activeAccount) => {
+// Mock image funktion if required
+export const getProfilePhoto = window.getProfilePhoto ? window.getProfilePhoto : async (instance, activeAccount) => {
   try {
     appInsights.trackEvent({ name: 'Profile - Getting profile image' });
     if (!activeAccount) return;
@@ -69,7 +81,7 @@ export const getProfilePhoto = async (instance, activeAccount) => {
   }
 };
 
-export const getAllGroups = async (instance) => {
+export const getAllGroups = window.getAllGroups ? window.getAllGroups : async (instance) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getAllGroups (Graph API)' });
     

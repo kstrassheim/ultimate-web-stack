@@ -82,6 +82,8 @@ function createMockUseMsal(instance) {
     isAuthenticated: true
   });
 }
+
+
 const mockMsal = (role) => {
   if (!role) { return; }
   console.log(`Mocking MSAL for role: ${role}`);
@@ -90,6 +92,7 @@ const mockMsal = (role) => {
 
   window.mockUseMsal = mockUseMsal;
   window.mockInstance = mockInstance;
-  window.mockRetreiveTokenForBackend = async (instance, extraScopes = []) => { return mockInstance.accessToken};
+  window.retreiveTokenForBackend = async (instance, extraScopes = []) => { return mockInstance.accessToken};
+  window.retreiveTokenForGraph = async (instance, extraScopes = []) => { return mockInstance.accessToken};
 }
 export default mockMsal;

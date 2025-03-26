@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "user": "node scripts/start-vite.js -- --role=User",
+    "user": "vite -- --role=User",
     "admin": "npx vite --role=Admin",
     "build": "vite build",
     "lint": "eslint .",

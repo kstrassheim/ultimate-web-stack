@@ -4,11 +4,11 @@ import { useMsal as originalUseMsal } from '@azure/msal-react';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
 import appInsights from './appInsights';
-
-// Apply mock msal when in debug mode with mocked role
 import mockMsal from '../mock/msalMock';
+// Apply mock msal when in debug mode with mocked role
 if (__DEBUG__) {
   console.log('Debug mode is enabled! Applying mock MSAL instance...');
+  // Use the default export from the dynamically imported module
   mockMsal(__MOCKROLE__);
 }
 
@@ -54,7 +54,7 @@ export const retreiveTokenForBackend = window.mockRetreiveTokenForBackend ? mock
   return tokenResponse.accessToken;
 }
 
-export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
+export const retreiveTokenForGraph = window.retreiveTokenForGraph ? retreiveTokenForGraph :  async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   
