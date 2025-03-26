@@ -1,0 +1,12 @@
+fastapi==0.115.11
+uvicorn==0.34.0
+aiofiles==24.1.0
+fastapi-azure-auth==5.1.0
+python-dotenv==1.0.1
+pydantic==2.10.6
+requests==2.32.3
+# Required for health stats
+psutil==7.0.0
+# Required for logging
+opencensus-ext-azure==1.1.14
+opencensus-ext-fastapi==0.1.0

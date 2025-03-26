@@ -1,0 +1,2 @@
+TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --query accessToken -o tsv)
+curl -X GET "https://graph.microsoft.com/v1.0/servicePrincipals?\$filter=appId%20eq%20'00000003-0000-0000-c000-000000000000'&\$select=appRoles,oauth2PermissionScopes"   -H "Authorization: Bearer $TOKEN"   -H "Content-Type: application/json"   -o graph_permissions.json

@@ -1,0 +1,5 @@
+// filepath: /home/kstrassheim/projects/fastapi-reference/.vscode/settings.json
+{
+    "python.terminal.activateEnvironment": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/bin/python" // Adjust if your venv is in a different folder
+}
