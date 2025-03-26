@@ -19,7 +19,7 @@ function App() {
           <a href="https://github.com/kstrassheim/entraid-web-auth-reference" target="_blank">
             <img src='logo.png' className="logo" alt="logo" />
           </a>
-          Entra Auth
+          Ultimate Web Stack
         </div>
         
         {/* Separate navigation for pages */}

@@ -1,8 +1,10 @@
-# Entra Id Web Auth Reference
-The web app provides a authentication to Azure Entra ID and role checking and full automatic terraform resource deployment. It is useful to build admin pages out of scratch. You do not have to setup anything on specific resources. Setup like env variables becomes obsolete here. Just create the resource group, connect github to it, connect terraform states and deploy. 
+# Ultimate Web Stack
+The web app provides all testing tools required to build a frontend. 
 ## Purpose detail
 This project fulfills the following requirements.
 ### From current project [EntraId-Web-Auth-Reference]
+TBD
+### From derived project [EntraId-Web-Auth-Reference]
 https://github.com/kstrassheim/entraid-web-auth-reference 
 - Create the whole infrastructure with terraform
 - Provide all required settings for the environment via terraform output
