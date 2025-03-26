@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "user": "node scripts/start-vite.js -- --role=User",
+    "admin": "npx vite --role=Admin",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "cypress:open": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open"
+    "cy": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open"
   },
   "dependencies": {
     "@azure/msal-browser": "^4.7.0",

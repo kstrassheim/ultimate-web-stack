@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import './Home.css';
 import { getAdminData } from '../components/api';
-import { useMsal } from '@azure/msal-react';
+import { useMsal } from '../components/entraAuth';
 import appInsights from '../components/appInsights';
 import Loading, { sleep } from '../components/Loading'; // Import the Loading component
 

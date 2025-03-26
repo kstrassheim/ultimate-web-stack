@@ -1,8 +1,16 @@
 import { LogLevel } from '@azure/msal-browser';
 import { PublicClientApplication } from '@azure/msal-browser';
+import { useMsal as originalUseMsal } from '@azure/msal-react';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
 import appInsights from './appInsights';
+
+// Apply mock msal when in debug mode with mocked role
+import mockMsal from '../mock/msalMock';
+if (__DEBUG__) {
+  console.log('Debug mode is enabled! Applying mock MSAL instance...');
+  mockMsal(__MOCKROLE__);
+}
 
 export const msalConfig = () =>{
   console.log("redirect uri:" + frontendUrl);
@@ -29,13 +37,14 @@ export const msalConfig = () =>{
 };
 
 // mock out instance if available
-export const msalInstance = window.useMockMsal ? window.mockMsalInstance : new PublicClientApplication(msalConfig);
+export const useMsal = window.mockUseMsal || originalUseMsal;
+export const msalInstance = window.mockInstance || new PublicClientApplication(msalConfig);
 
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };
 
-export const retreiveTokenForBackend = async (instance, extraScopes = []) => {
+export const retreiveTokenForBackend = window.mockRetreiveTokenForBackend ? mockRetreiveTokenForBackend : async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Token' });
   const account = instance.getActiveAccount();
   const tokenResponse = await instance.acquireTokenSilent({

@@ -42,6 +42,33 @@ export const getAdminData = async (instance) => {
   }
 };
 
+// Custom function to receive the profile photo
+export const getProfilePhoto = async (instance, activeAccount) => {
+  try {
+    appInsights.trackEvent({ name: 'Profile - Getting profile image' });
+    if (!activeAccount) return;
+    const tokenResponse = await instance.acquireTokenSilent({
+      ...loginRequest,
+      account: activeAccount,
+    });
+    const accessToken = tokenResponse.accessToken;
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (response.ok) {
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } else {
+      console.error('Failed to fetch profile photo:', response.statusText);
+    }
+  } catch (error) {
+    appInsights.trackException({ error });
+    console.error('Error fetching profile photo:', error);
+  }
+};
+
 export const getAllGroups = async (instance) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getAllGroups (Graph API)' });

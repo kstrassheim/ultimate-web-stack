@@ -6,6 +6,11 @@ import { msalInstance } from './components/entraAuth';
 import App from './App';
 import './index.css';
 
+if (__DEBUG__) {
+  console.log('Debug mode is enabled!');
+  // Debugging logic...
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -15,5 +20,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>
 );
-
-

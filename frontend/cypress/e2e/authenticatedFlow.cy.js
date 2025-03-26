@@ -1,7 +1,6 @@
 describe('Authenticated flow', () => {
     beforeEach(() => {
       cy.msalLogin();
-      cy.visit('/');
     });
     
     it('should show authenticated content', () => {

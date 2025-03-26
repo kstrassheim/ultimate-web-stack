@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { useMsal } from '@azure/msal-react';
+import { useMsal } from './entraAuth';
 import appInsights from './appInsights';
 
 const ProtectedRoute = ({ children, requiredRoles = [] }) => {

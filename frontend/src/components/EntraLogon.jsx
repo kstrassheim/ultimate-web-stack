@@ -1,6 +1,6 @@
 import React from 'react';
-import { useMsal , AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
-import { loginRequest } from './entraAuth';
+import { AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
+import { loginRequest, useMsal } from './entraAuth';
 import { useNavigate } from 'react-router-dom';
 import appInsights from './appInsights';
 
