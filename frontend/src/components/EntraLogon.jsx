@@ -27,7 +27,6 @@ const EntraLogon = () => {
     }
   };
 
-
   const logoutFunc = async () => {
     sessionStorage.clear();
     localStorage.clear();
