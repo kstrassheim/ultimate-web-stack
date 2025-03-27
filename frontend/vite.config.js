@@ -47,6 +47,14 @@ console.log(`Mocking role: ${role}`);
 export default defineConfig({
   plugins: [react()],
   base: "/",
+  resolve: {
+    alias: {
+      // Replace a real API with a mock based on role
+      '../api/realApi': role === 'Admin' 
+        ? '../mocks/adminMockApi' 
+        : '../mocks/userMockApi',
+    }
+  },
   define: {
     __DEBUG__: !isDeployment,
     __MOCKROLE__: JSON.stringify(role),
