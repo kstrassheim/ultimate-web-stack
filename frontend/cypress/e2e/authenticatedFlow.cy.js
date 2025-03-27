@@ -1,6 +1,8 @@
+import { setMockRole } from '../support/msalMock';
+
 describe('Authenticated flow', () => {
     beforeEach(() => {
-      cy.msalLogin();
+      cy.setMockRole('Admin');
     });
     
     it('should show authenticated content', () => {

@@ -1,12 +1,10 @@
 {
-  "name": "fastapi-reference",
+  "name": "ultimate-web-stack",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "user": "vite -- --role=User",
-    "admin": "npx vite --role=Admin",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

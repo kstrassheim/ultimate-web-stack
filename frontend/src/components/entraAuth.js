@@ -44,7 +44,7 @@ export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };
 
-export const retreiveTokenForBackend = window.mockRetreiveTokenForBackend ? mockRetreiveTokenForBackend : async (instance, extraScopes = []) => {
+export const retreiveTokenForBackend = window.retreiveTokenForBackend ? window.retreiveTokenForBackend : async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Token' });
   const account = instance.getActiveAccount();
   const tokenResponse = await instance.acquireTokenSilent({
@@ -54,7 +54,7 @@ export const retreiveTokenForBackend = window.mockRetreiveTokenForBackend ? mock
   return tokenResponse.accessToken;
 }
 
-export const retreiveTokenForGraph = window.retreiveTokenForGraph ? retreiveTokenForGraph :  async (instance, extraScopes = []) => {
+export const retreiveTokenForGraph = window.retreiveTokenForGraph ? window.retreiveTokenForGraph :  async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   

@@ -11,7 +11,11 @@ if (__DEBUG__) {
   //   mockGraphApi(__MOCKROLE__);
   // });
   console.log('Debug mode is enabled! Applying mock Graph API instance...');
-  mockGraphApi(__MOCKROLE__);
+  const mockRoleFromStorage = localStorage.getItem('MOCKROLE');
+  console.log('Mock role from storage:', mockRoleFromStorage);
+  console.log('Mock role from vite:', __MOCKROLE__);
+  mockGraphApi(mockRoleFromStorage || __MOCKROLE__);
+// Replace '__MOCKROLE__' with a default value if needed
 }
 
 export const getUserData = async (instance) => {
