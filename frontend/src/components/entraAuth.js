@@ -9,7 +9,10 @@ import mockMsal from '../mock/msalMock';
 if (__DEBUG__) {
   console.log('Debug mode is enabled! Applying mock MSAL instance...');
   // Use the default export from the dynamically imported module
-  mockMsal(__MOCKROLE__);
+  const mockRoleFromStorage = localStorage.getItem('MOCKROLE');
+  console.log('Mock role from storage:', mockRoleFromStorage);
+  console.log('Mock role from vite:', __MOCKROLE__);
+  mockMsal(mockRoleFromStorage || __MOCKROLE__);
 }
 
 export const msalConfig = () =>{
