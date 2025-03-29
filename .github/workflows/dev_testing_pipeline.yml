@@ -9,6 +9,9 @@ on:
 jobs:
   # First call the Terraform deployment workflow
   terraform:
+    permissions:
+      id-token: write  # Grant OIDC token permission
+      contents: read   # Needed to check out code
     uses: ./.github/workflows/.terraform_deployment.yml
     with:
       environment: 'dev'  # Use dev environment for testing
