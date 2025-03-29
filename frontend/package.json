@@ -10,8 +10,17 @@
     "preview": "vite preview",
     "backend": "node start-backend.js",
     "backend:test": "cross-env MOCK=true node start-backend.js",
-    "bc": "start-server-and-test backend http://127.0.0.1:8000/health",
-    "cy": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open"
+    "backend:check": "start-server-and-test backend http://127.0.0.1:8000/health",
+    "cypress": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open",
+    "cypress:chrome": "cypress run --headed --browser chrome --e2e",
+    "cypress:edge": "cypress run --headed --browser edge --e2e",
+    "test:backend": "cross-env MOCK=true node start-backend.js",
+    "test:frontend": "vite --port 5173",
+    "test:e2e": "start-server-and-test test:backend http://localhost:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress\"",
+    "test:e2e:chrome": "start-server-and-test test:backend http://localhost:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress:chrome\"",
+    "test:e2e:edge": "start-server-and-test test:backend http://localhost:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress:edge\"",
+    "test:e2e:headless": "start-server-and-test test:backend http://localhost:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser chrome'\""
+
   },
   "dependencies": {
     "@azure/msal-browser": "^4.7.0",

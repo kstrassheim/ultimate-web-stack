@@ -2,7 +2,7 @@ import { defineConfig } from 'cypress';
 
 export default defineConfig({
   e2e: {
-    baseUrl: 'http://localhost:5175',
+    baseUrl: 'http://localhost:5173',
     env: {
       apiUrl: 'http://localhost:8000'
     },
@@ -14,7 +14,7 @@ export default defineConfig({
     // Configure dev server to start before tests
     devServer: {
         command: 'npm run dev',
-        port: 5175,
+        port: 5173,
         timeout: 60000, // milliseconds
     },
   },
