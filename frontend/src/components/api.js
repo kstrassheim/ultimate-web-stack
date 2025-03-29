@@ -1,5 +1,5 @@
 import { backendUrl } from '../config';
-import { retreiveTokenForBackend, retreiveTokenForGraph } from './entraAuth';
+import { retreiveTokenForBackend, retreiveTokenForGraph, loginRequest } from './entraAuth';
 import appInsights from './appInsights'; 
 
 import mockGraphApi from '../mock/graphApiMock';

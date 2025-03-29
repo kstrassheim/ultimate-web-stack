@@ -41,7 +41,7 @@ export const msalConfig = () =>{
 
 // mock out instance if available
 export const useMsal = window.mockUseMsal || originalUseMsal;
-export const msalInstance = window.mockInstance || new PublicClientApplication(msalConfig);
+export const msalInstance = window.mockInstance || new PublicClientApplication(msalConfig());
 
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
