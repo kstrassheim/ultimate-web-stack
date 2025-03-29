@@ -38,7 +38,7 @@ export const getUserData = async (instance) => {
   }
 };
 
-export const getAdminData = async (instance, message = "Hello from frontend", status = 200) => {
+export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getAdminData' });
     const accessToken = await retreiveTokenForBackend(instance, ['Group.Read.All']);

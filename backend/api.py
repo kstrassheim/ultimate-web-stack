@@ -1,18 +1,16 @@
 import jwt 
 from fastapi import APIRouter, Security, HTTPException, Body
 from pydantic import BaseModel
-# from common import azure_scheme, scopes, logger
+from common import azure_scheme, scopes, logger
 import logging
 import requests
 from common import tfconfig
 from role_based_access import required_roles 
-from token_validation import inject_security
 
 api_router = APIRouter()
 
 @api_router.get("/user-data")
-@inject_security()
-async def get_user_data():
+async def get_user_data(token=Security(azure_scheme, scopes=scopes)):
     logger.info("User Api - Returning User data")
     return {"message": "Hello from API"}
 
@@ -23,9 +21,8 @@ class AdminDataRequest(BaseModel):
 
 # Changed from GET to POST and using request body
 @api_router.post("/admin-data")
-@inject_security()
 @required_roles(["Admin"])
-async def get_admin_data(request: AdminDataRequest = Body(...), token = None):
+async def get_admin_data(request: AdminDataRequest = Body(...), token=Security(azure_scheme, scopes=scopes)):
     logger.info(f"Admin API - Message: {request.message}, Status: {request.status}")
     
     # You can use the status parameter to simulate different responses

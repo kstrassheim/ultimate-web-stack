@@ -64,19 +64,19 @@ async def frontend_handler(path: str):
 app.include_router(frontend_router, prefix="")
 
 # Print mock settings
-from rich import print as rprint
-from rich.console import Console
-from rich.panel import Panel
-# Check MOCK environment variable
-mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
-if mock_enabled:
-    console = Console()
-    console.print(Panel(f"MOCK Environment: [bold]ENABLED[/bold]", style="yellow"))
-    logger.info("MOCK environment is enabled")
-else:
-    console = Console()
-    console.print(Panel(f"MOCK Environment: [bold]DISABLED[/bold]", style="green"))
-    logger.info("MOCK environment is disabled")
+# from rich import print as rprint
+# from rich.console import Console
+# from rich.panel import Panel
+# # Check MOCK environment variable
+# mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
+# if mock_enabled:
+#     console = Console()
+#     console.print(Panel(f"MOCK Environment: [bold]ENABLED[/bold]", style="yellow"))
+#     logger.info("MOCK environment is enabled")
+# else:
+#     console = Console()
+#     console.print(Panel(f"MOCK Environment: [bold]DISABLED[/bold]", style="green"))
+#     logger.info("MOCK environment is disabled")
 
 
 # On startup, load the OpenID configuration (optional but recommended)
