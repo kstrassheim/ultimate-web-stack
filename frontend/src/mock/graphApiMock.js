@@ -115,10 +115,24 @@ const adminGroups = [
     mailEnabled: true,
     createdDateTime: "2022-12-10T13:45:22Z",
     renewedDateTime: "2022-12-10T13:45:22Z"
+  },
+  {
+    id: "a7f44e1c-2d63-48b5-9e1a-fc3b8d721e0b",
+    displayName: "Axis Cult Divine Administration",
+    description: "The sacred team of goddess souls with divine purification privileges",
+    mailNickname: "axis-divine-admin",
+    mail: "axis-admin@contoso.com",
+    visibility: "Private",
+    groupTypes: ["DynamicMembership"],
+    securityEnabled: true,
+    mailEnabled: true,
+    createdDateTime: "2023-03-18T12:30:45Z",
+    renewedDateTime: "2023-03-18T12:30:45Z"
   }
 ];
 
-const getAllGroups = async () => {
+const getAllGroups = async (instance) => {
+  const isAdmin = instance.accounts[0].idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
   return isAdmin ? [...mockGroups, ...adminGroups] : mockGroups;
 };
