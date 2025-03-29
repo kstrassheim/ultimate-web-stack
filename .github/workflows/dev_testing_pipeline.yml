@@ -12,7 +12,7 @@ jobs:
     permissions:
       id-token: write  # Grant OIDC token permission
       contents: read   # Needed to check out code
-    uses: ./.github/workflows/.entraid_web_deployment.yml
+    uses: ./.github/workflows/.terraform_deployment.yml
     with:
       environment: 'dev'  # Use dev environment for testing
     secrets:
