@@ -84,7 +84,7 @@
         ]
         },
         {
-            "name": "Full Mock Admin",
+            "name": "Full Stack Mock Admin",
             "configurations": [
                 "FastAPI - Mock",
                 "Vite Dev Server - Mock - Admin",
@@ -92,7 +92,7 @@
             ]
         },
         {
-            "name": "Full Mock User",
+            "name": "Full Stack Mock User",
             "configurations": [
                 "FastAPI - Mock",
                 "Vite Dev Server - Mock - User",

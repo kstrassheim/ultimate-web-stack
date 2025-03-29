@@ -17,7 +17,37 @@ function createMockMsalInstance(roles = []) {
     }
   };
 
-  const accessToken = isAdmin ? 'water-purification-token' : 'explosion-magic-token'
+  function generateJWT(payload) {
+    // Create a proper JWT with header, payload, and signature
+    const header = {
+      alg: 'HS256',
+      typ: 'JWT'
+    };
+    
+    // Complete the payload with standard JWT claims
+    const completePayload = {
+      sub: payload.idTokenClaims.oid,
+      name: payload.name,
+      preferred_username: payload.username,
+      oid: payload.idTokenClaims.oid,
+      roles: payload.idTokenClaims.roles,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+    };
+    
+    // Base64 encode the header and payload
+    const base64Header = btoa(JSON.stringify(header)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const base64Payload = btoa(JSON.stringify(completePayload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    
+    // For mock purposes, use a simple signature (not secure, but doesn't matter for testing)
+    const signature = 'MOCK_SIGNATURE_FOR_TESTING_ONLY';
+    const base64Signature = btoa(signature).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    
+    // Combine to form the complete JWT
+    return `${base64Header}.${base64Payload}.${base64Signature}`;
+  }
+  
+  const accessToken = generateJWT(account);
 
   // Create a mock logger
   const mockLogger = {
@@ -92,7 +122,7 @@ const mockMsal = (role) => {
 
   window.mockUseMsal = mockUseMsal;
   window.mockInstance = mockInstance;
-  window.retreiveTokenForBackend = async (instance, extraScopes = []) => { return mockInstance.accessToken};
-  window.retreiveTokenForGraph = async (instance, extraScopes = []) => { return mockInstance.accessToken};
+  window.retreiveTokenForBackend = async (instance, extraScopes = []) => { return mockInstance.token};
+  window.retreiveTokenForGraph = async (instance, extraScopes = []) => { return mockInstance.token};
 }
 export default mockMsal;

@@ -28,8 +28,7 @@ def create_fixed_logger():
 # Replace the existing logger
 logger = create_fixed_logger()
 
-import logging
-import threading
+
 
 # define scope to use in the API   
 scopes = [tfconfig["oauth2_permission_scope"]["value"]]

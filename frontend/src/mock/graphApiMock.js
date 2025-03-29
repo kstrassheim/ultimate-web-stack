@@ -26,7 +26,7 @@ const mockGroups = [
     displayName: "Engineering Team",
     description: "All engineering staff",
     mailNickname: "engineering",
-    mail: "engineering@contoso.com",
+    mail: "engineering@crimson-demons.com",
     visibility: "Private",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -39,7 +39,7 @@ const mockGroups = [
     displayName: "Marketing Department",
     description: "Marketing strategy and execution team",
     mailNickname: "marketing",
-    mail: "marketing@contoso.com",
+    mail: "marketing@crimson-demons.com",
     visibility: "Private",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -52,7 +52,7 @@ const mockGroups = [
     displayName: "Executive Committee",
     description: "Company leadership and decision makers",
     mailNickname: "execs",
-    mail: "executives@contoso.com",
+    mail: "executives@crimson-demons.com",
     visibility: "Private",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -65,7 +65,7 @@ const mockGroups = [
     displayName: "All Employees",
     description: "Group containing all current employees",
     mailNickname: "all-staff",
-    mail: "all-staff@contoso.com",
+    mail: "all-staff@crimson-demons.com",
     visibility: "Public",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -78,7 +78,7 @@ const mockGroups = [
     displayName: "Project Crimson",
     description: "Special project team for Project Crimson",
     mailNickname: "project-crimson",
-    mail: "project-crimson@contoso.com",
+    mail: "project@crimson-demons.com",
     visibility: "Private",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -95,7 +95,7 @@ const adminGroups = [
     displayName: "Global Administrators",
     description: "Members can manage all aspects of Azure AD and Microsoft services",
     mailNickname: "global-admins",
-    mail: "global-admins@contoso.com",
+    mail: "global-admins@axis-cult.com",
     visibility: "Private",
     groupTypes: [],
     securityEnabled: true,
@@ -108,7 +108,7 @@ const adminGroups = [
     displayName: "Security Operations",
     description: "IT Security team responsible for security operations",
     mailNickname: "secops",
-    mail: "security-ops@contoso.com",
+    mail: "security-ops@axis-cult.com",
     visibility: "Private",
     groupTypes: ["Unified"],
     securityEnabled: true,
@@ -121,7 +121,7 @@ const adminGroups = [
     displayName: "Axis Cult Divine Administration",
     description: "The sacred team of goddess souls with divine purification privileges",
     mailNickname: "axis-divine-admin",
-    mail: "axis-admin@contoso.com",
+    mail: "admin@axis-cult.com",
     visibility: "Private",
     groupTypes: ["DynamicMembership"],
     securityEnabled: true,
@@ -134,7 +134,7 @@ const adminGroups = [
 const getAllGroups = async (instance) => {
   const isAdmin = instance.accounts[0].idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
-  return isAdmin ? [...mockGroups, ...adminGroups] : mockGroups;
+  return isAdmin ? adminGroups: mockGroups;
 };
 
 const mockGraphApi = (role) => {
