@@ -30,23 +30,74 @@
             "urlFilter": "http://localhost*",  // (optional) only attach to your app's URLs
             "skipFiles": ["cypress_runner.js"],// skip Cypress internal script in debugger
             "sourceMaps": true             // ensure VS Code uses source maps
-          }
+          },
         {
             "name": "Chrome Debug",
             "type": "chrome",
             "request": "launch",
             "url": "http://localhost:5173",  // Adjust if your Vite dev server uses a different port
             "webRoot": "${workspaceFolder}/frontend"
+        },
+
+        // Mocked startups
+        {
+            "name": "FastAPI - Mock",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "cwd": "${workspaceFolder}/backend",
+            "args": [
+                "main:app",
+                "--reload",
+                "--port",
+                "8000"
+            ],
+            // Here we set MOCK=true so your code will use the mock auth
+            "env": {
+                "MOCK": "true"
+            }
+        },
+        {
+            "name": "Vite Dev Server - Mock - Admin",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "npm run dev -- --role=Admin",
+            "cwd": "${workspaceFolder}/frontend",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Vite Dev Server - Mock - User",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "npm run dev -- --role=User",
+            "cwd": "${workspaceFolder}/frontend",
+            "console": "integratedTerminal"
         }
     ],
     "compounds": [
         {
-        "name": "Full Stack Debug",
+        "name": "Full Stack",
         "configurations": [
             "FastAPI",
             "Vite Dev Server",
             "Chrome Debug"
         ]
+        },
+        {
+            "name": "Full Mock Admin",
+            "configurations": [
+                "FastAPI - Mock",
+                "Vite Dev Server - Mock - Admin",
+                "Chrome Debug"
+            ]
+        },
+        {
+            "name": "Full Mock User",
+            "configurations": [
+                "FastAPI - Mock",
+                "Vite Dev Server - Mock - User",
+                "Chrome Debug"
+            ]
         }
     ]
 }
