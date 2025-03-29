@@ -2,7 +2,7 @@ name: Development Deployment
 
 on:
   pull_request:
-    types: [closed]
+    # types: [closed]
     branches:
       - main
   workflow_dispatch:
