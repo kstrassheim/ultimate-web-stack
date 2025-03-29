@@ -10,9 +10,9 @@ on:
 jobs:
   dev:
     # Run on push to entra-auth branch or PR to main
-    if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'workflow_dispatch')
+    # if: |
+    #   (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+    #   (github.event_name == 'workflow_dispatch')
     permissions:
       id-token: write
       contents: read
