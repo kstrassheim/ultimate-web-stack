@@ -18,6 +18,8 @@ load_dotenv()
 # get routers
 from api import api_router
 
+# Check MOCK environment variable
+mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 
 # Init FastAPI
 app = FastAPI()
