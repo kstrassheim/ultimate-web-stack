@@ -12,6 +12,7 @@ from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
 
 # load environment variables
+from os import environ as os_environ
 from dotenv import load_dotenv
 load_dotenv()
 # get routers
@@ -41,6 +42,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 
 @app.get("/health")
+@app.head("/health") 
 async def health():
     # Calculate uptime from system boot time
     boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
@@ -61,7 +63,20 @@ async def frontend_handler(path: str):
     return FileResponse(fp)
 app.include_router(frontend_router, prefix="")
 
-
+# Print mock settings
+from rich import print as rprint
+from rich.console import Console
+from rich.panel import Panel
+# Check MOCK environment variable
+mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
+if mock_enabled:
+    console = Console()
+    console.print(Panel(f"MOCK Environment: [bold]ENABLED[/bold]", style="yellow"))
+    logger.info("MOCK environment is enabled")
+else:
+    console = Console()
+    console.print(Panel(f"MOCK Environment: [bold]DISABLED[/bold]", style="green"))
+    logger.info("MOCK environment is disabled")
 
 
 # On startup, load the OpenID configuration (optional but recommended)

@@ -8,6 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "backend": "node start-backend.js",
+    "backend:test": "cross-env MOCK=true node start-backend.js",
+    "bc": "start-server-and-test backend http://127.0.0.1:8000/health",
     "cy": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.15.0",
+    "start-server-and-test": "^2.0.11",
     "vite": "^6.2.0"
   }
 }

@@ -3,6 +3,9 @@ import { defineConfig } from 'cypress';
 export default defineConfig({
   e2e: {
     baseUrl: 'http://localhost:5175',
+    env: {
+      apiUrl: 'http://localhost:8000'
+    },
     specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}',
     supportFile: 'cypress/support/e2e.js',
     // You can add launch options:
