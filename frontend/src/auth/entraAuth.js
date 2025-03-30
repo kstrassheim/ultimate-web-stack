@@ -1,7 +1,8 @@
 import { LogLevel } from '@azure/msal-browser';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
-import appInsights from './appInsights';
+import appInsights from '../log/appInsights';
+
 
 export const msalConfig = () =>{
   console.log("redirect uri:" + frontendUrl);
@@ -26,7 +27,8 @@ export const msalConfig = () =>{
     },
   };
 };
-const permission = tfconfig.requested_graph_api_delegated_permissions.value
+
+
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };

@@ -72,10 +72,10 @@ const Loading = ({ visible, message = "Loading data..." }) => {
   };
 
   return (
-    <div style={overlayStyle}>
-      <div style={contentStyle}>
-        <div style={spinnerStyle} />
-        <p style={textStyle}>{message}</p>
+    <div style={overlayStyle} data-testid="loading-overlay">
+      <div style={contentStyle} data-testid="loading-content">
+        <div style={spinnerStyle} data-testid="loading-spinner" />
+        <p style={textStyle} data-testid="loading-message">{message}</p>
       </div>
     </div>
   );

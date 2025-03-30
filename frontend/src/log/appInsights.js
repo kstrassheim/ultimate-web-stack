@@ -1,5 +1,5 @@
 import { ApplicationInsights } from '@microsoft/applicationinsights-web';
-import tfconfig from '../../terraform.config.json' assert { type: 'json' };
+import tfconfig from '@/../terraform.config.json' assert { type: 'json' };
 
 const appInsights = new ApplicationInsights({
   config: {

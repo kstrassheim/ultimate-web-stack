@@ -1,8 +1,9 @@
 import React from 'react';
-import { useMsal , AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
-import { loginRequest } from './entraAuth';
+import { AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
+import { loginRequest } from '@/auth/entraAuth';
+import { useMsal } from '@azure/msal-react';
 import { useNavigate } from 'react-router-dom';
-import appInsights from './appInsights';
+import appInsights from '@/log/appInsights';
 
 const EntraLogon = () => {
   const { instance } = useMsal();
@@ -27,20 +28,23 @@ const EntraLogon = () => {
     }
   };
 
-
   const logoutFunc = async () => {
-    sessionStorage.clear();
-    localStorage.clear();
+    // sessionStorage.clear();
+    // localStorage.clear();
     await instance.logoutPopup();
   }
 
-  return <div className="logon-buttons">
+  return <div className="logon-buttons" data-testid="entra-logon">
       <AuthenticatedTemplate>
-        <button onClick={logoutFunc}>Sign Out</button>
-        <button onClick={()=>logonFunc(true)}>Change Account</button>
+        <div data-testid="authenticated-container">
+          <button onClick={logoutFunc} data-testid="sign-out-button">Sign Out</button>
+          <button onClick={()=>logonFunc(true)} data-testid="change-account-button">Change Account</button>
+        </div>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        <button onClick={logonFunc}>Sign In</button>
+        <div data-testid="unauthenticated-container">
+          <button onClick={()=>logonFunc(false)} data-testid="sign-in-button">Sign In</button>
+        </div>
       </UnauthenticatedTemplate>
     </div>
 };

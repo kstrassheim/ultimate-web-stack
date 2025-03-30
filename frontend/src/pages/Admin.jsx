@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import './Home.css';
-import { getAdminData } from '../components/api';
+import { getAdminData } from '@/api/api';
 import { useMsal } from '@azure/msal-react';
-import appInsights from '../components/appInsights';
-import Loading, { sleep } from '../components/Loading'; // Import the Loading component
+import appInsights from '@/log/appInsights';
+import Loading, { sleep } from '@/components/Loading'; // Import the Loading component
 
 const Admin = () => {
   const { instance } = useMsal();
@@ -42,22 +42,23 @@ const Admin = () => {
       {/* Add the loading overlay */}
       <Loading visible={loading} message="Loading admin data..." />
       
-      <div>
-        <h1>Admin Page</h1>
+      <div data-testid="admin-page">
+        <h1 data-testid="admin-heading">Admin Page</h1>
         
         {/* Show error message if there is one */}
-        {error && <div className="error">Error: {error}</div>}
+        {error && <div className="error" data-testid="admin-error">Error: {error}</div>}
         
         {/* Show data or a message if no data */}
-        <div className="card">
-          <h2>Admin Data</h2>
-          <p>{data ? data.message : 'No data available'}</p>
+        <div className="card" data-testid="admin-card">
+          <h2 data-testid="admin-card-heading">Admin Data</h2>
+          <p data-testid="admin-data-message">{data ? data.message : 'No data available'}</p>
         </div>
         
         <button 
           onClick={fetchData} 
           disabled={loading} 
           className="reload-button"
+          data-testid="admin-reload-button"
         >
           {loading ? 'Loading...' : 'Reload Data'}
         </button>

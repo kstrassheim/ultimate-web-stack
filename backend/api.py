@@ -1,40 +1,36 @@
 import jwt 
-from fastapi import APIRouter, Security, HTTPException#, Depends, HTTPException, Header
-from common import azure_scheme, scopes
+from fastapi import APIRouter, Security, HTTPException, Body
+from pydantic import BaseModel
+from common import azure_scheme, scopes, logger
 import logging
 import requests
-from common import tfconfig, logger
+from common import tfconfig
+from role_based_access import required_roles 
 
 api_router = APIRouter()
-# Validate if user is in specific role
-def check_user_roles(token, required_roles):
-    logger.info("Role check - Checking roles for expected", required_roles)
-    if not token:
-        http_ex = HTTPException(status_code=401, detail="Token is missing or invalid")
-        logger.error(http_ex)
-        raise http_ex
-    roles = getattr(token, "roles", None)
-    if roles is None:
-        http_ex = HTTPException(status_code=403, detail="Roles are missing in the token")
-        logger.error(http_ex)
-        raise http_ex
-
-    normalized_roles = [role.lower() for role in roles]
-    normalized_required_roles = [role.lower() for role in required_roles]
-    
-    if not any(role in normalized_roles for role in normalized_required_roles):
-        http_ex = HTTPException(status_code=403, detail="You do not have access to this resource")
-        raise http_ex
-    logger.info("Role check - Role check successfull")
 
 @api_router.get("/user-data")
 async def get_user_data(token=Security(azure_scheme, scopes=scopes)):
     logger.info("User Api - Returning User data")
     return {"message": "Hello from API"}
 
+# Define model for request body
+class AdminDataRequest(BaseModel):
+    message: str = "Default message"
+    status: int = 200
 
-@api_router.get("/admin-data")
-async def get_admin_data(token=Security(azure_scheme, scopes=scopes)):
-    check_user_roles(token, ["Admin"])
-    logger.info("Admin API - Returning response")
-    return {"message": "Hello Admin"}
+# Changed from GET to POST and using request body
+@api_router.post("/admin-data")
+@required_roles(["Admin"])
+async def get_admin_data(request: AdminDataRequest = Body(...), token=Security(azure_scheme, scopes=scopes)):
+    logger.info(f"Admin API - Message: {request.message}, Status: {request.status}")
+    
+    # You can use the status parameter to simulate different responses
+    if request.status >= 400:
+        raise HTTPException(status_code=request.status, detail=request.message)
+        
+    return {
+        "message": f"Hello Admin: {request.message}",
+        "status": request.status,
+        "received": True
+    }

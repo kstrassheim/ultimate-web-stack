@@ -39,10 +39,37 @@ const copyLogos = () => {
   }
 }
 
+//const mockRoleIndex = process.argv.indexOf('--role');
+// const mockRole = mockRoleIndex > -1 ? process.argv[mockRoleIndex + 1] : null;
+const isMockEnabled = process.env.npm_config_mock === 'true';
+console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
+
+const getAliases = () => {
+
+  const baseAliases = {
+    '@': resolve(__dirname, 'src')
+  };
+
+  if (isMockEnabled) {
+    console.log('Redirecting MSAL imports to mock implementation');
+    // !! Important : This does the actual mocking in a transparent way
+    return {
+      '@azure/msal-browser': resolve(__dirname, 'mock/azureMsalBrowser.js'),
+      '@/api/graphApi': resolve(__dirname, 'mock/graphApi.js'),
+      ...baseAliases
+    };
+  }
+  return baseAliases;
+};
+
 export default defineConfig({
   plugins: [react()],
   base: "/",
+  resolve: {
+    alias: getAliases()
+  },
   define: {
+    __MOCK__: JSON.stringify(isMockEnabled),
     // define another production uri for deployment then local
     __PROD_URI__: isDeployment ? JSON.stringify(tfconfig.web_url.value) : JSON.stringify('http://localhost:8000')
   },

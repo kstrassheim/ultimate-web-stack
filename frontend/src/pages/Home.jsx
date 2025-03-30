@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import './Home.css'
-import { getUserData, getAllGroups } from '../components/api'
+import { getUserData } from '@/api/api'
+import { getAllGroups } from '@/api/graphApi'
 import { useMsal } from '@azure/msal-react';
-import {env} from '../config'
-import appInsights from '../components/appInsights';
-import GroupsList from '../components/GroupsList';
-import Loading, {sleep} from '../components/Loading';
+import appInsights from '@/log/appInsights';
+import GroupsList from '@/components/GroupsList';
+import Loading, {sleep} from '@/components/Loading';
 
 const Home = () => {
   const { instance } = useMsal();
@@ -42,7 +42,7 @@ const Home = () => {
       appInsights.trackEvent({ name: 'Home - Fetch data completed' });
       initFetchCompleted.current = true;
     }
-  }, [])
+  }, [instance, instance.getActiveAccount()?.name])
 
   return (
     <>

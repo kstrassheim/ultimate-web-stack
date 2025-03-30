@@ -190,3 +190,5 @@ override.tf
 outputs.json
 **/terraform.config.json
 *terraform.config.json
+login.cm
+login.cmd
