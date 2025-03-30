@@ -31,6 +31,21 @@
             }
         },
         {
+            "name": "Attach to FastAPI",
+            "type": "python",
+            "request": "attach",
+            "connect": {
+              "host": "localhost",
+              "port": 5678
+            },
+            "pathMappings": [
+              {
+                "localRoot": "${workspaceFolder}/backend",
+                "remoteRoot": "."
+              }
+            ]
+        },
+        {
             "name": "Vite Dev Server",
             "type": "node-terminal",
             "request": "launch",

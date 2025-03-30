@@ -3,9 +3,9 @@ import fs from 'fs';  // Add this import
 export default defineConfig({
   e2e: {
     baseUrl: 'http://localhost:5173',
-    env: {
-      apiUrl: 'http://localhost:8000'
-    },
+    // env: {
+    //   apiUrl: 'http://localhost:8000'
+    // },
     specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}',
     supportFile: 'cypress/support/e2e.js',
     // You can add launch options:
@@ -24,11 +24,11 @@ export default defineConfig({
     videoUploadOnPasses: false,
    
     // Configure dev server to start before tests
-    devServer: {
-        command: 'npm run dev',
-        port: 5173,
-        timeout: 60000, // milliseconds
-    },
+    // devServer: {
+    //     command: 'npm run dev',
+    //     port: 5173,
+    //     timeout: 60000, // milliseconds
+    // },
 
      // Add this event handler to delete videos of passed tests
      setupNodeEvents(on, config) {

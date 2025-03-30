@@ -24,7 +24,7 @@ app = FastAPI()
 
 from common import azure_scheme, tfconfig, logger
 # Only add custom CORS origins if in development
-origins = ["http://localhost:5173", "localhost:5173"] if tfconfig["env"]["value"] == "dev" else []
+origins = ["http://localhost:5173", "http://localhost:5173/__cypress/", "http://localhost:8000"] if tfconfig["env"]["value"] == "dev" else []
 app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # Application Insights

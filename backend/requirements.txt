@@ -12,3 +12,4 @@ opencensus-ext-azure==1.1.14
 opencensus-ext-fastapi==0.1.0
 # print console
 rich==13.9.4
+debugpy==1.8.13

@@ -43,7 +43,7 @@ const EntraLogon = () => {
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
         <div data-testid="unauthenticated-container">
-          <button onClick={logonFunc} data-testid="sign-in-button">Sign In</button>
+          <button onClick={()=>logonFunc(false)} data-testid="sign-in-button">Sign In</button>
         </div>
       </UnauthenticatedTemplate>
     </div>

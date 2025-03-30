@@ -109,11 +109,14 @@ export const EventMessageUtils = {
 
 // PublicClientApplication implementation (your existing class)
 export class PublicClientApplication {
-  constructor(config, initRole) {
+  constructor(config) {
     this.name = 'mockInstance';
     this.isAuthenticated = false; // Start unauthenticated
+    // Store all accounts from mockUsers
+    this._allAccounts = accounts;
     this.accounts = [];           // Start with no accounts
-    this.activeAccountIndex = 0;
+
+    this.activeAccountIndex = this._getInitialActiveAccountIndex(); // init from localStorage role if available
     this.eventCallbacks = [];
     
     // Define enum for events
@@ -126,24 +129,14 @@ export class PublicClientApplication {
       ACQUIRE_TOKEN_FAILURE: "msal:acquireTokenFailure"
     };
 
-    // Store all accounts from mockUsers
-    this._allAccounts = accounts;
+
     
     // Generate tokens
     this.accessTokens = this._allAccounts.map(user => this._generateJWT(user));
     
-    // Set up mockRole behavior 
-    if (initRole = 'Admin') {
-      this.defaultAccountIndex = 1; // Aqua (admin)
-    } else {
-      this.defaultAccountIndex = 0; // Megumin (regular user)
-    }
-
     // Store config
     this.config = config;
     
-    // Make this instance available globally
-    window.mockInstance = this;
   }
 
   // Private JWT generator
@@ -198,6 +191,30 @@ export class PublicClientApplication {
         }
       });
     }
+  }
+
+  _getInitialActiveAccountIndex() {
+    const mockRole = localStorage.getItem('MOCKROLE');
+    if (!mockRole) { return 0; } // Default to first account
+    else {
+      const targetRole = mockRole.toLowerCase();
+      
+      // Find account with matching role (case insensitive)
+      const matchingIndex = this._allAccounts.findIndex(account => {
+        const roles = account.idTokenClaims?.roles || [];
+        return roles.some(role => role.toLowerCase() === targetRole);
+      });
+      
+      // If found a matching account, use its index
+      if (matchingIndex !== -1) {
+        return matchingIndex;
+        console.log(`Mock MSAL: Using account with role "${mockRole}" at index ${matchingIndex}`);
+      } else {
+        console.log(`Mock MSAL: No account found with role "${mockRole}", using default`);
+        return 0;
+      }
+    } 
+    
   }
 
   // Public methods (same as in your original mock)
