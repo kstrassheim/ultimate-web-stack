@@ -5,20 +5,9 @@ import { MsalProvider } from '@azure/msal-react';
 import { msalConfig } from './components/entraAuth';
 
 import { PublicClientApplication } from '@azure/msal-browser';
-import { PublicClientApplication as MockPublicClientApplication} from './mock/mockAzureMsalBrowser';
-
-// let mockRole = null;
-// let debug = false;
-// if (__DEBUG__) {
-//   debug = true;
-//   console.log('Debug mode is enabled! Applying mock MSAL instance...');
-//   // Use the default export from the dynamically imported module
-//   mockRole = localStorage.getItem('MOCKROLE') || __MOCKROLE__;
-//   console.log('Mock role:', mockRole);
-// }
 
 // mock out instance if available
-export const msalInstance = __MOCK__ ? new MockPublicClientApplication(msalConfig()) : new PublicClientApplication(msalConfig());
+export const msalInstance = new PublicClientApplication(msalConfig());
 
 
 import App from './App';

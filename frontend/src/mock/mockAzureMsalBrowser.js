@@ -1,6 +1,113 @@
 import accounts from './accounts.js';
 
-// Create a proper class that can be instantiated with 'new'
+// Define LogLevel enum explicitly
+export const LogLevel = {
+  Error: 0,
+  Warning: 1,
+  Info: 2,
+  Verbose: 3,
+  Trace: 4,
+  None: 999
+};
+
+// Define all the other enums and types needed
+export const InteractionStatus = {
+  None: "none",
+  Login: "login",
+  Logout: "logout",
+  AcquireToken: "acquireToken",
+  SsoSilent: "ssoSilent",
+  HandleRedirect: "handleRedirect"
+};
+
+export const InteractionType = {
+  Redirect: "redirect",
+  Popup: "popup",
+  Silent: "silent"
+};
+
+export const EventType = {
+  LOGIN_START: "msal:loginStart",
+  LOGIN_SUCCESS: "msal:loginSuccess",
+  LOGIN_FAILURE: "msal:loginFailure",
+  ACQUIRE_TOKEN_START: "msal:acquireTokenStart",
+  ACQUIRE_TOKEN_SUCCESS: "msal:acquireTokenSuccess",
+  ACQUIRE_TOKEN_FAILURE: "msal:acquireTokenFailure",
+  ACQUIRE_TOKEN_NETWORK_START: "msal:acquireTokenFromNetworkStart",
+  SSO_SILENT_START: "msal:ssoSilentStart",
+  SSO_SILENT_SUCCESS: "msal:ssoSilentSuccess",
+  SSO_SILENT_FAILURE: "msal:ssoSilentFailure",
+  HANDLE_REDIRECT_START: "msal:handleRedirectStart",
+  HANDLE_REDIRECT_END: "msal:handleRedirectEnd",
+  LOGOUT_START: "msal:logoutStart",
+  LOGOUT_SUCCESS: "msal:logoutSuccess",
+  LOGOUT_FAILURE: "msal:logoutFailure",
+  LOGOUT_END: "msal:logoutEnd"
+};
+
+export const OIDC_DEFAULT_SCOPES = ["openid", "profile", "email"];
+
+// Custom error class
+export class InteractionRequiredAuthError extends Error {
+  constructor(errorCode, errorMessage) {
+    super(errorMessage);
+    this.name = "InteractionRequiredAuthError";
+    this.errorCode = errorCode || "interaction_required";
+    this.errorMessage = errorMessage || "User interaction is required";
+  }
+}
+
+export class AuthError extends Error {
+  constructor(errorCode, errorMessage) {
+    super(errorMessage);
+    this.name = "AuthError";
+    this.errorCode = errorCode || "unknown_error";
+    this.errorMessage = errorMessage || "An unknown error occurred";
+  }
+}
+
+export const AuthenticationScheme = {
+  BEARER: "bearer",
+  POP: "pop"
+};
+
+// Logger class
+export class Logger {
+  constructor(loggerOptions) {
+    this.level = loggerOptions?.logLevel || LogLevel.Info;
+  }
+  
+  error(message) { console.error(message); }
+  warning(message) { console.warn(message); }
+  info(message) { console.info(message); }
+  verbose(message) { console.debug(message); }
+  trace() {}
+  setPii() {}
+  clone() { return this; }
+}
+
+// Account entity
+export class AccountEntity {
+  constructor(account) {
+    this.homeAccountId = account.localAccountId;
+    this.environment = "mock";
+    this.tenantId = "mock-tenant";
+    this.username = account.username;
+    this.localAccountId = account.localAccountId;
+    this.name = account.name;
+  }
+}
+
+// Other required exports
+export const WrapperSKU = {
+  React: "react"
+};
+
+export const EventMessageUtils = {
+  getInteractionStatusFromEvent: () => InteractionStatus.None
+};
+
+// PublicClientApplication implementation (your existing class)
 export class PublicClientApplication {
   constructor(config, initRole) {
     this.name = 'mockInstance';
@@ -227,5 +334,8 @@ export class PublicClientApplication {
     return this.accounts.find(account => account.homeAccountId === homeId) || null;
   }
 }
+
+// Create a stubbed instance
+export const stubbedPublicClientApplication = new PublicClientApplication({});
 
 export default PublicClientApplication;

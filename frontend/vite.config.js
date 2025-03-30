@@ -44,9 +44,22 @@ const copyLogos = () => {
 const isMockEnabled = process.env.npm_config_mock === 'true';
 console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
 
+const getAliases = () => {
+  if (isMockEnabled) {
+    console.log('Redirecting MSAL imports to mock implementation');
+    return {
+      '@azure/msal-browser': resolve(__dirname, 'src/mock/mockAzureMsalBrowser.js'),
+    };
+  }
+  return {};
+};
+
 export default defineConfig({
   plugins: [react()],
   base: "/",
+  resolve: {
+    alias: getAliases()
+  },
   define: {
     __MOCK__: JSON.stringify(isMockEnabled),
     // define another production uri for deployment then local
