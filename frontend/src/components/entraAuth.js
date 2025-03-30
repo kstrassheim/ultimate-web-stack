@@ -1,6 +1,5 @@
 import { LogLevel } from '@azure/msal-browser';
 import { PublicClientApplication } from '@azure/msal-browser';
-import { useMsal as originalUseMsal } from '@azure/msal-react';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
 import appInsights from './appInsights';
@@ -40,14 +39,14 @@ export const msalConfig = () =>{
 };
 
 // mock out instance if available
-export const useMsal = window.mockUseMsal || originalUseMsal;
+// export const useMsal = window.mockUseMsal || originalUseMsal;
 export const msalInstance = window.mockInstance || new PublicClientApplication(msalConfig());
 
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };
 
-export const retreiveTokenForBackend = window.retreiveTokenForBackend ? window.retreiveTokenForBackend : async (instance, extraScopes = []) => {
+export const retreiveTokenForBackend = async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Token' });
   const account = instance.getActiveAccount();
   const tokenResponse = await instance.acquireTokenSilent({
@@ -57,7 +56,7 @@ export const retreiveTokenForBackend = window.retreiveTokenForBackend ? window.r
   return tokenResponse.accessToken;
 }
 
-export const retreiveTokenForGraph = window.retreiveTokenForGraph ? window.retreiveTokenForGraph :  async (instance, extraScopes = []) => {
+export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   

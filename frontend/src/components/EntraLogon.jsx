@@ -1,6 +1,7 @@
 import React from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
-import { loginRequest, useMsal } from './entraAuth';
+import { loginRequest } from './entraAuth';
+import { useMsal } from '@azure/msal-react';
 import { useNavigate } from 'react-router-dom';
 import appInsights from './appInsights';
 
@@ -28,8 +29,8 @@ const EntraLogon = () => {
   };
 
   const logoutFunc = async () => {
-    sessionStorage.clear();
-    localStorage.clear();
+    // sessionStorage.clear();
+    // localStorage.clear();
     await instance.logoutPopup();
   }
 
