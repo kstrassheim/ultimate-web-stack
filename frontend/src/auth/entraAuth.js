@@ -1,7 +1,7 @@
 import { LogLevel } from '@azure/msal-browser';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
-import appInsights from './appInsights';
+import appInsights from '../log/appInsights';
 
 
 export const msalConfig = () =>{

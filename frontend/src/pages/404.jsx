@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import appInsights from './components/appInsights';
+import appInsights from '@/log/appInsights';
 export default function NotFound() {
     appInsights.trackEvent({ name: '404 - NotFound page' });
     return (

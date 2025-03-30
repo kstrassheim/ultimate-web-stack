@@ -45,18 +45,21 @@ const isMockEnabled = process.env.npm_config_mock === 'true';
 console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
 
 const getAliases = () => {
+
+  const baseAliases = {
+    '@': resolve(__dirname, 'src')
+  };
+
   if (isMockEnabled) {
     console.log('Redirecting MSAL imports to mock implementation');
     // !! Important : This does the actual mocking in a transparent way
     return {
       '@azure/msal-browser': resolve(__dirname, 'mock/azureMsalBrowser.js'),
       '@/api/graphApi': resolve(__dirname, 'mock/graphApi.js'),
-      '@': resolve(__dirname, 'src')
+      ...baseAliases
     };
   }
-  return {
-    '@': resolve(__dirname, 'src')
-  };
+  return baseAliases;
 };
 
 export default defineConfig({

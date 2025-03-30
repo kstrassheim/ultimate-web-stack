@@ -1,5 +1,5 @@
-import { retreiveTokenForGraph, loginRequest } from '@/components/entraAuth';
-import appInsights from '@/components/appInsights'; 
+import { retreiveTokenForGraph, loginRequest } from '@/auth/entraAuth';
+import appInsights from '@/log/appInsights'; 
 
 export const getProfilePhoto = window.getProfilePhoto ? window.getProfilePhoto : async (instance, activeAccount) => {
     try {

@@ -20,7 +20,7 @@ export const getProfilePhoto = async (instance, activeAccount) => {
 // Mock implementation for Microsoft Graph API calls
 
 // Mock data for groups
-const mockGroups = [
+const userGroups = [
   {
     id: "16825e98-2e8a-408b-a4ca-a1a96814a714",
     displayName: "Engineering Team",
@@ -132,17 +132,7 @@ const adminGroups = [
 ];
 
 export const getAllGroups = async (instance) => {
-  const isAdmin = instance.accounts[0].idTokenClaims?.roles?.includes('Admin');
+  const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
-  return isAdmin ? adminGroups: mockGroups;
+  return isAdmin ? adminGroups: userGroups;
 };
-
-const mockGraphApi = () => {
-  console.log(`Mocking API calls`);
-  window.getProfilePhoto = getProfilePhoto;
-
-  window.getAllGroups = getAllGroups;
-  
-}
-
-export default mockGraphApi;

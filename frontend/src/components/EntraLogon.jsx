@@ -1,9 +1,9 @@
 import React from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate} from '@azure/msal-react';
-import { loginRequest } from './entraAuth';
+import { loginRequest } from '@/auth/entraAuth';
 import { useMsal } from '@azure/msal-react';
 import { useNavigate } from 'react-router-dom';
-import appInsights from './appInsights';
+import appInsights from '@/log/appInsights';
 
 const EntraLogon = () => {
   const { instance } = useMsal();

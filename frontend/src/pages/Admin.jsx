@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import './Home.css';
-import { getAdminData } from '../api/api';
+import { getAdminData } from '@/api/api';
 import { useMsal } from '@azure/msal-react';
-import appInsights from '../components/appInsights';
-import Loading, { sleep } from '../components/Loading'; // Import the Loading component
+import appInsights from '@/log/appInsights';
+import Loading, { sleep } from '@/components/Loading'; // Import the Loading component
 
 const Admin = () => {
   const { instance } = useMsal();

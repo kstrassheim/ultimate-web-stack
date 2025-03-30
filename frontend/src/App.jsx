@@ -1,14 +1,14 @@
 import { Routes, Route, Link } from "react-router-dom";
-import './App.css';
+import '@/App.css';
 // get the components
-import NotFound from './404';
-import EntraLogon from './components/EntraLogon';
-import EntraProfile from './components/EntraProfile';
-import AccessDenied from './components/AccessDenied';
-import ProtectedRoute from "./components/ProtectedRoute";
+import NotFound from '@/pages/404';
+import EntraLogon from '@/components/EntraLogon';
+import EntraProfile from '@/components/EntraProfile';
+import AccessDenied from '@/pages/AccessDenied';
+import ProtectedRoute from "@/components/ProtectedRoute";
 // get the pages
-import Home from './pages/Home';
-import Admin from './pages/Admin';
+import Home from '@/pages/Home';
+import Admin from '@/pages/Admin';
 //import appInsights from './components/appInsights';
 
 function App() {

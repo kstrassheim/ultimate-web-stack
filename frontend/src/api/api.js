@@ -1,6 +1,6 @@
 import { backendUrl } from '../config';
-import { retreiveTokenForBackend } from '../components/entraAuth';
-import appInsights from '../components/appInsights'; 
+import { retreiveTokenForBackend } from '../auth/entraAuth';
+import appInsights from '../log/appInsights'; 
 
 export const getUserData = async (instance) => {
   try {

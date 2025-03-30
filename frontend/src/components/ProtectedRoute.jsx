@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useMsal } from '@azure/msal-react';
-import appInsights from './appInsights';
+import appInsights from '@/log/appInsights';
 
 const ProtectedRoute = ({ children, requiredRoles = [] }) => {
   const { instance } = useMsal();

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMsal } from '@azure/msal-react';
-import dummy_avatar from '../assets/dummy-avatar.jpg'
-import appInsights from './appInsights'; 
+import dummy_avatar from '@/assets/dummy-avatar.jpg'
+import appInsights from '@/log/appInsights'; 
 import { getProfilePhoto } from '@/api/graphApi';
 
 
