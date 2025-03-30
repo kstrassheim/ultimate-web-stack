@@ -1,18 +1,8 @@
 import { LogLevel } from '@azure/msal-browser';
-import { PublicClientApplication } from '@azure/msal-browser';
 import { frontendUrl } from "../config";
 import tfconfig from '../../terraform.config.json' assert { type: 'json' };
 import appInsights from './appInsights';
-import mockMsal from '../mock/msalMock';
-// Apply mock msal when in debug mode with mocked role
-if (__DEBUG__) {
-  console.log('Debug mode is enabled! Applying mock MSAL instance...');
-  // Use the default export from the dynamically imported module
-  const mockRoleFromStorage = localStorage.getItem('MOCKROLE');
-  console.log('Mock role from storage:', mockRoleFromStorage);
-  console.log('Mock role from vite:', __MOCKROLE__);
-  mockMsal(mockRoleFromStorage || __MOCKROLE__);
-}
+
 
 export const msalConfig = () =>{
   console.log("redirect uri:" + frontendUrl);
@@ -38,9 +28,6 @@ export const msalConfig = () =>{
   };
 };
 
-// mock out instance if available
-// export const useMsal = window.mockUseMsal || originalUseMsal;
-export const msalInstance = window.mockInstance || new PublicClientApplication(msalConfig());
 
 export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
