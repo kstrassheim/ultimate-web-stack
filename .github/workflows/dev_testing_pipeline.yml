@@ -63,12 +63,17 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'backend/requirements.txt'
       
-      # Install backend dependencies
+      # Install backend dependencies (modified)
       - name: Install backend dependencies
         run: |
           cd backend
           python -m pip install --upgrade pip
+          python -m venv venv
+          source venv/bin/activate
           pip install -r requirements.txt
+          # Make sure the virtual env path exists
+          python -c "import sys; print(sys.executable)" > python_path.txt
+          cat python_path.txt
       
       # Install frontend dependencies
       - name: Install frontend dependencies
