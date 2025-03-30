@@ -7,37 +7,41 @@ import { getProfilePhoto } from '@/api/graphApi';
 
 const EntraProfile = () => {
   const { instance } = useMsal();
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
   const [account, setAccount] = useState(null);
   const fetchProfilePhotoFunc = async () => {
     if (account) {
       let photo = await getProfilePhoto(instance, account);
       setPhotoUrl(photo);
     }
+    else {
+      setPhotoUrl(dummy_avatar);
+    }
   };
 
   useEffect(() => {
     const currentAccount = instance.getActiveAccount();
-    if (currentAccount && currentAccount !== account) {
-      setAccount(currentAccount);
+    if (!currentAccount) {
+      setAccount(null);
+      setPhotoUrl(dummy_avatar);
     }
-  }, [instance,  instance.getActiveAccount()?.name]);
+    else if (currentAccount !== account) {
+      setAccount(currentAccount);
+      fetchProfilePhotoFunc();
+    }
+  }, [instance.getActiveAccount()?.name]);
 
   useEffect(() => { fetchProfilePhotoFunc(); }, [account]);
 
   return (
-    <>
+    <div data-testid="profile-wrapper">
       {account && (
-        <div className="profile-container">
-          {photoUrl ? (
-              <img src={photoUrl} alt="Profile" className="profile-image" />
-          ) : (
-            <img src={dummy_avatar} alt="Profile" className="profile-image" />
-          )}
-          <div className="profile-name">{account.name}</div>
+        <div className="profile-container" data-testid="profile-container">
+          <img src={photoUrl} alt="Profile" className="profile-image" data-testid="profile-image" />
+          <div className="profile-name" data-testid="profile-name">{account.name}</div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

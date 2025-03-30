@@ -42,7 +42,7 @@ const Home = () => {
       appInsights.trackEvent({ name: 'Home - Fetch data completed' });
       initFetchCompleted.current = true;
     }
-  }, [])
+  }, [instance, instance.getActiveAccount()?.name])
 
   return (
     <>

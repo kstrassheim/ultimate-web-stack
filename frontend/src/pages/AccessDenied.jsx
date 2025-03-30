@@ -7,17 +7,17 @@ const AccessDenied = () => {
   const location = useLocation();
   const requiredRoles = location.state?.requiredRoles || [];
   return (
-    <div>
-      <h2>Access Denied</h2>
+    <div data-testid="access-denied-page">
+      <h2 data-testid="access-denied-heading">Access Denied</h2>
       {requiredRoles.length > 0 ? (
         <>
-          <p>You do not have permission to view this section.</p>
-          <p>Required roles: {requiredRoles.join(', ')}</p>
+          <p data-testid="access-denied-role-message">You do not have permission to view this section.</p>
+          <p data-testid="access-denied-required-roles">Required roles: {requiredRoles.join(', ')}</p>
           
         </>
       ) : (<>
-        <p>You do not have permission to view this page.</p>
-        <p>Please sign in for access</p>
+        <p data-testid="access-denied-login-message">You do not have permission to view this page.</p>
+        <p data-testid="access-denied-signin-prompt">Please sign in for access</p>
         </>
       )}
       

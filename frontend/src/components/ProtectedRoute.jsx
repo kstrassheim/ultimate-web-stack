@@ -9,7 +9,11 @@ const ProtectedRoute = ({ children, requiredRoles = [] }) => {
   
   // If there is no active account, redirect to logon (or a login page)
   if (!account) {
-    return <Navigate to="/access-denied" replace />;
+    return (
+      <div data-testid="protected-route-no-account">
+        <Navigate to="/access-denied" replace />
+      </div>
+    );
   }
 
   // Get user roles from the token claims (depends on your configuration)
@@ -23,10 +27,15 @@ const ProtectedRoute = ({ children, requiredRoles = [] }) => {
   if (!hasAccess) {
     appInsights.trackEvent({ name: 'Protected Route - Redirecting to Access denied page' });
     sessionStorage.setItem("redirectPath", location.pathname);
-    return <Navigate to="/access-denied" replace state={{ requiredRoles }} />;
+    // navigate does not work on account change
+    return (
+      <div data-testid="protected-route-insufficient-permissions">
+        <Navigate to="/access-denied" replace state={{ requiredRoles }} />
+      </div>
+    );
   }
   
-  return children;
+  return <div data-testid="protected-route-authorized">{children}</div>;
 };
 
 export default ProtectedRoute;

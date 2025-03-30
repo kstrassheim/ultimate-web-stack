@@ -36,11 +36,15 @@ const EntraLogon = () => {
 
   return <div className="logon-buttons" data-testid="entra-logon">
       <AuthenticatedTemplate>
-        <button onClick={logoutFunc} data-testid="sign-out-button">Sign Out</button>
-        <button onClick={()=>logonFunc(true)} data-testid="change-account-button">Change Account</button>
+        <div data-testid="authenticated-container">
+          <button onClick={logoutFunc} data-testid="sign-out-button">Sign Out</button>
+          <button onClick={()=>logonFunc(true)} data-testid="change-account-button">Change Account</button>
+        </div>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
-        <button onClick={logonFunc} data-testid="sign-in-button">Sign In</button>
+        <div data-testid="unauthenticated-container">
+          <button onClick={logonFunc} data-testid="sign-in-button">Sign In</button>
+        </div>
       </UnauthenticatedTemplate>
     </div>
 };
