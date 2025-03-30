@@ -1,5 +1,5 @@
 import { defineConfig } from 'cypress';
-
+import fs from 'fs';  // Add this import
 export default defineConfig({
   e2e: {
     baseUrl: 'http://localhost:5173',

@@ -19,7 +19,7 @@
     "test:e2e": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress\"",
     "test:e2e:chrome": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress:chrome\"",
     "test:e2e:edge": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress:edge\"",
-    "test:e2e:headless": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser electron'\""
+    "test:e2e:headless": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser chrome'\""
   },
   "dependencies": {
     "@azure/msal-browser": "^4.7.0",
