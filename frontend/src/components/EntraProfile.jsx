@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useMsal } from '@azure/msal-react';
 import dummy_avatar from '../assets/dummy-avatar.jpg'
 import appInsights from './appInsights'; 
-import { getProfilePhoto } from './api';
+import { getProfilePhoto } from '@/api/graphApi';
 
 
 const EntraProfile = () => {

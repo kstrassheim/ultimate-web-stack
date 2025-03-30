@@ -60,6 +60,21 @@ async def frontend_handler(path: str):
     fp = dist / path
     if path == '' or not fp.exists():
         fp = dist / "index.html"
+
+        # Set correct MIME types for JavaScript modules
+    media_type = None
+    if path.endswith('.js'):
+        media_type = "application/javascript"
+    elif path.endswith('.css'):
+        media_type = "text/css"
+    elif path.endswith('.html'):
+        media_type = "text/html"
+    elif path.endswith('.json'):
+        media_type = "application/json"
+    
+    # Pass the media_type to FileResponse
+    return FileResponse(fp, media_type=media_type)
+
     return FileResponse(fp)
 app.include_router(frontend_router, prefix="")
 

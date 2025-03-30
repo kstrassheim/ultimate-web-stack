@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import './Home.css'
-import { getUserData, getAllGroups } from '../components/api'
+import { getUserData } from '../api/api'
+import { getAllGroups } from '@/api/graphApi'
 import { useMsal } from '@azure/msal-react';
 import {env} from '../config'
 import appInsights from '../components/appInsights';
