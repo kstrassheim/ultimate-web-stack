@@ -11,6 +11,18 @@ export default defineConfig({
     // You can add launch options:
     // For example, to include the remote debugging flag:
 
+    // Video configuration
+    video: true,
+    videoCompression: 32,
+    videosFolder: 'cypress/videos',
+    
+    // Screenshot configuration
+    screenshotOnRunFailure: true,
+    screenshotsFolder: 'cypress/screenshots',
+    
+    // Only keep videos for failures
+    videoUploadOnPasses: false,
+   
     // Configure dev server to start before tests
     devServer: {
         command: 'npm run dev',
