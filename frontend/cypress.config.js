@@ -29,6 +29,23 @@ export default defineConfig({
         port: 5173,
         timeout: 60000, // milliseconds
     },
+
+     // Add this event handler to delete videos of passed tests
+     setupNodeEvents(on, config) {
+      on('after:spec', (spec, results) => {
+        // If the spec has a video and none of the tests failed
+        if (results && results.video && !results.tests.some(test => test.state === 'failed')) {
+          console.log(`Deleting video for passing spec: ${spec.name}`);
+          
+          // Delete the video file
+          try {
+            fs.unlinkSync(results.video);
+          } catch (error) {
+            console.error('Error deleting video:', error);
+          }
+        }
+      });
+    }
   },
   // Browser launch options with debugging port
 //   chromeWebSecurity: false, // Try disabling web security
