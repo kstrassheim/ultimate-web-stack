@@ -12,34 +12,7 @@
             "cwd": "${workspaceFolder}/backend",
             "args": [ "main:app","--reload", "--port", "8000"],
             "preLaunchTask": "Build Vite Frontend"
-          },
-        {
-            "name": "Vite Dev Server",
-            "type": "node-terminal",
-            "request": "launch",
-            "command": "npm run dev",  // Assumes your package.json has a "dev" script for Vite
-            "cwd": "${workspaceFolder}/frontend",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Attach to (Chrome)",
-            "type": "pwa-chrome",         // Use "pwa-chrome" for VS Code built-in debugger (VS Code 1.46+)
-            "request": "attach",
-            "port": 9222,                 // must match CYPRESS_REMOTE_DEBUGGING_PORT
-            "webRoot": "${workspaceFolder}/frontend",   // root of your web app source code
-            "urlFilter": "http://localhost*",  // (optional) only attach to your app's URLs
-            "skipFiles": ["cypress_runner.js"],// skip Cypress internal script in debugger
-            "sourceMaps": true             // ensure VS Code uses source maps
-          },
-        {
-            "name": "Chrome Debug",
-            "type": "chrome",
-            "request": "launch",
-            "url": "http://localhost:5173",  // Adjust if your Vite dev server uses a different port
-            "webRoot": "${workspaceFolder}/frontend"
-        },
-
-        // Mocked startups
+        },    // Mocked startups
         {
             "name": "FastAPI - Mock",
             "type": "debugpy",
@@ -58,44 +31,53 @@
             }
         },
         {
-            "name": "Vite Dev Server - Mock - Admin",
+            "name": "Vite Dev Server",
             "type": "node-terminal",
             "request": "launch",
-            "command": "npm run dev -- --role=Admin",
+            "command": "npm run dev",  // Assumes your package.json has a "dev" script for Vite
             "cwd": "${workspaceFolder}/frontend",
             "console": "integratedTerminal"
         },
         {
-            "name": "Vite Dev Server - Mock - User",
+            "name": "Vite Dev Server - Mock",
             "type": "node-terminal",
             "request": "launch",
-            "command": "npm run dev -- --role=User",
+            "command": "npm run dev -- --mock",
             "cwd": "${workspaceFolder}/frontend",
             "console": "integratedTerminal"
-        }
+        },
+        {
+            "name": "Chrome Debug",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:5173",  // Adjust if your Vite dev server uses a different port
+            "webRoot": "${workspaceFolder}/frontend"
+        },
+        {
+            "name": "Attach to (Chrome)",
+            "type": "pwa-chrome",         // Use "pwa-chrome" for VS Code built-in debugger (VS Code 1.46+)
+            "request": "attach",
+            "port": 9222,                 // must match CYPRESS_REMOTE_DEBUGGING_PORT
+            "webRoot": "${workspaceFolder}/frontend",   // root of your web app source code
+            "urlFilter": "http://localhost*",  // (optional) only attach to your app's URLs
+            "skipFiles": ["cypress_runner.js"],// skip Cypress internal script in debugger
+            "sourceMaps": true             // ensure VS Code uses source maps
+          }
     ],
     "compounds": [
         {
-        "name": "Full Stack",
-        "configurations": [
-            "FastAPI",
-            "Vite Dev Server",
-            "Chrome Debug"
-        ]
-        },
-        {
-            "name": "Full Stack Mock Admin",
+            "name": "Full Stack",
             "configurations": [
-                "FastAPI - Mock",
-                "Vite Dev Server - Mock - Admin",
+                "FastAPI",
+                "Vite Dev Server",
                 "Chrome Debug"
             ]
         },
         {
-            "name": "Full Stack Mock User",
+            "name": "Full Stack Mock",
             "configurations": [
                 "FastAPI - Mock",
-                "Vite Dev Server - Mock - User",
+                "Vite Dev Server - Mock",
                 "Chrome Debug"
             ]
         }

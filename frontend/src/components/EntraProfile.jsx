@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { loginRequest } from './entraAuth';
 import { useMsal } from '@azure/msal-react';
 import dummy_avatar from '../assets/dummy-avatar.jpg'
 import appInsights from './appInsights'; 
@@ -22,7 +21,7 @@ const EntraProfile = () => {
     if (currentAccount && currentAccount !== account) {
       setAccount(currentAccount);
     }
-  }, [instance, instance.getActiveAccount()?.name]);
+  }, [instance,  instance.getActiveAccount()?.name]);
 
   useEffect(() => { fetchProfilePhotoFunc(); }, [account]);
 

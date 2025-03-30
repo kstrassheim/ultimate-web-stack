@@ -3,19 +3,8 @@ import { retreiveTokenForBackend, retreiveTokenForGraph, loginRequest } from './
 import appInsights from './appInsights'; 
 
 import mockGraphApi from '../mock/graphApiMock';
-if (__DEBUG__) {
-  // import('../mock/graphApiMock').then(module => {
-  //   console.log('Debug mode is enabled! Applying mock Graph API instance...');
-  //   // Use the default export from the dynamically imported module
-  //   const mockGraphApi = module.default;
-  //   mockGraphApi(__MOCKROLE__);
-  // });
-  console.log('Debug mode is enabled! Applying mock Graph API instance...');
-  const mockRoleFromStorage = localStorage.getItem('MOCKROLE');
-  console.log('Mock role from storage:', mockRoleFromStorage);
-  console.log('Mock role from vite:', __MOCKROLE__);
-  mockGraphApi(mockRoleFromStorage || __MOCKROLE__);
-// Replace '__MOCKROLE__' with a default value if needed
+if (__MOCK__) {
+  mockGraphApi();
 }
 
 export const getUserData = async (instance) => {

@@ -137,8 +137,7 @@ const getAllGroups = async (instance) => {
   return isAdmin ? adminGroups: mockGroups;
 };
 
-const mockGraphApi = (role) => {
-  if (!role) { return; }
+const mockGraphApi = () => {
   console.log(`Mocking API calls`);
   window.getProfilePhoto = getProfilePhoto;
 

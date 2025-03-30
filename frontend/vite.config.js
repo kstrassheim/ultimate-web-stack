@@ -41,15 +41,14 @@ const copyLogos = () => {
 
 //const mockRoleIndex = process.argv.indexOf('--role');
 // const mockRole = mockRoleIndex > -1 ? process.argv[mockRoleIndex + 1] : null;
-const role = process.env.npm_config_role || null;  // Read the custom param
-console.log(`Mocking role: ${role}`); 
+const isMockEnabled = process.env.npm_config_mock === 'true';
+console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
 
 export default defineConfig({
   plugins: [react()],
   base: "/",
   define: {
-    __DEBUG__: !isDeployment,
-    __MOCKROLE__: JSON.stringify(role),
+    __MOCK__: JSON.stringify(isMockEnabled),
     // define another production uri for deployment then local
     __PROD_URI__: isDeployment ? JSON.stringify(tfconfig.web_url.value) : JSON.stringify('http://localhost:8000')
   },

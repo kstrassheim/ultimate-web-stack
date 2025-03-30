@@ -1,4 +1,4 @@
-import accounts from './mockUsers.js';
+import accounts from './accounts.js';
 
 // Create a proper class that can be instantiated with 'new'
 export class PublicClientApplication {

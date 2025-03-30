@@ -1,4 +1,4 @@
-const meguminAccount = {
+const megumin = {
     username: "megumin@crimsondemons.com",
     name: "Megumin",
     localAccountId: "explosion-mage-id",
@@ -9,7 +9,7 @@ const meguminAccount = {
     },
   };
   
-  const aquaAccount = {
+  const aqua = {
     username: "aqua@axisorder.com",
     name: "Aqua",
     localAccountId: "water-goddess-id",
@@ -19,5 +19,5 @@ const meguminAccount = {
       preferred_username: "aqua@axisorder.com",
     },
   };
-const accounts = [meguminAccount, aquaAccount];
+const accounts = [megumin, aqua];
 export default accounts;
