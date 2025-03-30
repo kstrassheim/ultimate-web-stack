@@ -25,6 +25,6 @@ dist-ssr
 .vite
 
 # Cypress
-cypress/screenshots/
-cypress/videos/
-cypress/downloads/
+cypress/screenshots/**/*
+cypress/videos/**/*
+cypress/downloads/**/*
