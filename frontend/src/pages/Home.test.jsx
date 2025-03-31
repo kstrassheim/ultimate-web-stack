@@ -11,11 +11,7 @@ import appInsights from '@/log/appInsights';
 const { instance: mockMsalInstance } = useMsal();
 
 describe('Home Component', () => {
-  beforeEach(() => {
-    // Reset mocks before each test
-    jest.clearAllMocks();
-  });
-  
+
   const renderHomeWithMocks = () => {
     return render(<Home />);
   };

@@ -16,5 +16,10 @@ module.exports = {
     moduleFileExtensions: ['js', 'jsx', 'json'],
     // Mock all files with __mocks__ folder
     automock: false,
-    resetMocks: false
+    resetMocks: false,
+
+    reporters: [
+        "default",
+        "<rootDir>/jest-preview-reporter.js"
+      ]
   };

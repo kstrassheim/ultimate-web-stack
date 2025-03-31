@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { jestPreviewConfigure, preview } from 'jest-preview';
+import { jestPreviewConfigure, debug } from 'jest-preview';
 import PublicClientApplication from './mock/azureMsalBrowser';
 
 global.import = { meta: { env: { MODE: 'test', PROD: false, DEV: false } } };
@@ -89,13 +89,17 @@ jestPreviewConfigure({
     port: 3336,
     // Optional: Automatically open preview after the first debug() call
     autoOpen: true,
-  });
+    cssFiles: ['src/index.css', 'src/App.css'], // Add your CSS files // Add your CSS files
+});
   
-  // Make preview globally available
-  global.preview = preview;
-  
-  // Add a convenience function for quick debugging
-  global.debugComponent = () => {
-    console.log('⚡ Component rendered in preview - http://localhost:3336');
-    preview.debug();
-  };
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  //debug();
+});
+  // Automatically open preview after each test
+afterEach(() => {
+  // You can conditionally call preview.debug() if needed.
+  // Be aware this will trigger the preview for every test (which might slow down your test run).
+  debug();
+});
