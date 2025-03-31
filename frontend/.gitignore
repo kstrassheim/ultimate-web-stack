@@ -28,3 +28,9 @@ dist-ssr
 cypress/screenshots/**/*
 cypress/videos/**/*
 cypress/downloads/**/*
+
+# Jest coverage
+/coverage
+/frontend/coverage
+.nyc_output
+*.lcov

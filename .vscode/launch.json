@@ -5,6 +5,21 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "node",
+            "request": "launch",
+            "name": "Jest Current Test",
+            "program": "${workspaceFolder}/frontend/node_modules/jest/bin/jest.js",
+            "args": [
+                "--runInBand",
+                "--no-cache",
+                "--testTimeout=10000",
+                "${fileBasename}"
+            ],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "cwd": "${workspaceFolder}/frontend",
+        },
+        {
             "name": "FastAPI",
             "type": "debugpy",
             "request": "launch",
@@ -77,7 +92,7 @@
             "urlFilter": "http://localhost*",  // (optional) only attach to your app's URLs
             "skipFiles": ["cypress_runner.js"],// skip Cypress internal script in debugger
             "sourceMaps": true             // ensure VS Code uses source maps
-          }
+        }
     ],
     "compounds": [
         {
