@@ -25,6 +25,52 @@ jest.mock('@azure/msal-react', () => ({
     UnauthenticatedTemplate: ({ children }) => children
   }));
 
+// Also mock the appInsights instance directly
+// Add this to your jest.setup.js
+jest.mock('@/log/appInsights', () => {
+  return {
+    trackEvent: jest.fn(),
+    trackException: jest.fn(),
+    trackPageView: jest.fn(),
+    trackMetric: jest.fn(),
+    setAuthenticatedUserContext: jest.fn()
+  };
+});
+
+// Mock graph API with spy wrappers
+jest.mock('@/api/graphApi', () => {
+  const actualMock = jest.requireActual('./mock/graphApi');
+  
+  // Create an object to hold all spied functions
+  const spiedMock = { ...actualMock };
+  
+  // Spy on all functions exported from the mock
+  Object.keys(actualMock).forEach(key => {
+    if (typeof actualMock[key] === 'function') {
+      spiedMock[key] = jest.fn().mockImplementation(actualMock[key]);
+    }
+  });
+  
+  return spiedMock;
+});
+
+// Mock API with spy wrappers
+jest.mock('@/api/api', () => {
+  const actualMock = jest.requireActual('./mock/api');
+  
+  // Create an object to hold all spied functions
+  const spiedMock = { ...actualMock };
+  
+  // Spy on all functions exported from the mock
+  Object.keys(actualMock).forEach(key => {
+    if (typeof actualMock[key] === 'function') {
+      spiedMock[key] = jest.fn().mockImplementation(actualMock[key]);
+    }
+  });
+  
+  return spiedMock;
+});
+
 // Mock config.js entirely - this is the most reliable approach
 jest.mock('@/config', () => ({
     env: 'test',
@@ -53,4 +99,3 @@ jestPreviewConfigure({
     console.log('⚡ Component rendered in preview - http://localhost:3336');
     preview.debug();
   };
-  

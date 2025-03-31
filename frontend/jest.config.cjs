@@ -4,7 +4,7 @@ module.exports = {
     moduleNameMapper: {
         "^@/(.*)$": "<rootDir>/src/$1", // This maps @/ to the src directory
         "\\.(css|less|sass|scss)$": "identity-obj-proxy",
-        "\\.(gif|ttf|eot|svg|png)$": "jest-transform-stub"
+        '\\.(jpg|jpeg|png|gif|svg)$': '<rootDir>/mock/fileMock.js',
     },
     transform: {
         "^.+\\.[jt]sx?$": ["@swc/jest"]
