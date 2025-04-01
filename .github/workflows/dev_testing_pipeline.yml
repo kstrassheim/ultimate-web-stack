@@ -7,33 +7,13 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  # First call the Terraform deployment workflow
-  # terraform:
-  #   permissions:
-  #     id-token: write  # Grant OIDC token permission
-  #     contents: read   # Needed to check out code
-  #   uses: ./.github/workflows/.terraform_deployment.yml
-  #   with:
-  #     environment: 'dev'  # Use dev environment for testing
-  #   secrets:
-  #     AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  #     AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  #     AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-  # Run Jest tests for frontend components
+  # Run Jest tests for frontend components in an official Node.js container
   frontend-unit-tests:
-    runs-on: ubuntu-latest
+    container:
+      image: node:20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      # Set up Node.js for frontend
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
       
       # Install frontend dependencies
       - name: Install frontend dependencies
@@ -56,43 +36,18 @@ jobs:
           path: frontend/coverage
           if-no-files-found: ignore
   
-  # Then run Cypress tests with Terraform output
+  # Then run Cypress tests with Terraform output in an official Node.js container.
+  # Note: The node:20 image is Debian‑based, so apt commands in your steps will work.
   e2e-tests:
-    # needs: terraform
-    # Run E2E tests after unit tests pass
-    runs-on: ubuntu-latest
-    
+    # If you want these tests to run after the frontend-unit-tests,
+    # add the following: needs: frontend-unit-tests
+    container:
+      image: node:20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # # Download the Terraform outputs from previous job
-      # - name: Download Terraform output artifact
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: terraform-config-dev
-      #     path: .
-      
-      # # Copy Terraform outputs to backend and frontend
-      # - name: Copy Terraform outputs to app directories
-      #   run: |
-      #     if [ -f "terraform_output.json" ]; then
-      #       cp terraform_output.json backend/terraform.config.json
-      #       cp terraform_output.json frontend/terraform.config.json
-      #       echo "Terraform outputs copied to app directories"
-      #     else
-      #       echo "Warning: terraform_output.json not found, tests may not have correct configuration"
-      #     fi
-      
-      # Set up Node.js for frontend
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
-      
-      # Set up Python for backend
+      # Set up Python for backend (using the container's apt-get)
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -106,11 +61,9 @@ jobs:
           cd backend
           python -m pip install --upgrade pip
           python -m venv venv
-          source venv/bin/activate
+          . venv/bin/activate
           pip install -r requirements.txt
-          # Make sure the virtual env path exists
-          python -c "import sys; print(sys.executable)" > python_path.txt
-          cat python_path.txt
+          python -c "import sys; print(sys.executable)"
       
       # Install frontend dependencies
       - name: Install frontend dependencies
