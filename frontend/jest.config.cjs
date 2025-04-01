@@ -1,6 +1,6 @@
 // jest.config.cjs
 module.exports = {
-    testEnvironment: "jest-environment-jsdom",
+    testEnvironment: "jsdom",
     moduleNameMapper: {
         "^@/(.*)$": "<rootDir>/src/$1", // This maps @/ to the src directory
         "\\.(css|less|sass|scss)$": "identity-obj-proxy",

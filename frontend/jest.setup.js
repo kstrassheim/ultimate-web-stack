@@ -27,14 +27,26 @@ jest.mock('@azure/msal-react', () => ({
 
 // Also mock the appInsights instance directly
 // Add this to your jest.setup.js
+// Fix the AppInsights mock by directly returning the mock implementation
+// Fix the AppInsights mock by directly returning the mock implementation
 jest.mock('@/log/appInsights', () => {
-  return {
-    trackEvent: jest.fn(),
-    trackException: jest.fn(),
-    trackPageView: jest.fn(),
-    trackMetric: jest.fn(),
-    setAuthenticatedUserContext: jest.fn()
-  };
+  // Get the original mock
+  const originalMock = jest.requireActual('./mock/appInsights').default;
+  
+  // Create a new object with the same properties
+  const spiedMock = { ...originalMock };
+  
+  // Add spies to all functions while preserving their implementation
+  Object.keys(originalMock).forEach(key => {
+    if (typeof originalMock[key] === 'function') {
+      // Create a spy that calls the original implementation
+      spiedMock[key] = jest.fn().mockImplementation((...args) => 
+        originalMock[key](...args)
+      );
+    }
+  });
+  
+  return spiedMock;
 });
 
 // Mock graph API with spy wrappers
@@ -81,6 +93,15 @@ jest.mock('@/config', () => ({
     backendUrl: '',
     frontendUrl: 'http://localhost:5173'
   }));
+
+  jest.mock('@/components/Loading', () => {
+    return {
+      __esModule: true,
+      default: jest.fn(() => null), // Renders nothing
+      // Optionally mock the sleep if needed
+      sleep: jest.fn().mockResolvedValue(undefined)
+    };
+  });
 
 // Configure jest-preview
 jestPreviewConfigure({

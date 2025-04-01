@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import appInsights from '../log/appInsights';
+import appInsights from '@/log/appInsights';
 
 const AccessDenied = () => {
   appInsights.trackEvent({ name: 'Access Denied page' });

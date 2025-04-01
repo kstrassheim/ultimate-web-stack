@@ -18,7 +18,7 @@ const Admin = () => {
     
     try {
       const result = await getAdminData(instance);
-      await sleep(1000); // Optional: Add a delay to show the loading state
+      //await sleep(1000); // Optional: Add a delay to show the loading state
       setData(result);
     } catch (err) {
       setError(err.message);

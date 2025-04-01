@@ -1,6 +1,6 @@
 // Mock implementation for backend API calls based on actual API responses
 export const getUserData = async (instance) => {
-  console.log('Using mock getUserData');
+  //console.log('Using mock getUserData');
   
   // Add a small delay to simulate network latency
   await new Promise(resolve => setTimeout(resolve, 300));
@@ -12,7 +12,7 @@ export const getUserData = async (instance) => {
 };
 
 export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
-  console.log('Using mock getAdminData with:', { message, status });
+  //console.log('Using mock getAdminData with:', { message, status });
   const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   
   // Add a small delay to simulate network latency
