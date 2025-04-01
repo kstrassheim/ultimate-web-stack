@@ -1,11 +1,6 @@
-import jwt 
 from fastapi import APIRouter, Security, HTTPException, Body
 from pydantic import BaseModel
-from common import azure_scheme, scopes, logger
-import logging
-import requests
-from common import tfconfig
-from role_based_access import required_roles 
+from common import azure_scheme, scopes, logger, required_roles
 
 api_router = APIRouter()
 

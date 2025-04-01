@@ -7,46 +7,54 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  # First call the Terraform deployment workflow
-  terraform:
-    permissions:
-      id-token: write  # Grant OIDC token permission
-      contents: read   # Needed to check out code
-    uses: ./.github/workflows/.terraform_deployment.yml
-    with:
-      environment: 'dev'  # Use dev environment for testing
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  # Run Jest tests for frontend components in an official Node.js container
+  frontend-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Set up Node.js directly on the runner
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org/'
+      
+      # Install frontend dependencies with retry logic
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          # Configure npm for better reliability
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 60000
+          npm ci || npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Run Jest tests
+      - name: Run Jest tests
+        run: |
+          cd frontend
+          npm run test:coverage
+      
+      # Upload test coverage report as an artifact
+      - name: Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-coverage
+          path: frontend/coverage
+          if-no-files-found: ignore
   
-  # Then run Cypress tests with Terraform output
   e2e-tests:
-    needs: terraform
+    #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      # Download the Terraform outputs from previous job
-      - name: Download Terraform output artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-config-dev
-          path: .
-      
-      # Copy Terraform outputs to backend and frontend
-      - name: Copy Terraform outputs to app directories
-        run: |
-          if [ -f "terraform_output.json" ]; then
-            cp terraform_output.json backend/terraform.config.json
-            cp terraform_output.json frontend/terraform.config.json
-            echo "Terraform outputs copied to app directories"
-          else
-            echo "Warning: terraform_output.json not found, tests may not have correct configuration"
-          fi
-      
+    
       # Set up Node.js for frontend
       - name: Set up Node.js
         uses: actions/setup-node@v4

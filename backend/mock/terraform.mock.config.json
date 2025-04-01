@@ -1,0 +1,71 @@
+{
+  "app_roles_allowed_member_types_list": {
+    "sensitive": false,
+    "type": "string",
+    "value": "Application, User"
+  },
+  "application_insights_connection_string": {
+    "sensitive": false,
+    "type": "string",
+    "value": "MockInstrumentationConnectionString"
+  },
+  "application_insights_instrumentation_key": {
+    "sensitive": false,
+    "type": "string",
+    "value": "mock-instrumentation-key-12345"
+  },
+  "client_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "00000000-0000-0000-0000-000000000001"
+  },
+  "env": {
+    "sensitive": false,
+    "type": "string",
+    "value": "dev"
+  },
+  "oauth2_permission_scope": {
+    "sensitive": false,
+    "type": "string",
+    "value": "mock-user_impersonation"
+  },
+  "oauth2_permission_scope_uri": {
+    "sensitive": false,
+    "type": "string",
+    "value": "mock-api://00000000-0000-0000-0000-000000000001/user_impersonation"
+  },
+  "requested_graph_api_application_permissions": {
+    "sensitive": false,
+    "type": [
+      "list",
+      "string"
+    ],
+    "value": []
+  },
+  "requested_graph_api_delegated_permissions": {
+    "sensitive": false,
+    "type": [
+      "list",
+      "string"
+    ],
+    "value": [
+      "User.Read.All.Mock",
+      "Group.Read.All.Mock"
+    ]
+  },
+  "tenant_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "00000000-0000-0000-0000-000000000002"
+  },
+  "web_app_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "mock-web-stack"
+  },
+  "web_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://mock-web-stack.example.com"
+  }
+}

@@ -4,9 +4,18 @@ import fs from 'fs';
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 // import { viteStaticCopy } from 'vite-plugin-static-copy';
-import tfconfig from './terraform.config.json'
+
+const isMockEnabled = process.env.npm_config_mock === 'true';
+console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
+// check if this is an pipeline deployment (pipeline will create a empty .deploy file)
 const isDeployment = fs.existsSync('./.deploy');
 
+// get terraform config whether mock or real
+const configPath = isMockEnabled 
+  ? resolve(__dirname, './mock/terraform.mock.config.json')
+  : resolve(__dirname, './terraform.config.json');
+const tfconfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+console.log(`Using terraform config: ${configPath}`);
 
 // Optional: Copy logo files manually before Vite starts (for development)
 const copyLogos = () => {
@@ -41,8 +50,7 @@ const copyLogos = () => {
 
 //const mockRoleIndex = process.argv.indexOf('--role');
 // const mockRole = mockRoleIndex > -1 ? process.argv[mockRoleIndex + 1] : null;
-const isMockEnabled = process.env.npm_config_mock === 'true';
-console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
+
 
 const getAliases = () => {
 
@@ -55,6 +63,9 @@ const getAliases = () => {
     // !! Important : This does the actual mocking in a transparent way
     return {
       '@azure/msal-browser': resolve(__dirname, 'mock/azureMsalBrowser.js'),
+      '@/../terraform.config.json': resolve(__dirname, 'mock/terraform.mock.config.json'),
+      '@/log/appInsights': resolve(__dirname, 'mock/appInsights.js'),
+      '../log/appInsights': resolve(__dirname, 'mock/appInsights.js'),
       '@/api/graphApi': resolve(__dirname, 'mock/graphApi.js'),
       ...baseAliases
     };

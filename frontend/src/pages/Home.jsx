@@ -48,23 +48,32 @@ const Home = () => {
     <>
       <Loading visible={loading} message="Fetching data from APIs..." />
       
-      <div>
+      <div data-testid="home-container">
         <h1>Home Page</h1>
-        {/* <p>Environment: {env}</p>
-         */}
-        {error && <div className="error">Error: {error}</div>}
+        {/* <p>Environment: {env}</p> */}
         
-        <div className="card">
+        {error && <div data-testid="error-message" className="error">Error: {error}</div>}
+        
+        <div data-testid="api-response-card" className="card">
           <h2>API Response</h2>
-          <p>{data ? data.message : 'No data available'}</p>
+          {data ? (
+            <p data-testid="api-message-data">{data.message}</p>
+          ) : (
+            <p data-testid="api-message-empty">No data available</p>
+          )}
         </div>
         
-        <div className="card">
+        <div data-testid="groups-container" className="card">
           <h2>Groups from Microsoft Graph API</h2>
           <GroupsList groups={groupData} loading={loading} />
         </div>
         
-        <button onClick={fetchData} disabled={loading} className="reload-button">
+        <button 
+          data-testid="reload-button"
+          onClick={fetchData} 
+          disabled={loading} 
+          className="reload-button"
+        >
           {loading ? 'Loading...' : 'Reload Data'}
         </button>
       </div>

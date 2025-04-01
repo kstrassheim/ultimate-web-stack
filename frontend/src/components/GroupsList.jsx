@@ -11,7 +11,7 @@ const GroupsList = ({ groups, loading }) => {
   }
 
   return (
-    <div className="groups-container" data-testid="groups-container">
+    <div className="groups-list-container" data-testid="groups-list-container">
       <table className="groups-table" data-testid="groups-table">
         <thead>
           <tr>

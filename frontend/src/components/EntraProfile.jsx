@@ -4,17 +4,24 @@ import dummy_avatar from '@/assets/dummy-avatar.jpg'
 import appInsights from '@/log/appInsights'; 
 import { getProfilePhoto } from '@/api/graphApi';
 
-
 const EntraProfile = () => {
   const { instance } = useMsal();
   const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
   const [account, setAccount] = useState(null);
+  
   const fetchProfilePhotoFunc = async () => {
     if (account) {
-      let photo = await getProfilePhoto(instance, account);
-      setPhotoUrl(photo);
-    }
-    else {
+      try {
+        let photo = await getProfilePhoto(instance, account);
+        setPhotoUrl(photo);
+      } catch (error) {
+        console.error("Error fetching profile photo:", error);
+        // Fall back to dummy avatar on error
+        setPhotoUrl(dummy_avatar);
+        // Log the error for telemetry
+        appInsights.trackException({ error });
+      }
+    } else {
       setPhotoUrl(dummy_avatar);
     }
   };

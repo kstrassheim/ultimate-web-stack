@@ -1,13 +1,11 @@
-from fastapi import FastAPI, APIRouter, Security
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from pathlib import Path
 #for health check
 import psutil
 import datetime
 # for Application Insights
-from opencensus.ext.azure.trace_exporter import AzureExporter
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
 
@@ -22,21 +20,13 @@ mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # Init FastAPI
 app = FastAPI()
 
-from common import azure_scheme, tfconfig, logger
+from common import origins, log_azure_exporter
+
 # Only add custom CORS origins if in development
-origins = ["http://localhost:5173", "http://localhost:5173/__cypress/", "http://localhost:8000"] if tfconfig["env"]["value"] == "dev" else []
 app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# Application Insights
-# Set up the Azure exporter with your Full insigthts connection string
-azure_exporter = AzureExporter(connection_string=tfconfig['application_insights_connection_string']['value'])
-
 # Add OpenCensus middleware to capture request telemetry
-app.add_middleware(
-    FastAPIMiddleware,
-    exporter=azure_exporter,
-    sampler=ProbabilitySampler(1.0),  # Adjust sampling rate as needed
-)
+app.add_middleware( FastAPIMiddleware,  exporter=log_azure_exporter, sampler=ProbabilitySampler(1.0))
 
 # Register API Router
 app.include_router(api_router, prefix="/api")
@@ -78,28 +68,7 @@ async def frontend_handler(path: str):
     return FileResponse(fp)
 app.include_router(frontend_router, prefix="")
 
-# Print mock settings
-# from rich import print as rprint
-# from rich.console import Console
-# from rich.panel import Panel
-# # Check MOCK environment variable
-# mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
-# if mock_enabled:
-#     console = Console()
-#     console.print(Panel(f"MOCK Environment: [bold]ENABLED[/bold]", style="yellow"))
-#     logger.info("MOCK environment is enabled")
-# else:
-#     console = Console()
-#     console.print(Panel(f"MOCK Environment: [bold]DISABLED[/bold]", style="green"))
-#     logger.info("MOCK environment is disabled")
 
-
-# On startup, load the OpenID configuration (optional but recommended)
-# I get 401 with that
-# from common import azure_scheme
-# @app.on_event("startup")
-# async def startup_event():
-#     await azure_scheme.openid_config.load_config()
 
 # Bootstrap the app
 if __name__ == '__main__':

@@ -1,0 +1,95 @@
+// import React from 'react';
+// import { render, screen, act } from '@testing-library/react';
+// import '@testing-library/jest-dom';
+// import Loading, { sleep } from './Loading';
+
+// // Save originals
+// const originalRAF = window.requestAnimationFrame;
+// const originalCAF = window.cancelAnimationFrame;
+
+// describe('Static Rendering Tests', () => {
+//   // Use real timers for static tests
+//   beforeEach(() => {
+//     jest.useRealTimers();
+//   });
+
+//   afterEach(() => {
+//     jest.clearAllMocks();
+//   });
+
+//   test('renders nothing when visible is false', () => {
+//     render(<Loading visible={false} />);
+//     expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+//   });
+
+//   test('renders loading overlay with default message when visible', () => {
+//     render(<Loading visible={true} />);
+//     expect(screen.getByTestId('loading-overlay')).toBeInTheDocument();
+//     expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+//     expect(screen.getByTestId('loading-message')).toHaveTextContent('Loading data...');
+//   });
+
+//   test('renders custom message when provided', () => {
+//     const customMessage = 'Please wait...';
+//     render(<Loading visible={true} message={customMessage} />);
+//     expect(screen.getByTestId('loading-message')).toHaveTextContent(customMessage);
+//   });
+
+//   test('responds to visibility changes', () => {
+//     const { rerender } = render(<Loading visible={false} />);
+//     expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+//     // Make visible
+//     rerender(<Loading visible={true} />);
+//     expect(screen.getByTestId('loading-overlay')).toBeInTheDocument();
+//     // Hide again
+//     rerender(<Loading visible={false} />);
+//     expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+//   });
+
+//   test('sleep utility function works correctly', async () => {
+//     const mockResolve = jest.fn();
+//     const promise = sleep(1000).then(mockResolve);
+//     expect(mockResolve).not.toHaveBeenCalled();
+//     await act(async () => {
+//       // Use real timers here
+//       await promise;
+//     });
+//     expect(mockResolve).toHaveBeenCalled();
+//   });
+// });
+
+// describe('Animation Tests', () => {
+//   beforeEach(() => {
+//     // Use fake timers and override RAF in these tests
+//     jest.useFakeTimers();
+//     window.requestAnimationFrame = jest.fn(cb => setTimeout(() => cb(Date.now()), 0));
+//     window.cancelAnimationFrame = jest.fn(id => clearTimeout(id));
+//   });
+
+//   afterEach(() => {
+//     // Restore originals and real timers
+//     window.requestAnimationFrame = originalRAF;
+//     window.cancelAnimationFrame = originalCAF;
+//     jest.useRealTimers();
+//   });
+
+//   test('starts animation when visible', () => {
+//     render(<Loading visible={true} />);
+//     act(() => {
+//       jest.runOnlyPendingTimers();
+//     });
+//     // Our custom RAF mock should have been called.
+//     expect(window.requestAnimationFrame).toHaveBeenCalled();
+//   });
+
+//   test('cancels animation when unmounted', () => {
+//     const { unmount } = render(<Loading visible={true} />);
+//     act(() => {
+//       jest.runOnlyPendingTimers();
+//     });
+//     expect(window.requestAnimationFrame).toHaveBeenCalled();
+//     window.requestAnimationFrame.mockClear();
+//     unmount();
+//     expect(window.cancelAnimationFrame).toHaveBeenCalled();
+//   });
+// });
