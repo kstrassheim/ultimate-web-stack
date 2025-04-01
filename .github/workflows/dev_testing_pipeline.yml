@@ -39,15 +39,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          # Set npm registry to use the GitHub npm registry mirror
-          npm config set registry https://registry.npmjs.org/
-          # Increase network timeout to deal with potential network issues
-          npm config set network-timeout 300000
-          # Try npm ci with retries
-          npm ci --no-audit --no-fund || npm ci --no-audit --no-fund || npm ci --no-audit --no-fund
-        env:
-          # Use authentication token if you have it set up
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
+          npm ci
       
       # Run Jest tests
       - name: Run Jest tests
