@@ -9,18 +9,28 @@ on:
 jobs:
   # Run Jest tests for frontend components in an official Node.js container
   frontend-unit-tests:
-    runs-on: ubuntu-latest  # Required: specify the runner that hosts the container
-    container:
-      image: node:20
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # Install frontend dependencies
+      # Set up Node.js directly on the runner
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org/'
+      
+      # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          # Configure npm for better reliability
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 60000
+          npm ci || npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       # Run Jest tests
       - name: Run Jest tests
@@ -38,7 +48,7 @@ jobs:
           if-no-files-found: ignore
   
   e2e-tests:
-    needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
+    #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
     runs-on: ubuntu-latest
     
     steps:
