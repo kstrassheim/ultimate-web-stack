@@ -21,45 +21,36 @@ describe('NotFound Page', () => {
     jest.clearAllMocks();
   });
 
-//   test('renders the 404 page with correct elements', () => {
-//     render(
-//       <MemoryRouter future={routerFutureConfig}>
-//         <NotFound />
-//       </MemoryRouter>
-//     );
+  test('renders the 404 page with correct elements', () => {
+    render(
+      <MemoryRouter future={routerFutureConfig}>
+        <NotFound />
+      </MemoryRouter>
+    );
 
-//     // Check that the page renders with correct heading
-//     expect(screen.getByTestId('not-found-page')).toBeInTheDocument();
-//     expect(screen.getByTestId('not-found-heading')).toHaveTextContent('404');
+    // Check that the page renders with correct heading
+    expect(screen.getByTestId('not-found-page')).toBeInTheDocument();
+    expect(screen.getByTestId('not-found-heading')).toHaveTextContent('404');
     
-//     // Check that the home link exists
-//     const homeLink = screen.getByTestId('not-found-home-link');
-//     expect(homeLink).toBeInTheDocument();
-//     expect(homeLink).toHaveTextContent('Goto Home');
-//     expect(homeLink).toHaveAttribute('href', '/');
-//   });
-
-//   test('tracks page view with appInsights', () => {
-//     render(
-//       <MemoryRouter future={routerFutureConfig}>
-//         <NotFound />
-//       </MemoryRouter>
-//     );
-
-//     // Verify that appInsights.trackEvent was called with the correct parameters
-//     expect(appInsights.trackEvent).toHaveBeenCalledTimes(1);
-//     expect(appInsights.trackEvent).toHaveBeenCalledWith({ 
-//       name: '404 - NotFound page' 
-//     });
-
-    test('true', () => {
-        render(
-          <MemoryRouter future={routerFutureConfig}>
-            {/* <NotFound /> */}
-          </MemoryRouter>
-        );
-    
-        // Verify that appInsights.trackEvent was called with the correct parameters
-        expect(true).toBe(true);
-    })
+    // Check that the home link exists
+    const homeLink = screen.getByTestId('not-found-home-link');
+    expect(homeLink).toBeInTheDocument();
+    expect(homeLink).toHaveTextContent('Goto Home');
+    expect(homeLink).toHaveAttribute('href', '/');
   });
+
+  test('tracks page view with appInsights', () => {
+    render(
+      <MemoryRouter future={routerFutureConfig}>
+        <NotFound />
+      </MemoryRouter>
+    );
+
+    // Verify that appInsights.trackEvent was called with the correct parameters
+    expect(appInsights.trackEvent).toHaveBeenCalledTimes(1);
+    expect(appInsights.trackEvent).toHaveBeenCalledWith({ 
+      name: '404 - NotFound page' 
+    });
+
+  });
+});
