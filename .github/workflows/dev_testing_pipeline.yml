@@ -39,13 +39,21 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          # Set npm registry to use the GitHub npm registry mirror
+          npm config set registry https://registry.npmjs.org/
+          # Increase network timeout to deal with potential network issues
+          npm config set network-timeout 300000
+          # Try npm ci with retries
+          npm ci --no-audit --no-fund || npm ci --no-audit --no-fund || npm ci --no-audit --no-fund
+        env:
+          # Use authentication token if you have it set up
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || github.token }}
       
       # Run Jest tests
       - name: Run Jest tests
         run: |
           cd frontend
-          npm test -- --coverage
+          npm run test:coverage
       
       # Upload test coverage report as an artifact
       - name: Upload test coverage
@@ -66,23 +74,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # Download the Terraform outputs from previous job
-      - name: Download Terraform output artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-config-dev
-          path: .
+      # # Download the Terraform outputs from previous job
+      # - name: Download Terraform output artifact
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: terraform-config-dev
+      #     path: .
       
-      # Copy Terraform outputs to backend and frontend
-      - name: Copy Terraform outputs to app directories
-        run: |
-          if [ -f "terraform_output.json" ]; then
-            cp terraform_output.json backend/terraform.config.json
-            cp terraform_output.json frontend/terraform.config.json
-            echo "Terraform outputs copied to app directories"
-          else
-            echo "Warning: terraform_output.json not found, tests may not have correct configuration"
-          fi
+      # # Copy Terraform outputs to backend and frontend
+      # - name: Copy Terraform outputs to app directories
+      #   run: |
+      #     if [ -f "terraform_output.json" ]; then
+      #       cp terraform_output.json backend/terraform.config.json
+      #       cp terraform_output.json frontend/terraform.config.json
+      #       echo "Terraform outputs copied to app directories"
+      #     else
+      #       echo "Warning: terraform_output.json not found, tests may not have correct configuration"
+      #     fi
       
       # Set up Node.js for frontend
       - name: Set up Node.js
