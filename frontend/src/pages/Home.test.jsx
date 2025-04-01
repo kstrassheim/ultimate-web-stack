@@ -33,7 +33,7 @@ describe('Home Component', () => {
     
     // Once data is loaded, verify display containers
     expect(screen.getByTestId('api-response-card')).toBeInTheDocument();
-    
+
     // Verify API calls were made
     expect(getUserData).toHaveBeenCalledTimes(1);
     expect(getUserData).toHaveBeenCalledWith(mockMsalInstance);

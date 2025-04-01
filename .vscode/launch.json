@@ -13,6 +13,7 @@
                 "--runInBand",
                 "--no-cache",
                 "--testTimeout=10000",
+                "--config=${workspaceFolder}/frontend/jest.config.cjs",
                 "${fileBasename}"
             ],
             "console": "integratedTerminal",

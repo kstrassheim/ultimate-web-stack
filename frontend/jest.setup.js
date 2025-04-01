@@ -73,7 +73,7 @@ jest.mock('@/api/api', () => {
 
 // Mock config.js entirely - this is the most reliable approach
 jest.mock('@/config', () => ({
-    env: 'test',
+    env: 'dev',
     isDev: false,
     isProd: false,
     productionUrl: '',
@@ -82,24 +82,22 @@ jest.mock('@/config', () => ({
     frontendUrl: 'http://localhost:5173'
   }));
 
-
 // Configure jest-preview
 jestPreviewConfigure({
-    // Optional: Specify a custom port (default is 3336)
     port: 3336,
-    // Optional: Automatically open preview after the first debug() call
     autoOpen: true,
     cssFiles: ['src/index.css', 'src/App.css'], // Add your CSS files // Add your CSS files
-});
-  
+    //debugOptions: { autoRefresh: true, pauseOnError: true }
+    webServerOptions: { headers: {'Cache-Control': 'no-store'}}
+  });
+
+global.debug = debug;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  //debug();
 });
-  // Automatically open preview after each test
+
+// Automatically open preview after each test
 afterEach(() => {
-  // You can conditionally call preview.debug() if needed.
-  // Be aware this will trigger the preview for every test (which might slow down your test run).
   debug();
 });
