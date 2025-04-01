@@ -28,7 +28,6 @@ jest.mock('@azure/msal-react', () => ({
 // Also mock the appInsights instance directly
 // Add this to your jest.setup.js
 // Fix the AppInsights mock by directly returning the mock implementation
-// Fix the AppInsights mock by directly returning the mock implementation
 jest.mock('@/log/appInsights', () => {
   // Get the original mock
   const originalMock = jest.requireActual('./mock/appInsights').default;

@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
 const Loading = ({ visible, message = "Loading data..." }) => {
-  // Always declare hooks at the top level, before any conditionals
   const [rotation, setRotation] = useState(0);
-  
+
   useEffect(() => {
-    // Only run the animation logic if component is visible
+    // Only run the animation logic if visible
     if (!visible) return;
     
     let animationFrame;
@@ -14,25 +13,24 @@ const Loading = ({ visible, message = "Loading data..." }) => {
     const animate = (timestamp) => {
       if (!startTime) startTime = timestamp;
       const progress = timestamp - startTime;
-      
       // Full rotation every second (360 degrees per 1000ms)
-      const newRotation = (progress / 1000 * 360) % 360;
+      const newRotation = ((progress / 1000) * 360) % 360;
       setRotation(newRotation);
-      
       animationFrame = requestAnimationFrame(animate);
     };
     
     animationFrame = requestAnimationFrame(animate);
     
     return () => {
-      cancelAnimationFrame(animationFrame);
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
     };
-  }, [visible]); // Add visible as dependency
-  
-  // Early return after hooks are declared
+  }, [visible]);
+
+  // Early return if not visible
   if (!visible) return null;
   
-  // Styles remain unchanged
   const overlayStyle = {
     position: 'fixed',
     top: 0,
@@ -43,7 +41,7 @@ const Loading = ({ visible, message = "Loading data..." }) => {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 9999
+    zIndex: 9999,
   };
 
   const contentStyle = {
@@ -53,16 +51,18 @@ const Loading = ({ visible, message = "Loading data..." }) => {
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center'
+    alignItems: 'center',
   };
 
   const spinnerStyle = {
-    width: '50px',
-    height: '50px',
-    border: '5px solid rgba(0, 0, 0, 0.1)',
+    width: '40px',
+    height: '40px',
+    border: '6px solid #ccc',
+    borderTop: '6px solid #0078d4',
     borderRadius: '50%',
-    borderTopColor: '#4f46e5',
-    transform: `rotate(${rotation}deg)`
+    marginBottom: '20px',
+    transform: `rotate(${rotation}deg)`,
+    transition: 'transform 0.1s linear',
   };
 
   const textStyle = { 
