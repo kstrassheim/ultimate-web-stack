@@ -9,6 +9,7 @@ on:
 jobs:
   # Run Jest tests for frontend components in an official Node.js container
   frontend-unit-tests:
+    runs-on: ubuntu-latest  # Required: specify the runner that hosts the container
     container:
       image: node:20
     steps:
@@ -39,8 +40,7 @@ jobs:
   # Then run Cypress tests with Terraform output in an official Node.js container.
   # Note: The node:20 image is Debian‑based, so apt commands in your steps will work.
   e2e-tests:
-    # If you want these tests to run after the frontend-unit-tests,
-    # add the following: needs: frontend-unit-tests
+    runs-on: ubuntu-latest  # Required: specify the runner that hosts the container
     container:
       image: node:20
     steps:
@@ -74,8 +74,8 @@ jobs:
       # Install Cypress browser dependencies
       - name: Install browser dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             libgtk2.0-0 \
             libgtk-3-0 \
             libgbm-dev \
