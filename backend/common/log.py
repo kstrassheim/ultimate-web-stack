@@ -21,16 +21,16 @@ class MockAzureExporter:
 
 def create_fixed_logger():
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.INFO)  # Ensure logger.level is set
     
     # Fix existing handlers
     for handler in logger.handlers:
-        if handler.lock is None:
+        if getattr(handler, 'lock', None) is None:
             handler.lock = threading.RLock()
     
     # Remove any existing Azure handlers
     for handler in list(logger.handlers):
-        if isinstance(handler, AzureLogHandler) or isinstance(handler, MockAzureLogHandler):
+        if handler.__class__.__name__ == 'AzureLogHandler' or handler.__class__.__name__ == 'MockAzureLogHandler':
             logger.removeHandler(handler)
     
     # Add appropriate handler based on mock setting
