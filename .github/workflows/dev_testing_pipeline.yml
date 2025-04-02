@@ -7,6 +7,36 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
+  # Add CodeQL Analysis job
+  codeql-analysis:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Required for uploading CodeQL results
+      actions: read
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Initialize CodeQL analysis
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: python, javascript  # Analyze both backend and frontend
+          queries: security-extended  # Use extended security queries
+      
+      # Autobuild (attempts to build code for languages that require it)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+      
+      # Perform CodeQL Analysis
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:python,javascript"
+
   # New job for backend pytest tests
   backend-unit-tests:
     runs-on: ubuntu-latest
@@ -60,7 +90,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org/'
       
       # Install frontend dependencies with retry logic
@@ -97,13 +127,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
     
-      # Set up Node.js for frontend
+      # Set up Node.js directly on the runner
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org/'
       
       # Set up Python for backend
       - name: Set up Python
@@ -125,11 +154,16 @@ jobs:
           python -c "import sys; print(sys.executable)" > python_path.txt
           cat python_path.txt
       
-      # Install frontend dependencies
+      # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          # Configure npm for better reliability
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 60000
+          npm ci || npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       # Install Cypress browser dependencies
       - name: Install browser dependencies
