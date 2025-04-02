@@ -24,7 +24,7 @@
 #    - [frontend]: React frontend code
 #    - Terraform configuration in the repository root
 #
-name: Reusable Entra ID Web App Deployment
+name: Reusable Web App Deployment
 on:
   workflow_call:
     inputs:
@@ -42,7 +42,7 @@ on:
         description: 'Node.js version'
         required: false
         type: string
-        default: '18'
+        default: '22'
       terraform_working_dir:
         description: 'Directory with Terraform files'
         required: false
@@ -153,9 +153,9 @@ jobs:
           python-version: ${{ inputs.python_version }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node_version }}
+          registry-url: 'https://registry.npmjs.org/'
           
       - name: Create and start virtual environment
         run: |
@@ -168,11 +168,16 @@ jobs:
           cd backend
           pip install -r requirements.txt
           
-      - name: Install Node dependencies
+      # Install frontend dependencies with retry logic
+      - name: Install frontend dependencies
         run: |
           cd frontend
-          touch .deploy
-          npm install
+          # Configure npm for better reliability
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 60000
+          npm ci || npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Build Frontend
         run: |
@@ -182,7 +187,7 @@ jobs:
       - name: Zip artifact for deployment
         run: |
           cd backend
-          zip -r ../release.zip ./*
+          zip -r ../release.zip ./* -x "*/mock/*" -x "mock/*" -x "*/__pycache__/*" -x "*_test.py" -x "tests/*" 
           
       # Upload release package as artifact
       - name: Upload Release package artifact

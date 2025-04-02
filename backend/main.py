@@ -14,13 +14,14 @@ from os import environ as os_environ
 from dotenv import load_dotenv
 load_dotenv()
 # get routers
-from api import api_router
+from api.api import api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # Init FastAPI
 app = FastAPI()
 
-from common import origins, log_azure_exporter
+from common.config import origins
+from common.log import log_azure_exporter
 
 # Only add custom CORS origins if in development
 app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

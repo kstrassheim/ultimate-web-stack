@@ -7,19 +7,91 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  # Run Jest tests for frontend components in an official Node.js container
-  frontend-unit-tests:
+  # Add CodeQL Analysis job
+  codeql-analysis:
+    name: CodeQL Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Required for uploading CodeQL results
+      actions: read
+      contents: read
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # Set up Node.js directly on the runner
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      # Initialize CodeQL analysis
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org/'
+          languages: python, javascript  # Analyze both backend and frontend
+          queries: security-extended  # Use extended security queries
+      
+      # Autobuild (attempts to build code for languages that require it)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v2
+      
+      # Perform CodeQL Analysis
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:python,javascript"
+
+  # New job for backend pytest tests
+  backend-unit-tests:
+    runs-on: ubuntu-latest
+    container: python:3.12-alpine
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Install dependencies (Alpine-specific)
+      - name: Install backend dependencies
+        run: |
+          # Install build dependencies required for some Python packages
+          apk add --no-cache gcc musl-dev linux-headers
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Run pytest with coverage
+      - name: Run pytest with coverage
+        run: |
+          cd backend
+          pytest --cov=. --cov-report=xml --cov-report=html
+      
+      # Upload test coverage report as an artifact
+      - name: Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-coverage
+          path: backend/htmlcov
+          if-no-files-found: ignore
+      
+      # Upload coverage XML for potential integration with Codecov or other tools
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-coverage-xml
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  # Run Jest tests for frontend components in an official Node.js container
+  frontend-unit-tests:
+    runs-on: ubuntu-latest
+    container: node:22-alpine  # Use the Alpine-based Node.js container
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Install Alpine build dependencies for npm packages that may need compilation
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache python3 make g++ git bash
       
       # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
@@ -46,7 +118,7 @@ jobs:
           name: jest-coverage
           path: frontend/coverage
           if-no-files-found: ignore
-  
+
   e2e-tests:
     #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
     runs-on: ubuntu-latest
@@ -55,19 +127,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
     
-      # Set up Node.js for frontend
+      # Set up Node.js directly on the runner
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: 'frontend/package-lock.json'
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org/'
       
       # Set up Python for backend
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: 'backend/requirements.txt'
       
@@ -83,11 +154,16 @@ jobs:
           python -c "import sys; print(sys.executable)" > python_path.txt
           cat python_path.txt
       
-      # Install frontend dependencies
+      # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
         run: |
           cd frontend
-          npm ci
+          # Configure npm for better reliability
+          npm config set fetch-retries 5
+          npm config set fetch-retry-maxtimeout 60000
+          npm ci || npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       # Install Cypress browser dependencies
       - name: Install browser dependencies

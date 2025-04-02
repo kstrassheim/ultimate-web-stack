@@ -13,3 +13,8 @@ opencensus-ext-fastapi==0.1.0
 # print console
 rich==13.9.4
 debugpy==1.8.13
+#testing
+pytest==8.3.5
+pytest-asyncio==0.26.0
+httpx==0.28.1
+pytest-cov==6.1.0

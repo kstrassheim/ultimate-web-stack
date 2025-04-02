@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Security, HTTPException, Body
 from pydantic import BaseModel
-from common import azure_scheme, scopes, logger, required_roles
+from common.auth import azure_scheme, scopes
+from common.log import logger
+from common.role_based_access import required_roles
 
 api_router = APIRouter()
 

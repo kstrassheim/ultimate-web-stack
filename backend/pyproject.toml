@@ -1,0 +1,15 @@
+[tool.coverage.run]
+source = ["."]
+omit = ["*/mock/*", "*/venv/*", "setup.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError"
+]
+fail_under = 90
+show_missing = true
