@@ -1,6 +1,3 @@
-import os
-# Force mock mode for all tests to load mocked terraform config file
-os.environ["MOCK"] = "true"
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, mock_open
 import pytest
