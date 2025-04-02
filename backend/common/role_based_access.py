@@ -2,7 +2,7 @@ import functools
 import inspect  # Add this import
 from fastapi import HTTPException
 from typing import List, Callable
-from common import logger  # Make sure logger is imported
+from common.log import logger  # Make sure logger is imported
 
 def required_roles(required_roles: List[str], check_all: bool = False):
     def decorator(func: Callable):

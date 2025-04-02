@@ -1,6 +1,6 @@
 import threading
 import logging
-from .config import tfconfig, mock_enabled
+from common.config import tfconfig, mock_enabled
 from opencensus.ext.azure.log_exporter import AzureLogHandler
 from opencensus.ext.azure.trace_exporter import AzureExporter
 

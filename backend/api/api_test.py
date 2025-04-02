@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI, Depends
 from unittest.mock import patch, MagicMock
 from api.api import api_router, get_user_data, get_admin_data
-from common import azure_scheme, required_roles, logger
+from common.auth import azure_scheme
+from common.role_based_access import required_roles
+from common.log import logger
 from types import SimpleNamespace
 
 # Create a test app
