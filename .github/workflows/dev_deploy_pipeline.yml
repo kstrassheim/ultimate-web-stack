@@ -16,7 +16,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: ./.github/workflows/.entraid_web_deployment.yml
+    uses: ./.github/workflows/.web_deployment.yml
     with:
       environment: 'dev'
     secrets:
