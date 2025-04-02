@@ -82,11 +82,16 @@ jobs:
   # Run Jest tests for frontend components in an official Node.js container
   frontend-unit-tests:
     runs-on: ubuntu-latest
-    container: node:22  # Use the official Node.js container
+    container: node:22-alpine  # Use the Alpine-based Node.js container
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      # Install Alpine build dependencies for npm packages that may need compilation
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache python3 make g++ git
       
       # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
@@ -104,15 +109,15 @@ jobs:
         run: |
           cd frontend
           npm run test:coverage
-      
-      # Upload test coverage report as an artifact
-      - name: Upload test coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jest-coverage
-          path: frontend/coverage
-          if-no-files-found: ignore
+    
+    # Upload test coverage report as an artifact
+    - name: Upload test coverage
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: jest-coverage
+        path: frontend/coverage
+        if-no-files-found: ignore
 
   e2e-tests:
     #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
