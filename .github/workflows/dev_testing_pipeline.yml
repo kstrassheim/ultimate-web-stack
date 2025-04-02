@@ -7,6 +7,48 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
+  # New job for backend pytest tests
+  backend-unit-tests:
+    runs-on: ubuntu-latest
+    container: python:3.12-alpine
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Install dependencies (Alpine-specific)
+      - name: Install backend dependencies
+        run: |
+          # Install build dependencies required for some Python packages
+          apk add --no-cache gcc musl-dev linux-headers
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Run pytest with coverage
+      - name: Run pytest with coverage
+        run: |
+          cd backend
+          pytest --cov=. --cov-report=xml --cov-report=html --cov-fail-under=70
+      
+      # Upload test coverage report as an artifact
+      - name: Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-coverage
+          path: backend/htmlcov
+          if-no-files-found: ignore
+      
+      # Upload coverage XML for potential integration with Codecov or other tools
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-coverage-xml
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
   # Run Jest tests for frontend components in an official Node.js container
   frontend-unit-tests:
     runs-on: ubuntu-latest
@@ -46,7 +88,7 @@ jobs:
           name: jest-coverage
           path: frontend/coverage
           if-no-files-found: ignore
-  
+
   e2e-tests:
     #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
     runs-on: ubuntu-latest
