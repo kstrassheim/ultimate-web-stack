@@ -91,7 +91,7 @@ jobs:
       # Install Alpine build dependencies for npm packages that may need compilation
       - name: Install build dependencies
         run: |
-          apk add --no-cache python3 make g++ git
+          apk add --no-cache python3 make g++ git bash
       
       # Install frontend dependencies with retry logic
       - name: Install frontend dependencies
