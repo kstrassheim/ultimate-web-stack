@@ -41,7 +41,7 @@ chatConnectionManager = ConnectionManager()
 async def websocket_endpoint(websocket: WebSocket):
     try:
         # connect with authentication
-        await chatConnectionManager.auth_connect(websocket)
+        await chatConnectionManager.auth_connect(websocket, required_roles=[])
         
         try:
             while True:

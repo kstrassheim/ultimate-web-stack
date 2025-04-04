@@ -5,6 +5,7 @@ from common.log import logger
 from jose import JWTError, jwt  # Add JWTError import
 from fastapi import HTTPException, status
 import requests
+from typing import List
 
 # Before the verify_token function, initialize the JWKS client
 
@@ -40,8 +41,20 @@ else:
     azure_scheme = MockAzureAuthScheme(logger)
 
 
-def verify_token(token: str):
-    """Verify a JWT token and return its claims"""
+def verify_token(token: str, required_roles: List[str] = [], check_all: bool = False):
+    """Verify a JWT token and return its claims
+    
+    Args:
+        token: The JWT token string
+        required_roles: Optional list of roles to check against token claims
+        check_all: If True, user must have ALL roles; if False, ANY role is sufficient
+    
+    Returns:
+        The token claims dictionary if validation succeeds
+    
+    Raises:
+        HTTPException: If token validation fails or roles check fails
+    """
     try:
         # Use the same condition pattern for consistency
         if tfconfig["env"]["value"] != "dev" or not mock_enabled:
@@ -79,6 +92,10 @@ def verify_token(token: str):
                 audience=tfconfig["client_id"]["value"]
             )
             
+            # Check roles if required_roles is not empty
+            if required_roles:
+                _verify_roles(claims, required_roles, check_all)
+                
             return claims
         else:
             # Mock implementation
@@ -106,10 +123,15 @@ def verify_token(token: str):
                         claims["roles"] = ["User"]
                         
                     logger.info(f"Mock token decoded with claims: {claims}")
+                    
+                    # Check roles if required_roles is not empty
+                    if required_roles:
+                        _verify_roles(claims, required_roles, check_all)
+                        
                     return claims
                 else:
                     # For non-JWT format tokens, return a mock object
-                    return {
+                    mock_claims = {
                         "sub": "mock-subject-id",
                         "name": "Mock User",
                         "roles": ["User"],
@@ -117,15 +139,27 @@ def verify_token(token: str):
                         "iss": f"https://login.microsoftonline.com/{tfconfig['tenant_id']['value']}/v2.0",
                         "mock_generated": True
                     }
+                    
+                    # Check roles if required_roles is not empty
+                    if required_roles:
+                        _verify_roles(mock_claims, required_roles, check_all)
+                        
+                    return mock_claims
             except Exception as e:
                 logger.warning(f"Failed to decode mock token, using default: {str(e)}")
                 # Return default mock claims if token couldn't be decoded
-                return {
+                default_claims = {
                     "sub": "mock-subject-id",
                     "name": "Mock User",
                     "roles": ["User"],
                     "mock_generated": True
                 }
+                
+                # Check roles if required_roles is not empty
+                if required_roles:
+                    _verify_roles(default_claims, required_roles, check_all)
+                    
+                return default_claims
             
     except JWTError as e:
         raise HTTPException(
@@ -140,3 +174,33 @@ def verify_token(token: str):
             detail="Failed to validate token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+# Add helper function for role verification
+def _verify_roles(claims, required_roles, check_all=False):
+    """Verify that the claims contain the required roles"""
+    # Get roles from claims
+    roles = claims.get("roles", [])
+    
+    # Normalize roles for case-insensitive comparison
+    normalized_roles = [role.lower() for role in roles]
+    normalized_required_roles = [role.lower() for role in required_roles]
+    
+    # Check if user has required roles
+    has_access = False
+    if check_all:
+        # User must have ALL required roles
+        has_access = all(role in normalized_roles for role in normalized_required_roles)
+    else:
+        # User must have ANY of the required roles
+        has_access = any(role in normalized_roles for role in normalized_required_roles)
+    
+    if not has_access:
+        logger.warning(f"Role check failed - User roles: {roles}, Required roles: {required_roles}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Insufficient permissions",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    logger.info(f"Role check successful for {required_roles}")
+    return True

@@ -1,6 +1,9 @@
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from jose import JWTError 
-from common.auth import verify_token # Ad
+from common.auth import verify_token
+from typing import List
+from common.log import logger  # Add this import
+
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
@@ -12,7 +15,7 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     # Connect authenticated
-    async def auth_connect(self, websocket: WebSocket):
+    async def auth_connect(self, websocket: WebSocket, required_roles: List[str] = [], check_all: bool = False):
         await websocket.accept()
 
         # Wait for authentication message
@@ -25,7 +28,7 @@ class ConnectionManager:
             
         try:
             # Validate token from first message
-            claims = verify_token(auth_data["token"])
+            claims = verify_token(auth_data["token"], required_roles, check_all)
             
             # Check if claims were actually returned (could be None or empty)
             if not claims:
@@ -33,6 +36,15 @@ class ConnectionManager:
                 await websocket.close(code=1008, reason="Invalid authentication token")
                 return
                 
+        except HTTPException as e:
+            # Specifically handle 403 Forbidden from role check failures
+            if e.status_code == 403:
+                logger.warning(f"Role check failed during WebSocket authentication: {e.detail}")
+                await websocket.close(code=1008, reason="Insufficient permissions")
+            else:
+                logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
+                await websocket.close(code=1008, reason=e.detail)
+            return
         except JWTError as e:
             logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
             await websocket.close(code=1008, reason="Invalid authentication token")
