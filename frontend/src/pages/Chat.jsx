@@ -1,31 +1,33 @@
 import { useEffect, useState, useRef } from 'react';
 import './Chat.css';
-import { 
-  connectWebSocket, 
-  sendWebSocketMessage, 
-  disconnectWebSocket,
-  subscribeToMessages,
-  subscribeToStatus
-} from '@/api/socket';
+import { useMsal } from '@azure/msal-react';
+import { WebSocketClient } from '@/api/socket';
 
 const Chat = () => {
+  const { instance } = useMsal();
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
+  const socketClientRef = useRef(null);
 
   useEffect(() => {
+    // Create WebSocket client instance
+    if (!socketClientRef.current) {
+      socketClientRef.current = new WebSocketClient('/chat');
+    }
+    const socketClient = socketClientRef.current;
+
     // Connect to WebSocket when component mounts
-    connectWebSocket();
+    socketClient.connect(instance);
     
-    // Subscribe to incoming messages
-    const unsubscribeMessages = subscribeToMessages((message) => {
+    // Subscribe to messages and status updates
+    const unsubscribeMessages = socketClient.subscribeToMessages((message) => {
       setMessages(prevMessages => [...prevMessages, message]);
     });
     
-    // Subscribe to connection status changes
-    const unsubscribeStatus = subscribeToStatus((status) => {
+    const unsubscribeStatus = socketClient.subscribeToStatus((status) => {
       setConnectionStatus(status);
       if (status === 'error') {
         setError("Failed to connect to chat server");
@@ -38,9 +40,9 @@ const Chat = () => {
     return () => {
       unsubscribeMessages();
       unsubscribeStatus();
-      disconnectWebSocket();
+      socketClient.disconnect();
     };
-  }, []);
+  }, [instance]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -51,7 +53,7 @@ const Chat = () => {
 
   const sendMessage = () => {
     if (inputMessage.trim() && connectionStatus === 'connected') {
-      sendWebSocketMessage(inputMessage);
+      socketClientRef.current.sendMessage(inputMessage);
       setInputMessage('');
     }
   };

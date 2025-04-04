@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Security, HTTPException, Body, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Security, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
-from common.auth import azure_scheme, scopes
+from common.auth import azure_scheme, scopes, verify_token
+from jose import JWTError  # Add JWTError import
 from common.log import logger
 from common.role_based_access import required_roles
 from common.socket import manager
@@ -36,12 +37,39 @@ async def get_admin_data(request: AdminDataRequest = Body(...), token=Security(a
 # WebSocket endpoint
 @api_router.websocket("/chat")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    await websocket.accept()
     try:
-        while True:
-            data = await websocket.receive_text()
-            await manager.send_personal_message(f"You sent: {data}", websocket)
-            await manager.broadcast_except(f"Client says: {data}", websocket)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        await manager.broadcast("A client disconnected")
+        # Wait for authentication message
+        auth_data = await websocket.receive_json()
+        
+        if not auth_data.get("token"):
+            await websocket.close(code=1008, reason="Missing authentication token")
+            return
+            
+        # Validate token from first message
+        claims = verify_token(auth_data["token"])
+        
+        websocket.state.user = {
+            "sub": claims.get("sub"),
+            "name": claims.get("name", "unknown user"),
+            "roles": claims.get("roles", [])
+        }
+        
+        # Add to active connections once authenticated
+        await manager.connect(websocket)
+        
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # Include user info in messages
+                user_name = websocket.state.user.get("name")
+                await manager.send_personal_message(f"You sent: {data}", websocket)
+                await manager.broadcast_except(f"{user_name}: {data}", websocket)
+        except WebSocketDisconnect:
+            manager.disconnect(websocket)
+            await manager.broadcast(f"{user_name} has left the chat")
+            
+    except Exception as e:
+        print(f"WebSocket error: {str(e)}")
+        if websocket in manager.active_connections:
+            manager.disconnect(websocket)
