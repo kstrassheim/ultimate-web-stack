@@ -172,6 +172,8 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
+          # Create a .deploy file to Mark vite.config to use live urls for build
+          touch .deploy
           # Configure npm for better reliability
           npm config set fetch-retries 5
           npm config set fetch-retry-maxtimeout 60000
