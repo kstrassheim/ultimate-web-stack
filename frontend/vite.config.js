@@ -82,12 +82,21 @@ export default defineConfig({
   define: {
     __MOCK__: JSON.stringify(isMockEnabled),
     // define another production uri for deployment then local
-    __PROD_URI__: isDeployment ? JSON.stringify(tfconfig.web_url.value) : JSON.stringify('http://localhost:8000')
+    __PROD_URI__: isDeployment ? JSON.stringify(tfconfig.web_url.value) : JSON.stringify('http://localhost:8000'),
+    __PROD_SOCKET_URI__: isDeployment ? JSON.stringify(tfconfig.web_url.value.replace('https://', 'wss://')): JSON.stringify('ws://localhost:8000')
   },
   build: {
     outDir: '../backend/dist',
     emptyOutDir: true
-  }
+  },
+  server: {
+    hmr: {
+      // Configure HMR to use a specific port instead of the server port
+      port: 24678,
+      // Optional: If behind a proxy or having connection issues
+      // overlay: false
+    }
+  },
 })
 
 

@@ -8,6 +8,7 @@ import AccessDenied from '@/pages/AccessDenied';
 import ProtectedRoute from "@/components/ProtectedRoute";
 // get the pages
 import Home from '@/pages/Home';
+import Chat from '@/pages/Chat';
 import Admin from '@/pages/Admin';
 //import appInsights from './components/appInsights';
 
@@ -25,6 +26,7 @@ function App() {
         {/* Separate navigation for pages */}
         <ul className="navbar-pages" data-testid="page-navigation">
           <li><Link to="/" className="nav-link" data-testid="nav-home">Home</Link></li>
+          <li><Link to="/chat" className="nav-link" data-testid="nav-chat">Chat</Link></li>
           <li><Link to="/admin" className="nav-link" data-testid="nav-admin">Admin</Link></li>
         </ul>
 
@@ -46,6 +48,14 @@ function App() {
             element={
               <ProtectedRoute requiredRoles={[]}>
                 <Home />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute requiredRoles={[]}>
+                <Chat />
               </ProtectedRoute>
             }
           />

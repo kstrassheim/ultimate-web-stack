@@ -43,6 +43,7 @@ async def health():
     memory_info = psutil.virtual_memory()
     return {"status": "ok","uptime": str(uptime),"cpu_percent": cpu_percent,"memory": {"total": memory_info.total,"available": memory_info.available,"percent": memory_info.percent,"used": memory_info.used,"free": memory_info.free,}}
 
+
 # Frontend Router
 dist = Path("./dist")
 frontend_router = APIRouter()

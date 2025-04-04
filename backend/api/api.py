@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Security, HTTPException, Body
+from fastapi import APIRouter, Security, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from common.auth import azure_scheme, scopes
 from common.log import logger
 from common.role_based_access import required_roles
+from common.socket import ConnectionManager
 
 api_router = APIRouter()
 
@@ -31,3 +32,29 @@ async def get_admin_data(request: AdminDataRequest = Body(...), token=Security(a
         "status": request.status,
         "received": True
     }
+
+# Create a manager instance
+chatConnectionManager = ConnectionManager()
+
+# WebSocket endpoint
+@api_router.websocket("/chat")
+async def websocket_endpoint(websocket: WebSocket):
+    try:
+        # connect with authentication
+        await chatConnectionManager.auth_connect(websocket, required_roles=[])
+        
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # Include user info in messages
+                user_name = websocket.state.user.get("name")
+                await chatConnectionManager.send_personal_message(f"You sent: {data}", websocket)
+                await chatConnectionManager.broadcast_except(f"{user_name}: {data}", websocket)
+        except WebSocketDisconnect:
+            chatConnectionManager.disconnect(websocket)
+            await chatConnectionManager.broadcast(f"{user_name} has left the chat")
+            
+    except Exception as e:
+        print(f"WebSocket error: {str(e)}")
+        if websocket in chatConnectionManager.active_connections:
+            chatConnectionManager.disconnect(websocket)

@@ -18,3 +18,7 @@ pytest==8.3.5
 pytest-asyncio==0.26.0
 httpx==0.28.1
 pytest-cov==6.1.0
+# websockets
+websockets==15.0.1
+# JWT verification
+python-jose==3.4.0
