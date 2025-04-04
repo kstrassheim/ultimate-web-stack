@@ -15,7 +15,7 @@ const Chat = () => {
   useEffect(() => {
     // Create WebSocket client instance
     if (!socketClientRef.current) {
-      socketClientRef.current = new WebSocketClient('/chat');
+      socketClientRef.current = new WebSocketClient('api/chat');
     }
     const socketClient = socketClientRef.current;
 

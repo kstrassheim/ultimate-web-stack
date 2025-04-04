@@ -3,7 +3,7 @@ import { retreiveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 
 export class WebSocketClient {
-  constructor(path = '/chat') {
+  constructor(path) {
     this.path = path;
     this.socket = null;
     this.messageListeners = [];
@@ -24,7 +24,7 @@ export class WebSocketClient {
       const token = await retreiveTokenForBackend(instance);
       
       // Form the complete URL from backendSocketUrl and the path
-      const url = `${backendSocketUrl}/api${this.path}`;
+      const url = `${backendSocketUrl}/${this.path}`;
       this.socket = new WebSocket(url);
       
       this.socket.onopen = () => {

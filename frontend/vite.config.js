@@ -88,7 +88,15 @@ export default defineConfig({
   build: {
     outDir: '../backend/dist',
     emptyOutDir: true
-  }
+  },
+  server: {
+    hmr: {
+      // Configure HMR to use a specific port instead of the server port
+      port: 24678,
+      // Optional: If behind a proxy or having connection issues
+      // overlay: false
+    }
+  },
 })
 
 

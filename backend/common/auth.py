@@ -43,12 +43,8 @@ else:
 def verify_token(token: str):
     """Verify a JWT token and return its claims"""
     try:
-        # Check if we're using the mock scheme which has decode_token
-        if hasattr(azure_scheme, 'decode_token'):
-            # Use the mock implementation's decode_token method
-            decoded_token = azure_scheme.decode_token(token)
-            return decoded_token.claims
-        else:
+        # Use the same condition pattern for consistency
+        if tfconfig["env"]["value"] != "dev" or not mock_enabled:
             # For real Azure auth, manually verify the token
             # Get the JWKS URL for your tenant
             jwks_url = f"https://login.microsoftonline.com/{tfconfig['tenant_id']['value']}/discovery/v2.0/keys"
@@ -84,6 +80,52 @@ def verify_token(token: str):
             )
             
             return claims
+        else:
+            # Mock implementation
+            logger.warning("MOCK TOKEN VERIFICATION: Accepting any token without validation")
+            try:
+                # Try to decode the token without verification
+                # This will work for valid JWT format tokens
+                parts = token.split('.')
+                if len(parts) == 3:  # Proper JWT format (header.payload.signature)
+                    import base64
+                    import json
+                    
+                    # Decode the payload (middle part)
+                    # Fix padding for base64 decoding
+                    padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
+                    decoded = base64.b64decode(padded.replace('-', '+').replace('_', '/'))
+                    claims = json.loads(decoded)
+                    
+                    # Ensure minimum required claims exist
+                    if not claims.get("sub"):
+                        claims["sub"] = "mock-subject-id"
+                    if not claims.get("name"):
+                        claims["name"] = "Mock User"
+                    if not claims.get("roles"):
+                        claims["roles"] = ["User"]
+                        
+                    logger.info(f"Mock token decoded with claims: {claims}")
+                    return claims
+                else:
+                    # For non-JWT format tokens, return a mock object
+                    return {
+                        "sub": "mock-subject-id",
+                        "name": "Mock User",
+                        "roles": ["User"],
+                        "aud": tfconfig["client_id"]["value"],
+                        "iss": f"https://login.microsoftonline.com/{tfconfig['tenant_id']['value']}/v2.0",
+                        "mock_generated": True
+                    }
+            except Exception as e:
+                logger.warning(f"Failed to decode mock token, using default: {str(e)}")
+                # Return default mock claims if token couldn't be decoded
+                return {
+                    "sub": "mock-subject-id",
+                    "name": "Mock User",
+                    "roles": ["User"],
+                    "mock_generated": True
+                }
             
     except JWTError as e:
         raise HTTPException(
