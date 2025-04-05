@@ -119,6 +119,23 @@ describe('Unauthenticated Flow Tests', () => {
     cy.get('[data-testid="admin-page"]').should('not.exist');
   });
 
+  it('should redirect to access-denied for chat page when not authenticated', () => {
+    // Click the Chat link
+    cy.get('[data-testid="nav-chat"]').click();
+    
+    // Should redirect to access-denied
+    cy.url().should('include', '/access-denied');
+    
+    // Verify access denied page content
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
+    cy.get('[data-testid="access-denied-login-message"]').should('be.visible');
+    cy.get('[data-testid="access-denied-signin-prompt"]').should('be.visible');
+    
+    // Verify chat elements are not visible
+    cy.get('[data-testid="websocket-demo"]').should('not.exist');
+  });
+
   it('should provide direct access to the 404 page when not authenticated', () => {
     // Visit a non-existent route
     cy.visit('/non-existent-page');
@@ -131,5 +148,35 @@ describe('Unauthenticated Flow Tests', () => {
     // Should not redirect to access-denied
     cy.url().should('include', '/non-existent-page');
     cy.url().should('not.include', '/access-denied');
+  });
+});
+
+describe('Navigation Tests', () => {
+  beforeEach(() => {
+    // Set up a mock role with Admin permissions so we can access the admin page
+    cy.setMockRole('Admin');
+    cy.visit('/');
+    
+    // Wait for the main navigation to appear
+    cy.get('[data-testid="main-navigation"]', { timeout: 10000 }).should('be.visible');
+  });
+
+  it('should have working bootstrap navigation components', () => {
+    // Test bootstrap navigation structure
+    cy.get('[data-testid="main-navigation"]').should('have.class', 'navbar');
+    cy.get('[data-testid="main-navigation"]').should('have.class', 'bg-dark');
+    cy.get('.navbar-toggler').should('exist'); // Hamburger menu
+    cy.get('.navbar-collapse').should('exist'); // Collapsible content
+    
+    // Mobile view: Test hamburger menu opens and closes
+    cy.viewport('iphone-x');
+    cy.get('.navbar-collapse').should('not.be.visible');
+    cy.get('.navbar-toggler').click();
+    cy.get('.navbar-collapse').should('be.visible');
+    cy.get('.navbar-toggler').click();
+    cy.get('.navbar-collapse').should('not.be.visible');
+    
+    // Reset viewport
+    cy.viewport(1000, 660);
   });
 });

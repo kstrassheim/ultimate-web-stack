@@ -16,6 +16,7 @@
 // Alternatively you can use CommonJS syntax:
 // require('./commands')
 // Import commands.js using ES2015 syntax:
+import 'cypress-wait-until';
 import './msalMock';
 // Example of global behavior modification
 Cypress.on('uncaught:exception', (err, runnable) => {
