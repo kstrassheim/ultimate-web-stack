@@ -208,13 +208,20 @@ jobs:
           # generate coverage reports
           npm run coverage:report:no-check
 
-          # Verify the files exist to help with debugging
-          echo "Files in .nyc_output directory:"
-          ls -la .nyc_output
-
           # Run coverage check but don't fail the build
           npm run check-coverage
-      
+      # Flatten coverage report structure for easier viewing
+      - name: Flatten coverage report structure
+        if: always()
+        run: |
+          cd frontend
+          # Create a directory for flattened artifacts
+          mkdir -p flattened-coverage
+          # Copy all files from the lcov-report directory to the flattened directory
+          cp -R coverage/lcov-report/* flattened-coverage/
+          # Check if files were copied successfully
+          ls -la flattened-coverage/
+
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
         if: failure()
@@ -233,14 +240,12 @@ jobs:
           path: frontend/cypress/videos
           if-no-files-found: ignore
       
-      # Upload NYC code coverage reports
+      # Upload flattened coverage reports
       - name: Upload E2E coverage reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-coverage
-          path: |
-            frontend/.nyc_output/**/*
-            frontend/coverage/**/*
+          name: coverage-report
+          path: frontend/flattened-coverage
           if-no-files-found: warn
-          include-hidden-files: true
+
