@@ -43,7 +43,7 @@ export const retreiveTokenForBackend = async (instance, extraScopes = []) => {
   return tokenResponse.accessToken;
 }
 
-export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
+export const retrieveTokenForGraph = async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   
@@ -62,7 +62,7 @@ export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
     appInsights.trackException({ 
       exception: error,
       properties: { 
-        operation: 'retreiveTokenForGraph', 
+        operation: 'retrieveTokenForGraph', 
         scopes: scopesToRequest.join(',') 
       }
     });
