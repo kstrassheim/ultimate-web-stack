@@ -245,7 +245,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: e2e-coverage-report
           path: frontend/flattened-coverage
           if-no-files-found: warn
 
