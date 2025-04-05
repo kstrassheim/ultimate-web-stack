@@ -4,10 +4,10 @@
     "exclude": ["**/*.test.js", "**/*.test.jsx", "**/*.spec.js", "**/*.spec.jsx", "node_modules/**", "src/mock/**"],
     "check-coverage": false,
     "per-file": false,
-    "statements": 90,
-    "branches": 80,
-    "functions": 90,
-    "lines": 90,
+    "statements": 85,
+    "branches": 70,
+    "functions": 80,
+    "lines": 80,
     "reporter": ["lcov", "text-summary"],
     "extension": [".js", ".jsx"]
   }

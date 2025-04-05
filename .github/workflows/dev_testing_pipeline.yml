@@ -116,7 +116,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jest-coverage
-          path: frontend/coverage
+          path: frontend/coverage/lcov-report
           if-no-files-found: ignore
 
   e2e-tests:
@@ -210,17 +210,6 @@ jobs:
 
           # Run coverage check but don't fail the build
           npm run check-coverage
-      # Flatten coverage report structure for easier viewing
-      - name: Flatten coverage report structure
-        if: always()
-        run: |
-          cd frontend
-          # Create a directory for flattened artifacts
-          mkdir -p flattened-coverage
-          # Copy all files from the lcov-report directory to the flattened directory
-          cp -R coverage/lcov-report/* flattened-coverage/
-          # Check if files were copied successfully
-          ls -la flattened-coverage/
 
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
@@ -246,6 +235,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-coverage-report
-          path: frontend/flattened-coverage
+          path: frontend/coverage/lcov-report
           if-no-files-found: warn
 
