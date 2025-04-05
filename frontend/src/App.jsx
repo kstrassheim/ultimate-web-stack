@@ -17,14 +17,12 @@ function App() {
       <Navbar bg="dark" variant="dark" data-bs-theme="dark"  expand="lg" data-testid="main-navigation">
         <Container className="position-relative">
           {/* Logo and brand */}
-          <Navbar.Brand href="#" className="d-flex align-items-center">
+          <Navbar.Brand as="div" className="d-flex align-items-center">
             <a href="https://github.com/kstrassheim/ultimate-web-stack" target="_blank" data-testid="logo-link" className="me-2">
               <img src='logo.png' height="30" className="d-inline-block align-top" alt="logo" data-testid="logo-image" />
             </a>
-            Ultimate Web Stack
+            {document.title}
           </Navbar.Brand>
-
-          
           {/* Place profile outside collapse, but still in the right position */}
           <div className="d-flex ms-auto me-1 order-lg-last" data-testid="auth-navigation">
             <EntraProfile data-testid="entra-profile" />

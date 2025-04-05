@@ -25,7 +25,12 @@ jest.mock('@/assets/dummy-avatar.jpg', () => "dummy-avatar-path.jpg");
 // Required wrapper for component due to router hooks
 const renderWithRouter = (ui) => {
   return render(
-    <MemoryRouter initialEntries={['/test']}>{ui}</MemoryRouter>
+    <MemoryRouter 
+      initialEntries={['/test']}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      {ui}
+    </MemoryRouter>
   );
 };
 
@@ -208,7 +213,14 @@ describe('EntraProfile Component', () => {
     msalInstance.getActiveAccount.mockReturnValue(newAccount);
     
     // Force re-render
-    rerender(<MemoryRouter initialEntries={['/test']}><EntraProfile /></MemoryRouter>);
+    rerender(
+      <MemoryRouter 
+        initialEntries={['/test']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <EntraProfile />
+      </MemoryRouter>
+    );
     
     // Wait for photo fetch to complete
     await waitFor(() => {
