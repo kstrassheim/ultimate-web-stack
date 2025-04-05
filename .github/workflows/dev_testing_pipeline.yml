@@ -22,18 +22,18 @@ jobs:
       
       # Initialize CodeQL analysis
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: python, javascript  # Analyze both backend and frontend
           queries: security-extended  # Use extended security queries
       
       # Autobuild (attempts to build code for languages that require it)
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
+        uses: github/codeql-action/autobuild@v3
       
       # Perform CodeQL Analysis
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:python,javascript"
 
@@ -205,8 +205,19 @@ jobs:
             echo '{}' > .nyc_output/coverage-placeholder.json
           fi
           
+          # generate coverage reports
+          npm run coverage:report:no-check
+
+          # Verify the files exist to help with debugging
+          echo "Files in .nyc_output directory:"
+          ls -la .nyc_output
+
           # Run coverage check but don't fail the build
           npm run check-coverage
+
+          # Verify the files exist to help with debugging
+          echo "Files in .nyc_output directory:"
+          ls -la .nyc_output
       
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
@@ -232,5 +243,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-coverage
-          path: |
-            frontend/.nyc_output
+          path: frontend/.nyc_output
