@@ -14,7 +14,7 @@ import Admin from '@/pages/Admin';
 function App() {
   return (
     <>
-      <Navbar bg="dark" variant="dark" expand="lg" data-testid="main-navigation">
+      <Navbar bg="dark" variant="dark" data-bs-theme="dark"  expand="lg" data-testid="main-navigation">
         <Container className="position-relative">
           {/* Logo and brand */}
           <Navbar.Brand href="#" className="d-flex align-items-center">
@@ -26,12 +26,18 @@ function App() {
 
           
           {/* Place profile outside collapse, but still in the right position */}
-          <div className="d-flex ms-auto me-3 order-lg-last" data-testid="auth-navigation">
+          <div className="d-flex ms-auto me-1 order-lg-last" data-testid="auth-navigation">
             <EntraProfile data-testid="entra-profile" />
           </div>
                     
           {/* Hamburger toggle button */}
-          <Navbar.Toggle aria-controls="basic-navbar-nav" />
+          <Navbar.Toggle 
+            aria-controls="basic-navbar-nav"
+            className="border-0 text-light focus-ring focus-ring-light navbar-dark"
+            variant="dark"
+            style={{ boxShadow: 'none', backgroundColor: 'transparent'  }}
+            onClick={(e) => e.currentTarget.blur()}
+          />
           {/* Collapsible navigation content */}
           <Navbar.Collapse id="basic-navbar-nav" className="order-lg-2">
             {/* Main navigation links */}
