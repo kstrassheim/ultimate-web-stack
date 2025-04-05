@@ -52,7 +52,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 await chatConnectionManager.broadcast_except(f"{user_name}: {data}", websocket)
         except WebSocketDisconnect:
             chatConnectionManager.disconnect(websocket)
-            await chatConnectionManager.broadcast(f"{user_name} has left the chat")
+            user_name = websocket.state.user.get("name", "Unknown")
+            await chatConnectionManager.broadcast(f"{user_name} left the chat")
             
     except Exception as e:
         print(f"WebSocket error: {str(e)}")

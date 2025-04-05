@@ -2,12 +2,14 @@ import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from fastapi import FastAPI, Depends
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from api.api import api_router, get_user_data, get_admin_data
 from common.auth import azure_scheme
 from common.role_based_access import required_roles
 from common.log import logger
 from types import SimpleNamespace
+import json
+from fastapi import WebSocketDisconnect
 
 # Create a test app
 app = FastAPI()
@@ -121,3 +123,178 @@ class TestAPIEndpoints:
         # Verify logging
         mock_logger.info.assert_any_call("User Api - Returning User data")
         mock_logger.info.assert_any_call("Admin API - Message: Log test, Status: 200")
+    
+    def test_admin_data_error_response(self, client_with_overridden_dependencies):
+        """Test admin-data endpoint with error status code"""
+        test_client, mock_logger = client_with_overridden_dependencies
+        
+        # Test with status code 400 (error case)
+        error_message = "Test error message"
+        response = test_client.post(
+            "/admin-data", 
+            json={"message": error_message, "status": 400}
+        )
+        assert response.status_code == 400
+        assert response.json() == {"detail": error_message}
+        
+        # Verify logging
+        mock_logger.info.assert_any_call(f"Admin API - Message: {error_message}, Status: 400")
+
+# Add this new class for WebSocket testing
+class TestWebSocketEndpoint:
+    """Test the WebSocket chat endpoint"""
+    
+    @pytest.fixture
+    def mock_websocket(self):
+        """Create a mock WebSocket object"""
+        mock_ws = MagicMock()
+        # Set up the state with user info
+        mock_ws.state = MagicMock()
+        mock_ws.state.user = {"name": "Test User", "sub": "test-id", "roles": ["User"]}
+        
+        # Set up receive_text to return predefined messages with AsyncMock
+        mock_ws.receive_text = AsyncMock(return_value="Hello, WebSocket!")
+        
+        # Initialize tracking attributes
+        mock_ws.personal_messages = []
+        
+        return mock_ws
+    
+    @pytest.mark.asyncio
+    async def test_websocket_endpoint_connection(self, monkeypatch):
+        """Test WebSocket connection and authentication"""
+        # Create a mock connection manager with AsyncMock
+        mock_manager = MagicMock()
+        mock_manager.auth_connect = AsyncMock()
+        mock_manager.auth_connect.return_value = None  # auth_connect doesn't return anything
+        
+        # Patch the ChatConnectionManager in api.py
+        monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        
+        # Create a mock WebSocket
+        mock_ws = MagicMock()
+        mock_ws.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
+        
+        # Call the WebSocket endpoint function
+        try:
+            await api_router.routes[-1].endpoint(mock_ws)
+        except Exception:
+            pass  # Expect an exception since we're not fully simulating the WebSocket lifecycle
+        
+        # Verify the connection was authenticated with assert_called_once
+        assert mock_manager.auth_connect.call_count == 1
+    
+    @pytest.mark.asyncio
+    async def test_websocket_message_handling(self, monkeypatch, mock_websocket):
+        """Test WebSocket message handling"""
+        # Create a mock connection manager with AsyncMock methods
+        mock_manager = MagicMock()
+        mock_manager.auth_connect = AsyncMock()
+        mock_manager.send_personal_message = AsyncMock()
+        mock_manager.broadcast_except = AsyncMock()
+        mock_manager.active_connections = []
+        
+        # Patch the ChatConnectionManager in api.py
+        monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        
+        # Set up the mock to return one message then raise WebSocketDisconnect
+        mock_websocket.receive_text = AsyncMock(side_effect=[
+            "Hello, WebSocket!",
+            WebSocketDisconnect()
+        ])
+        
+        # Call the WebSocket endpoint
+        try:
+            await api_router.routes[-1].endpoint(mock_websocket)
+        except Exception as e:
+            print(f"Expected exception: {e}")
+        
+        # Verify personal message was sent
+        assert mock_manager.send_personal_message.call_count == 1
+        assert mock_manager.broadcast_except.call_count == 1
+    
+    @pytest.mark.asyncio
+    async def test_websocket_disconnect_handling(self, monkeypatch, mock_websocket):
+        """Test WebSocket disconnect handling"""
+        # Create a complete mock manager with all required async methods
+        mock_manager = MagicMock()
+        
+        # Track all method calls with their arguments
+        call_tracker = {}
+        
+        # Create async functions for all methods that will be awaited
+        async def mock_auth_connect(websocket, required_roles=None):
+            call_tracker['auth_connect'] = True
+            return None
+            
+        async def mock_send_personal(message, websocket):
+            call_tracker['send_personal'] = message
+            return None
+            
+        async def mock_broadcast_except(message, exclude_websocket):
+            call_tracker['broadcast_except'] = message
+            return None
+            
+        async def mock_broadcast(message):
+            call_tracker['broadcast'] = message
+            return None
+        
+        # Assign the async functions to the manager methods
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.send_personal_message = mock_send_personal
+        mock_manager.broadcast_except = mock_broadcast_except
+        mock_manager.broadcast = mock_broadcast
+        
+        # Setup non-async method
+        mock_manager.disconnect = MagicMock()
+        mock_manager.active_connections = [mock_websocket]
+        
+        # Patch the manager in the API
+        monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        
+        # Make sure state.user is properly configured
+        mock_websocket.state.user = {"name": "Test User"}
+        
+        # First a successful message then a disconnect
+        mock_websocket.receive_text = AsyncMock(side_effect=[
+            "Hello, WebSocket!",
+            WebSocketDisconnect()
+        ])
+        
+        try:
+            # Call the WebSocket endpoint
+            await api_router.routes[-1].endpoint(mock_websocket)
+        except Exception as e:
+            # Print the exact error for debugging
+            print(f"Unexpected error during test: {str(e)}")
+            raise
+        
+        # Verify disconnect was handled
+        assert mock_manager.disconnect.called
+        # Check that the broadcast method was called with the disconnect message
+        assert 'broadcast' in call_tracker
+        assert "Test User left the chat" in call_tracker['broadcast']
+    
+    @pytest.mark.asyncio
+    async def test_websocket_exception_handling(self, monkeypatch, mock_websocket):
+        """Test WebSocket general exception handling"""
+        # Create a mock connection manager
+        mock_manager = MagicMock()
+        mock_manager.active_connections = [mock_websocket]
+        
+        # Set up auth_connect to throw an exception
+        async def mock_auth_connect_error(websocket, required_roles):
+            raise ValueError("Test authentication error")
+        mock_manager.auth_connect = mock_auth_connect_error
+        
+        # Set up disconnection for cleanup
+        mock_manager.disconnect = MagicMock()
+        
+        # Patch the ChatConnectionManager in api.py
+        monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        
+        # Call the WebSocket endpoint
+        await api_router.routes[-1].endpoint(mock_websocket)
+        
+        # Verify exception was caught and disconnect was called
+        mock_manager.disconnect.assert_called_once_with(mock_websocket)
