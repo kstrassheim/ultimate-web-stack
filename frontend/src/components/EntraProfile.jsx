@@ -16,6 +16,7 @@ const EntraProfile = () => {
   const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
   const [account, setAccount] = useState(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false); // Track dropdown state
   
   const fetchProfilePhotoFunc = async () => {
     if (account) {
@@ -82,7 +83,7 @@ const EntraProfile = () => {
         onClick(e);
       }}
       className="profile-toggle"
-      onMouseEnter={() => setShowTooltip(true)}
+      onMouseEnter={() => !dropdownOpen && setShowTooltip(true)} // Only show tooltip if dropdown is closed
       onMouseLeave={() => setShowTooltip(false)}
       {...props}
     >
@@ -92,7 +93,7 @@ const EntraProfile = () => {
         className="profile-image" 
         data-testid="profile-image" 
       />
-      {showTooltip && account && (
+      {showTooltip && account && !dropdownOpen && ( // Only render tooltip if dropdown is closed
         <span className="profile-custom-tooltip">{account.name}</span>
       )}
     </div>
@@ -103,7 +104,14 @@ const EntraProfile = () => {
       <AuthenticatedTemplate>
         <div className="d-flex align-items-center" data-testid="authenticated-container">
           {account && (
-            <Dropdown align="end" data-testid="profile-dropdown">
+            <Dropdown 
+              align="end" 
+              data-testid="profile-dropdown"
+              onToggle={(isOpen) => {
+                setDropdownOpen(isOpen); // Track dropdown open state
+                if (isOpen) setShowTooltip(false); // Hide tooltip when dropdown opens
+              }}
+            >
               <Dropdown.Toggle as={CustomToggle} id="dropdown-profile" />
               
               <Dropdown.Menu variant="dark">
