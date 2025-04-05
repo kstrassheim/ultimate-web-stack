@@ -213,3 +213,12 @@ jobs:
           name: cypress-videos
           path: frontend/cypress/videos
           if-no-files-found: ignore
+      
+      # Upload NYC code coverage reports
+      - name: Upload E2E coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-coverage
+          path: |
+            frontend/.nyc_output
