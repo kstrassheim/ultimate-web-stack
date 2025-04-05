@@ -81,14 +81,33 @@ class ConnectionManager:
             if connection != exclude_websocket:
                 await connection.send_text(message)
                 
-    # New method to send JSON data with a username property
-    async def send_data(self, data: dict, websocket: WebSocket):
+    # New method to send JSON data with a username property and type
+    async def send_data(self, data: dict, type: str, websocket: WebSocket):
         """
-        Sends JSON data to the given websocket connection.
-        Automatically includes a `username` property extracted from websocket.state.user.
+        Sends JSON data to the given websocket connection with a CRUD operation type.
+        
+        Args:
+            data: The data payload to send
+            type: Type of operation ("create", "update", "delete")
+            websocket: The WebSocket connection to send to
+            
+        Automatically includes:
+        - `username` property extracted from websocket.state.user
+        - `type` to indicate the CRUD operation
         """
+        # Validate type
+        valid_types = ["create", "update", "delete"]
+        if type not in valid_types:
+            type = "update"  # Default to update if invalid
+            
         username = "unknown"
         if hasattr(websocket.state, "user"):
             username = websocket.state.user.get("name", "unknown")
-        data_with_username = {**data, "username": username}
-        await websocket.send_json(data_with_username)
+        
+        data_with_metadata = {
+            **data, 
+            "username": username,
+            "type": type
+        }
+        
+        await websocket.send_json(data_with_metadata)

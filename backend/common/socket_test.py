@@ -83,11 +83,54 @@ async def test_send_data(manager, fake_websocket):
     # Set a fake authenticated user in websocket.state and send JSON data.
     fake_websocket.state.user = {"name": "Alice"}
     data = {"info": "sample data"}
-    await manager.send_data(data, fake_websocket)
-    # Ensure the sent JSON contains the extra 'username' property.
+    
+    # Test with valid type parameter
+    await manager.send_data(data, "create", fake_websocket)
+    
+    # Ensure the sent JSON contains the extra 'username' property and correct type
     sent = fake_websocket.sent_jsons[0]
     assert sent["username"] == "Alice"
     assert sent["info"] == "sample data"
+    assert sent["type"] == "create"
+
+@pytest.mark.asyncio
+async def test_send_data_with_all_types(manager, fake_websocket):
+    # Test with all valid type parameters
+    fake_websocket.state.user = {"name": "Bob"}
+    data = {"record_id": "123", "content": "test content"}
+    
+    # Test create operation
+    await manager.send_data(data, "create", fake_websocket)
+    assert fake_websocket.sent_jsons[0]["type"] == "create"
+    
+    # Test update operation
+    await manager.send_data(data, "update", fake_websocket)
+    assert fake_websocket.sent_jsons[1]["type"] == "update"
+    
+    # Test delete operation
+    await manager.send_data(data, "delete", fake_websocket)
+    assert fake_websocket.sent_jsons[2]["type"] == "delete"
+    
+    # Verify all messages have the username
+    for message in fake_websocket.sent_jsons:
+        assert message["username"] == "Bob"
+        assert message["record_id"] == "123"
+        assert message["content"] == "test content"
+
+@pytest.mark.asyncio
+async def test_send_data_with_invalid_type(manager, fake_websocket):
+    # Test with invalid type parameter - should default to "update"
+    fake_websocket.state.user = {"name": "Charlie"}
+    data = {"info": "test with invalid type"}
+    
+    # Use an invalid type
+    await manager.send_data(data, "invalid_type", fake_websocket)
+    
+    # Should default to "update"
+    sent = fake_websocket.sent_jsons[0]
+    assert sent["type"] == "update"
+    assert sent["username"] == "Charlie"
+    assert sent["info"] == "test with invalid type"
 
 @pytest.mark.asyncio
 async def test_auth_connect_success(manager, monkeypatch, fake_websocket):
