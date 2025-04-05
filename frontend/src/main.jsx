@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { MsalProvider } from '@azure/msal-react';
 import { msalConfig } from '@/auth/entraAuth';
 import { PublicClientApplication } from '@azure/msal-browser';
+import 'bootstrap/dist/css/bootstrap.min.css';  // Add this line
 
 import App from './App';
 import './index.css';
