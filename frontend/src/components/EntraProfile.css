@@ -1,0 +1,47 @@
+/* Add to your CSS file */
+.profile-toggle {
+    position: relative;
+  }
+  
+  /* CSS-only tooltip */
+  .profile-toggle::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: -30px;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1070;
+    transition: opacity 0.2s;
+  }
+  
+  /* Arrow for tooltip */
+  .profile-toggle::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%);
+    border-width: 4px;
+    border-style: solid;
+    border-color: transparent transparent rgba(0, 0, 0, 0.8) transparent;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1070;
+  }
+  
+  /* Show tooltip on hover */
+  .profile-toggle:hover::after,
+  .profile-toggle:hover::before {
+    opacity: 1;
+    visibility: visible;
+  }

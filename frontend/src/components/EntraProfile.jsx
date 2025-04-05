@@ -65,7 +65,7 @@ const EntraProfile = () => {
     await instance.logoutPopup();
   };
 
-  // Update the CustomToggle component for stable positioning
+  // Update CustomToggle with a pure CSS tooltip approach
   const CustomToggle = React.forwardRef(({ onClick, ...props }, ref) => (
     <div 
       ref={ref}
@@ -73,17 +73,14 @@ const EntraProfile = () => {
         e.preventDefault();
         onClick(e);
       }}
+      className="profile-toggle position-relative"
       style={{ 
         cursor: 'pointer',
         width: '32px',
         height: '32px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        transform: 'translateZ(0)', // Force GPU acceleration for stability
-        willChange: 'transform' // Hint to browser about upcoming transforms
+        zIndex: 1000
       }}
+      data-tooltip={account?.name}
       {...props}
     >
       <img 
@@ -108,16 +105,22 @@ const EntraProfile = () => {
             <Dropdown align="end" data-testid="profile-dropdown">
               <OverlayTrigger
                 placement="bottom"
-                overlay={<Tooltip id="profile-tooltip">{account.name}</Tooltip>}
-                delay={{ show: 200, hide: 100 }} // Add a small delay
+                overlay={<Tooltip id="profile-tooltip" className="tooltip-no-animation">{account.name}</Tooltip>}
                 popperConfig={{
+                  strategy: 'fixed',  // Use fixed positioning strategy
                   modifiers: [
                     {
                       name: 'offset',
                       options: {
-                        offset: [0, 5], // Add some space between trigger and tooltip
+                        offset: [0, 8], // Increase offset to avoid layout shifts
                       },
                     },
+                    {
+                      name: 'preventOverflow',
+                      options: {
+                        boundary: 'viewport',
+                      },
+                    }
                   ],
                 }}
               >
