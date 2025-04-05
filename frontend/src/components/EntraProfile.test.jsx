@@ -295,4 +295,48 @@ describe('EntraProfile Component', () => {
     // If your code navigates after logout, verify that as well:
     // expect(mockedNavigate).toHaveBeenCalledWith('/post-logout');
   });
+
+  test('redirects to saved path after successful login', async () => {
+    // Set up initial state - no active account
+    msalInstance.getActiveAccount.mockReturnValue(null);
+    
+    // Mock sessionStorage
+    const originalGetItem = window.sessionStorage.getItem;
+    const originalRemoveItem = window.sessionStorage.removeItem;
+    
+    window.sessionStorage.getItem = jest.fn().mockReturnValue('/admin');
+    window.sessionStorage.removeItem = jest.fn();
+    
+    // Mock navigate function
+    const mockedNavigate = jest.fn();
+    jest.spyOn(require('react-router-dom'), 'useNavigate').mockReturnValue(mockedNavigate);
+    
+    // Mock successful login response
+    msalInstance.loginPopup.mockResolvedValue({
+      account: mockAccount
+    });
+    
+    // Render component
+    renderWithRouter(<EntraProfile />);
+    
+    // Click sign-in button
+    fireEvent.click(screen.getByTestId('sign-in-button'));
+    
+    // Wait for login process to complete
+    await waitFor(() => {
+      expect(msalInstance.loginPopup).toHaveBeenCalledWith(expect.objectContaining({}));
+      expect(msalInstance.setActiveAccount).toHaveBeenCalled();
+    });
+    
+    // Verify sessionStorage interactions
+    expect(window.sessionStorage.getItem).toHaveBeenCalledWith('redirectPath');
+    expect(window.sessionStorage.removeItem).toHaveBeenCalledWith('redirectPath');
+    
+    // Verify navigation
+    expect(mockedNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+    
+    // Restore original sessionStorage methods
+    window.sessionStorage.getItem = originalGetItem;
+    window.sessionStorage.removeItem = originalRemoveItem;
+  });
 });
