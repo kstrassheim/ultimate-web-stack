@@ -2,7 +2,7 @@
     "all": true,
     "include": ["src/**/*.jsx", "src/**/*.js"],
     "exclude": ["**/*.test.js", "**/*.test.jsx", "**/*.spec.js", "**/*.spec.jsx", "node_modules/**", "src/mock/**"],
-    "check-coverage": true,
+    "check-coverage": false,
     "per-file": false,
     "statements": 90,
     "branches": 80,

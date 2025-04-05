@@ -55,7 +55,7 @@ export default defineConfig({
       });
       
       // Use the imported task directly
-      //codeCoverageTask(on, config);
+      codeCoverageTask(on, config);
       
       return config;
     }
