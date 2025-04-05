@@ -214,10 +214,6 @@ jobs:
 
           # Run coverage check but don't fail the build
           npm run check-coverage
-
-          # Verify the files exist to help with debugging
-          echo "Files in .nyc_output directory:"
-          ls -la .nyc_output
       
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
@@ -243,4 +239,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-coverage
-          path: frontend/.nyc_output
+          path: |
+            frontend/.nyc_output/**/*
+            frontend/coverage/**/*
+          if-no-files-found: warn
+          include-hidden-files: true
