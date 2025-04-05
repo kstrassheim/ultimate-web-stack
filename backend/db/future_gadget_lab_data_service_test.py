@@ -5,6 +5,26 @@ from db.future_gadget_lab_data_service import (
     WorldLineStatus, 
     ExperimentStatus
 )
+from common.log import logger
+
+class SafeLogHandler:
+    """A minimal handler implementation with all the necessary attributes."""
+    def __init__(self):
+        self.level = 0
+        self.filters = []
+        self.stream = None
+    
+    def handle(self, record):
+        # No-op implementation
+        return
+
+@pytest.fixture(autouse=True)
+def patch_logger_handlers(monkeypatch):
+    """Replace logger handlers with safe dummy handlers to avoid attribute errors."""
+    # Create one safe handler for each existing handler
+    safe_handlers = [SafeLogHandler() for _ in getattr(logger, "handlers", [])]
+    # Replace the handlers completely
+    monkeypatch.setattr(logger, "handlers", safe_handlers)
 
 @pytest.fixture
 def db_service():

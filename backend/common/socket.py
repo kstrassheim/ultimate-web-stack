@@ -2,14 +2,14 @@ from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from jose import JWTError 
 from common.auth import verify_token
 from typing import List
-from common.log import logger  # Add this import
+from common.log import logger
 
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
 
-    #Connect without authentication
+    # Connect without authentication
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
@@ -30,14 +30,12 @@ class ConnectionManager:
             # Validate token from first message
             claims = verify_token(auth_data["token"], required_roles, check_all)
             
-            # Check if claims were actually returned (could be None or empty)
             if not claims:
                 logger.warning("WebSocket connection attempt with invalid token (no claims)")
                 await websocket.close(code=1008, reason="Invalid authentication token")
                 return
                 
         except HTTPException as e:
-            # Specifically handle 403 Forbidden from role check failures
             if e.status_code == 403:
                 logger.warning(f"Role check failed during WebSocket authentication: {e.detail}")
                 await websocket.close(code=1008, reason="Insufficient permissions")
@@ -66,7 +64,6 @@ class ConnectionManager:
             "roles": claims.get("roles", [])
         }
         
-        # Add to active connections once authenticated
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
@@ -80,7 +77,18 @@ class ConnectionManager:
             await connection.send_text(message)
 
     async def broadcast_except(self, message: str, exclude_websocket: WebSocket):
-        #Send message to all connections except the specified one
         for connection in self.active_connections:
             if connection != exclude_websocket:
                 await connection.send_text(message)
+                
+    # New method to send JSON data with a username property
+    async def send_data(self, data: dict, websocket: WebSocket):
+        """
+        Sends JSON data to the given websocket connection.
+        Automatically includes a `username` property extracted from websocket.state.user.
+        """
+        username = "unknown"
+        if hasattr(websocket.state, "user"):
+            username = websocket.state.user.get("name", "unknown")
+        data_with_username = {**data, "username": username}
+        await websocket.send_json(data_with_username)
