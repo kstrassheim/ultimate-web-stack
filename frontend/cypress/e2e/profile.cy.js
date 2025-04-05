@@ -75,7 +75,7 @@ describe('Profile Functionality', () => {
     cy.get('[data-testid="change-account-button"]').click();
     
     // The mockup will automatically switch to Admin in the mock implementation
-    cy.setMockRole('Admin');
+    //cy.setMockRole('Admin');
     
     // Verify we're still authenticated after changing accounts
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
@@ -83,6 +83,51 @@ describe('Profile Functionality', () => {
     // Open dropdown again to verify change
     cy.get('[data-testid="profile-image"]').click();
     cy.contains('Signed in as:').should('be.visible');
+  });
+
+  it('should change user account successfully with updated name and image', () => {
+    // Set initial role and log in
+    //cy.setMockRole('User');
+    cy.get('[data-testid="sign-in-button"]').click();
+    
+    // Verify initial authentication state
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    
+    // Open profile dropdown to check initial user name
+    cy.get('[data-testid="profile-image"]').click();
+    
+    // Store the initial user name for comparison
+    cy.contains('Signed in as:').parent().invoke('text').then((initialUserText) => {
+      // Close the dropdown
+      cy.get('[data-testid="profile-image"]').click();
+      
+      // Capture the initial profile image source
+      cy.get('[data-testid="profile-image"]')
+        .invoke('attr', 'src')
+        .then((initialImgSrc) => {
+          
+          // Now change the account
+          cy.get('[data-testid="profile-image"]').click();
+          cy.get('[data-testid="change-account-button"]').click();
+          
+          // The mockup will automatically switch to Admin in the mock implementation
+          //cy.setMockRole('Admin');
+          
+          // Verify we're still authenticated after changing accounts
+          cy.get('[data-testid="authenticated-container"]').should('be.visible');
+          
+          // Verify profile image has changed
+          cy.get('[data-testid="profile-image"]')
+            .invoke('attr', 'src')
+            .should('not.eq', initialImgSrc);
+          
+          // Open dropdown again to verify name change
+          cy.get('[data-testid="profile-image"]').click();
+          
+          // Verify that the user name has changed
+          cy.contains('Signed in as:').parent().invoke('text').should('not.eq', initialUserText);
+        });
+    });
   });
 
   it('should log out successfully', () => {
