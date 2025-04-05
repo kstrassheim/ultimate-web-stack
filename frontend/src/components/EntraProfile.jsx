@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
-import { Button } from 'react-bootstrap';
+import { Button, OverlayTrigger, Tooltip, Dropdown } from 'react-bootstrap';
 import { useMsal } from '@azure/msal-react';
 import { useNavigate } from 'react-router-dom';
 import { loginRequest } from '@/auth/entraAuth';
@@ -65,32 +65,85 @@ const EntraProfile = () => {
     await instance.logoutPopup();
   };
 
+  // Update the CustomToggle component for stable positioning
+  const CustomToggle = React.forwardRef(({ onClick, ...props }, ref) => (
+    <div 
+      ref={ref}
+      onClick={(e) => {
+        e.preventDefault();
+        onClick(e);
+      }}
+      style={{ 
+        cursor: 'pointer',
+        width: '32px',
+        height: '32px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        transform: 'translateZ(0)', // Force GPU acceleration for stability
+        willChange: 'transform' // Hint to browser about upcoming transforms
+      }}
+      {...props}
+    >
+      <img 
+        src={photoUrl} 
+        alt="Profile" 
+        className="profile-image rounded-circle" 
+        style={{ 
+          width: "32px", 
+          height: "32px",
+          objectFit: "cover"
+        }}
+        data-testid="profile-image" 
+      />
+    </div>
+  ));
+
   return (
     <div className="d-flex align-items-center" data-testid="profile-wrapper">
       <AuthenticatedTemplate>
         <div className="d-flex align-items-center" data-testid="authenticated-container">
           {account && (
-            <div className="profile-container d-flex align-items-center me-3" data-testid="profile-container">
-              <img 
-                src={photoUrl} 
-                alt="Profile" 
-                className="profile-image rounded-circle me-2" 
-                style={{ width: "32px", height: "32px" }}
-                data-testid="profile-image" 
-              />
-              <div className="profile-name text-light" data-testid="profile-name">
-                {account.name}
-              </div>
-            </div>
+            <Dropdown align="end" data-testid="profile-dropdown">
+              <OverlayTrigger
+                placement="bottom"
+                overlay={<Tooltip id="profile-tooltip">{account.name}</Tooltip>}
+                delay={{ show: 200, hide: 100 }} // Add a small delay
+                popperConfig={{
+                  modifiers: [
+                    {
+                      name: 'offset',
+                      options: {
+                        offset: [0, 5], // Add some space between trigger and tooltip
+                      },
+                    },
+                  ],
+                }}
+              >
+                <Dropdown.Toggle as={CustomToggle} id="dropdown-profile" />
+              </OverlayTrigger>
+              
+              <Dropdown.Menu variant="dark">
+                <Dropdown.Item as="div" className="text-light" disabled>
+                  Signed in as: <strong>{account.name}</strong>
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item 
+                  onClick={() => logonFunc(true)} 
+                  data-testid="change-account-button"
+                >
+                  Change Account
+                </Dropdown.Item>
+                <Dropdown.Item 
+                  onClick={logoutFunc} 
+                  data-testid="sign-out-button"
+                >
+                  Sign Out
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown>
           )}
-          <div>
-            <Button variant="outline-light" size="sm" onClick={logoutFunc} data-testid="sign-out-button" className="me-2">
-              Sign Out
-            </Button>
-            <Button variant="outline-light" size="sm" onClick={() => logonFunc(true)} data-testid="change-account-button">
-              Change Account
-            </Button>
-          </div>
         </div>
       </AuthenticatedTemplate>
       
