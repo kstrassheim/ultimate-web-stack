@@ -5,13 +5,25 @@ import { useMsal } from '@azure/msal-react';
 import Admin from './Admin';
 import { getAdminData } from '@/api/api';
 import appInsights from '@/log/appInsights';
+import notyfService from '@/log/notyfService';
+
+// Mock the notyfService
+jest.mock('@/log/notyfService', () => ({
+  success: jest.fn(),
+  error: jest.fn(),
+  warning: jest.fn(),
+  info: jest.fn()
+}));
 
 // Use the mockMsalInstance that's already defined in jest.setup.js
 const { instance: mockMsalInstance } = useMsal();
 
-
-
 describe('Admin Component', () => {
+  beforeEach(() => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+  });
+
   const renderAdminWithMocks = () => {
     return render(<Admin />);
   };
@@ -38,10 +50,14 @@ describe('Admin Component', () => {
     // Verify tracking was called
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Admin - Fetch data started' });
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Admin - Fetch data completed' });
+    
+    // Verify Notyf success notification was shown
+    expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
   });
 
   test('handles API error correctly', async () => {
-    getAdminData.mockRejectedValueOnce(new Error('Admin API Error'));
+    const errorMessage = 'Admin API Error';
+    getAdminData.mockRejectedValueOnce(new Error(errorMessage));
     
     // Wrap rendering in act
     await act(async () => {
@@ -55,27 +71,46 @@ describe('Admin Component', () => {
     
     // Verify exception tracking
     expect(appInsights.trackException).toHaveBeenCalled();
+    
+    // Verify Notyf error notification was shown with the correct message
+    expect(notyfService.error).toHaveBeenCalledWith('Failed to load data: ' + errorMessage);
   });
 
   test('reload button fetches fresh admin data', async () => {
-    getAdminData.mockResolvedValue({ message: 'Success', status: 200 });
+    // Use a mock implementation that resolves after a short delay
+    getAdminData.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 50)); // Increase delay for stability
+      return { message: 'Success', status: 200 };
+    });
+    
+    // Render the component
     renderAdminWithMocks();
     
-    // Wait for initial data load
+    // First, wait for initial data load to complete
     await waitFor(() => {
       expect(screen.getByTestId('admin-data-message')).toBeInTheDocument();
-    });
+      expect(screen.getByTestId('admin-data-message')).toHaveTextContent('Success');
+    }, { timeout: 3000 });
     
-    // Clear the mocks to check for new calls
+    // Clear all mocks AFTER initial data load
     jest.clearAllMocks();
     
-    // Click reload button
-    fireEvent.click(screen.getByTestId('admin-reload-button'));
-    
-    // Wait for data to be reloaded
-    await waitFor(() => {
-      // The API was called again
-      expect(getAdminData).toHaveBeenCalledTimes(1);
+    // Use act to wrap the button click for state updates
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('admin-reload-button'));
     });
+    
+    // Verify the button shows loading state
+    expect(screen.getByTestId('admin-reload-button')).toHaveTextContent(/Loading/);
+    
+    // Wait for the reload to complete (this is critical)
+    await waitFor(() => {
+      expect(screen.getByTestId('admin-reload-button')).not.toHaveTextContent(/Loading/);
+    }, { timeout: 3000 });
+    
+    // Now verify the API and notification calls
+    expect(getAdminData).toHaveBeenCalledTimes(1);
+    expect(getAdminData).toHaveBeenCalledWith(mockMsalInstance);
+    expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
   });
 });
