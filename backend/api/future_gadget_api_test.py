@@ -233,3 +233,160 @@ class TestDMailEndpoints:
             assert response.status_code == 200
             data = response.json()
             assert "successfully deleted" in data["message"].lower()
+
+
+class TestDivergenceReadingEndpoints:
+    """Test the divergence meter reading endpoints"""
+
+    def test_get_all_divergence_readings(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.get_all_divergence_readings", return_value=[
+            {
+                "id": "DR-001",
+                "reading": 1.0,
+                "status": "steins_gate",
+                "recorded_by": "001",
+                "notes": "Initial reading"
+            }
+        ]):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/divergence-readings")
+            assert response.status_code == 200
+            readings = response.json()
+            assert isinstance(readings, list)
+            assert readings[0]["id"] == "DR-001"
+
+    def test_get_divergence_reading_by_id(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.get_divergence_reading_by_id", return_value={
+            "id": "DR-001",
+            "reading": 1.0,
+            "status": "steins_gate",
+            "recorded_by": "001",
+            "notes": "Initial reading"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/divergence-readings/DR-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == "DR-001"
+
+    def test_create_divergence_reading(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.create_divergence_reading", return_value={
+            "id": "DR-002",
+            "reading": 1.2,
+            "status": "steins_gate",
+            "recorded_by": "002",
+            "notes": "New reading"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            new_reading = {
+                "reading": "1.2",  # Using string to test conversion
+                "status": "steins_gate",
+                "recorded_by": "002",
+                "notes": "New reading"
+            }
+            response = test_client.post(f"{API_PREFIX}/divergence-readings", json=new_reading)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == "DR-002"
+
+    def test_update_divergence_reading(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.update_divergence_reading", return_value={
+            "id": "DR-001",
+            "reading": 1.5,
+            "status": "steins_gate",
+            "recorded_by": "001",
+            "notes": "Updated reading"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            update_data = {
+                "reading": "1.5",
+                "notes": "Updated reading"
+            }
+            response = test_client.put(f"{API_PREFIX}/divergence-readings/DR-001", json=update_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["reading"] == 1.5
+
+    def test_delete_divergence_reading(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.delete_divergence_reading", return_value=True):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.delete(f"{API_PREFIX}/divergence-readings/DR-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert "successfully deleted" in data["message"].lower()
+
+
+class TestLabMemberEndpoints:
+    """Test the lab member endpoints"""
+
+    def test_get_all_lab_members(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.get_all_lab_members", return_value=[
+            {
+                "id": "LM-001",
+                "name": "Alice",
+                "codename": "Wonder",
+                "role": "LabMember"
+            }
+        ]):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-members")
+            assert response.status_code == 200
+            members = response.json()
+            assert isinstance(members, list)
+            assert members[0]["id"] == "LM-001"
+
+    def test_get_lab_member_by_id(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.get_lab_member_by_id", return_value={
+            "id": "LM-001",
+            "name": "Alice",
+            "codename": "Wonder",
+            "role": "LabMember"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-members/LM-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == "LM-001"
+
+    def test_create_lab_member(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.create_lab_member", return_value={
+            "id": "LM-002",
+            "name": "Bob",
+            "codename": "Builder",
+            "role": "LabMember"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            new_member = {
+                "name": "Bob",
+                "codename": "Builder",
+                "role": "LabMember"
+            }
+            response = test_client.post(f"{API_PREFIX}/lab-members", json=new_member)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == "LM-002"
+
+    def test_update_lab_member(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.update_lab_member", return_value={
+            "id": "LM-001",
+            "name": "Alice Updated",
+            "codename": "Wonderland",
+            "role": "LabMember"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            update_data = {
+                "name": "Alice Updated",
+                "codename": "Wonderland"
+            }
+            response = test_client.put(f"{API_PREFIX}/lab-members/LM-001", json=update_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["name"] == "Alice Updated"
+
+    def test_delete_lab_member(self, client_with_overridden_dependencies, setup_fgl_service):
+        with patch("api.future_gadget_api.fgl_service.delete_lab_member", return_value=True):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.delete(f"{API_PREFIX}/lab-members/LM-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert "successfully deleted" in data["message"].lower()

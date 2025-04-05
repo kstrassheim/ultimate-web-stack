@@ -257,3 +257,121 @@ async def delete_d_mail(
         raise HTTPException(status_code=500, detail=f"Failed to delete D-Mail with ID {d_mail_id}")
     return {"message": f"D-Mail with ID {d_mail_id} successfully deleted"}
 
+# ----- DIVERGENCE METER READINGS ROUTES -----
+
+@future_gadget_api_router.get("/divergence-readings", response_model=List[Dict])
+@required_roles(["Admin"])
+async def get_all_divergence_readings(token=Security(azure_scheme, scopes=scopes)):
+    logger.info("Future Gadget Lab API - Getting all divergence readings")
+    return fgl_service.get_all_divergence_readings()
+
+@future_gadget_api_router.get("/divergence-readings/{reading_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def get_divergence_reading_by_id(
+    reading_id: str = Path(..., description="The ID of the divergence reading to retrieve"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Getting divergence reading with ID: {reading_id}")
+    reading = fgl_service.get_divergence_reading_by_id(reading_id)
+    if not reading:
+        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
+    return reading
+
+@future_gadget_api_router.post("/divergence-readings", response_model=Dict, status_code=201)
+@required_roles(["Admin"])
+async def create_divergence_reading(
+    reading: DivergenceReadingCreate,
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Creating new divergence reading from {reading.recorded_by}")
+    created_reading = fgl_service.create_divergence_reading(reading.model_dump())
+    return created_reading
+
+@future_gadget_api_router.put("/divergence-readings/{reading_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def update_divergence_reading(
+    reading_id: str = Path(..., description="The ID of the divergence reading to update"),
+    reading: DivergenceReadingUpdate = Body(...),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Updating divergence reading with ID: {reading_id}")
+    existing_reading = fgl_service.get_divergence_reading_by_id(reading_id)
+    if not existing_reading:
+        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
+    updated_reading = fgl_service.update_divergence_reading(reading_id, reading.model_dump(exclude_unset=True))
+    return updated_reading
+
+@future_gadget_api_router.delete("/divergence-readings/{reading_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def delete_divergence_reading(
+    reading_id: str = Path(..., description="The ID of the divergence reading to delete"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Deleting divergence reading with ID: {reading_id}")
+    existing_reading = fgl_service.get_divergence_reading_by_id(reading_id)
+    if not existing_reading:
+        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
+    success = fgl_service.delete_divergence_reading(reading_id)
+    if not success:
+        raise HTTPException(status_code=500, detail=f"Failed to delete divergence reading with ID {reading_id}")
+    return {"message": f"Divergence reading with ID {reading_id} successfully deleted"}
+
+# ----- LAB MEMBER ROUTES -----
+
+@future_gadget_api_router.get("/lab-members", response_model=List[Dict])
+@required_roles(["Admin"])
+async def get_all_lab_members(token=Security(azure_scheme, scopes=scopes)):
+    logger.info("Future Gadget Lab API - Getting all lab members")
+    return fgl_service.get_all_lab_members()
+
+@future_gadget_api_router.get("/lab-members/{member_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def get_lab_member_by_id(
+    member_id: str = Path(..., description="The ID of the lab member to retrieve"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Getting lab member with ID: {member_id}")
+    member = fgl_service.get_lab_member_by_id(member_id)
+    if not member:
+        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
+    return member
+
+@future_gadget_api_router.post("/lab-members", response_model=Dict, status_code=201)
+@required_roles(["Admin"])
+async def create_lab_member(
+    member: LabMemberCreate,
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Creating new lab member: {member.name}")
+    created_member = fgl_service.create_lab_member(member.model_dump())
+    return created_member
+
+@future_gadget_api_router.put("/lab-members/{member_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def update_lab_member(
+    member_id: str = Path(..., description="The ID of the lab member to update"),
+    member: LabMemberUpdate = Body(...),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Updating lab member with ID: {member_id}")
+    existing_member = fgl_service.get_lab_member_by_id(member_id)
+    if not existing_member:
+        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
+    updated_member = fgl_service.update_lab_member(member_id, member.model_dump(exclude_unset=True))
+    return updated_member
+
+@future_gadget_api_router.delete("/lab-members/{member_id}", response_model=Dict)
+@required_roles(["Admin"])
+async def delete_lab_member(
+    member_id: str = Path(..., description="The ID of the lab member to delete"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    logger.info(f"Future Gadget Lab API - Deleting lab member with ID: {member_id}")
+    existing_member = fgl_service.get_lab_member_by_id(member_id)
+    if not existing_member:
+        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
+    success = fgl_service.delete_lab_member(member_id)
+    if not success:
+        raise HTTPException(status_code=500, detail=f"Failed to delete lab member with ID {member_id}")
+    return {"message": f"Lab member with ID {member_id} successfully deleted"}
+
