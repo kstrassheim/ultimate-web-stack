@@ -8,6 +8,13 @@ import appInsights from '@/log/appInsights';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
 import { MemoryRouter } from 'react-router-dom';
 
+// Add this with your other mocks at the top of the file
+jest.mock('@/auth/entraAuth', () => ({
+  loginRequest: { 
+    scopes: ['User.Read'] 
+  }
+}));
+
 // Mock React Router hooks
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
