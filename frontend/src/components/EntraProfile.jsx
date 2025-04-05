@@ -139,7 +139,7 @@ const EntraProfile = () => {
       
       <UnauthenticatedTemplate>
         <div data-testid="unauthenticated-container">
-          <Button variant="outline-light" size="sm" onClick={() => logonFunc(false)} data-testid="sign-in-button">
+          <Button variant="outline-light" className="me-3" size="sm" onClick={() => logonFunc(false)} data-testid="sign-in-button">
             Sign In
           </Button>
         </div>
