@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
-import { Button, OverlayTrigger, Tooltip, Dropdown } from 'react-bootstrap';
+import { Button, Dropdown } from 'react-bootstrap';
 import { useMsal } from '@azure/msal-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { loginRequest } from '@/auth/entraAuth';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
 import appInsights from '@/log/appInsights';
 import { getProfilePhoto } from '@/api/graphApi';
+import './EntraProfile.css'; // Create this file for custom tooltip styles
 
 const EntraProfile = () => {
   const { instance } = useMsal();
   const navigate = useNavigate();
+  const location = useLocation(); // Track location changes
   const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
   const [account, setAccount] = useState(null);
+  const [showTooltip, setShowTooltip] = useState(false);
   
   const fetchProfilePhotoFunc = async () => {
     if (account) {
@@ -65,7 +68,12 @@ const EntraProfile = () => {
     await instance.logoutPopup();
   };
 
-  // Update CustomToggle with a pure CSS tooltip approach
+  // Reset tooltip state on page navigation
+  useEffect(() => {
+    setShowTooltip(false);
+  }, [location.pathname]);
+
+  // Update CustomToggle with manual tooltip handling
   const CustomToggle = React.forwardRef(({ onClick, ...props }, ref) => (
     <div 
       ref={ref}
@@ -73,27 +81,20 @@ const EntraProfile = () => {
         e.preventDefault();
         onClick(e);
       }}
-      className="profile-toggle position-relative"
-      style={{ 
-        cursor: 'pointer',
-        width: '32px',
-        height: '32px',
-        zIndex: 1000
-      }}
-      data-tooltip={account?.name}
+      className="profile-toggle"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
       {...props}
     >
       <img 
         src={photoUrl} 
         alt="Profile" 
-        className="profile-image rounded-circle" 
-        style={{ 
-          width: "32px", 
-          height: "32px",
-          objectFit: "cover"
-        }}
+        className="profile-image" 
         data-testid="profile-image" 
       />
+      {showTooltip && account && (
+        <span className="profile-custom-tooltip">{account.name}</span>
+      )}
     </div>
   ));
 
@@ -103,29 +104,7 @@ const EntraProfile = () => {
         <div className="d-flex align-items-center" data-testid="authenticated-container">
           {account && (
             <Dropdown align="end" data-testid="profile-dropdown">
-              <OverlayTrigger
-                placement="bottom"
-                overlay={<Tooltip id="profile-tooltip" className="tooltip-no-animation">{account.name}</Tooltip>}
-                popperConfig={{
-                  strategy: 'fixed',  // Use fixed positioning strategy
-                  modifiers: [
-                    {
-                      name: 'offset',
-                      options: {
-                        offset: [0, 8], // Increase offset to avoid layout shifts
-                      },
-                    },
-                    {
-                      name: 'preventOverflow',
-                      options: {
-                        boundary: 'viewport',
-                      },
-                    }
-                  ],
-                }}
-              >
-                <Dropdown.Toggle as={CustomToggle} id="dropdown-profile" />
-              </OverlayTrigger>
+              <Dropdown.Toggle as={CustomToggle} id="dropdown-profile" />
               
               <Dropdown.Menu variant="dark">
                 <Dropdown.Item as="div" className="text-light" disabled>

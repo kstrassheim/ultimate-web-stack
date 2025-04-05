@@ -1,6 +1,10 @@
 /* Add to your CSS file */
 .profile-toggle {
     position: relative;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    z-index: 1000;
   }
   
   /* CSS-only tooltip */
@@ -44,4 +48,37 @@
   .profile-toggle:hover::before {
     opacity: 1;
     visibility: visible;
+  }
+
+  .profile-image {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  
+  .profile-custom-tooltip {
+    position: absolute;
+    top: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  
+  .profile-custom-tooltip:before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 0 5px 5px;
+    border-style: solid;
+    border-color: transparent transparent rgba(0, 0, 0, 0.8);
   }
