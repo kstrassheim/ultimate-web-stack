@@ -1,6 +1,6 @@
 import { LogLevel } from '@azure/msal-browser';
 import { frontendUrl } from "@/config";
-import tfconfig from '@/../terraform.config.json' assert { type: 'json' };
+import tfconfig from '@/../terraform.config.json' with { type: 'json' };
 import appInsights from '@/log/appInsights';
 
 
@@ -43,7 +43,7 @@ export const retreiveTokenForBackend = async (instance, extraScopes = []) => {
   return tokenResponse.accessToken;
 }
 
-export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
+export const retrieveTokenForGraph = async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   
@@ -62,7 +62,7 @@ export const retreiveTokenForGraph = async (instance, extraScopes = []) => {
     appInsights.trackException({ 
       exception: error,
       properties: { 
-        operation: 'retreiveTokenForGraph', 
+        operation: 'retrieveTokenForGraph', 
         scopes: scopesToRequest.join(',') 
       }
     });

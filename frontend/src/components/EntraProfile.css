@@ -1,0 +1,55 @@
+/* Add to your CSS file */
+/* Profile toggle container */
+.profile-toggle {
+  position: relative;
+  cursor: pointer;
+  display: flex;           /* Change to flex for better alignment */
+  align-items: center;     /* Center vertically */
+  justify-content: center; /* Center horizontally */
+  width: 32px;
+  height: 32px;
+  z-index: 1000;
+}
+
+/* Profile image */
+.profile-image {
+  display: inline-flex; /* Change from block to inline-flex */
+  width: 32px;      /* Use fixed width instead of percentage */
+  height: 32px;     /* Use fixed height instead of percentage */
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0; /* Ensure no margins are pushing it */
+  padding: 0; /* Ensure no padding is adding space */
+  vertical-align: middle; /* Align vertically */
+}
+
+/* Fixed tooltip positioning */
+.profile-custom-tooltip {
+  position: absolute;
+  top: 40px; /* Adjusted top position */
+  left: 35%; /* Center it horizontally relative to parent */
+  transform: translateX(-50%); /* Center the tooltip */
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  z-index: 1070;
+  pointer-events: none;
+  margin: 0;
+  width: auto;       /* Use auto instead of max-content */
+  user-select: none;
+}
+
+/* Arrow pointing up to the profile */
+.profile-custom-tooltip:before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+}

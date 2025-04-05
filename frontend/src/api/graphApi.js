@@ -1,4 +1,4 @@
-import { retreiveTokenForGraph, loginRequest } from '@/auth/entraAuth';
+import { retrieveTokenForGraph, loginRequest } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights'; 
 
 export const getProfilePhoto = window.getProfilePhoto ? window.getProfilePhoto : async (instance, activeAccount) => {
@@ -32,7 +32,7 @@ export const getProfilePhoto = window.getProfilePhoto ? window.getProfilePhoto :
       appInsights.trackEvent({ name: 'Api Call - getAllGroups (Graph API)' });
       
       // Request token with Group.Read.All scope for Graph API
-      const accessToken = await retreiveTokenForGraph(instance, ['Group.Read.All']);
+      const accessToken = await retrieveTokenForGraph(instance, ['Group.Read.All']);
       
       // Call Microsoft Graph API directly
       const response = await fetch('https://graph.microsoft.com/v1.0/groups', {

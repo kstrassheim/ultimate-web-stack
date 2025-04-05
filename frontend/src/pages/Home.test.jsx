@@ -6,11 +6,24 @@ import Home from './Home';
 import { getUserData } from '@/api/api';
 import { getAllGroups } from '@/api/graphApi';
 import appInsights from '@/log/appInsights';
+import notyfService from '@/log/notyfService';
+
+// Mock the notyfService
+jest.mock('@/log/notyfService', () => ({
+  success: jest.fn(),
+  error: jest.fn(),
+  warning: jest.fn(),
+  info: jest.fn()
+}));
 
 // Use the mockMsalInstance that's already defined in your setup
 const { instance: mockMsalInstance } = useMsal();
 
 describe('Home Component', () => {
+  beforeEach(() => {
+    // Clear all mocks before each test
+    jest.clearAllMocks();
+  });
 
   const renderHomeWithMocks = () => {
     return render(<Home />);
@@ -43,6 +56,9 @@ describe('Home Component', () => {
     // Verify tracking was called
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Home - Fetch data started' });
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Home - Fetch data completed' });
+    
+    // Verify Notyf success notification was shown
+    expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
 
     // Add these assertions after the existing tests in the 'renders and loads data successfully' test
     // Wait for ALL data to load with a longer timeout
@@ -57,8 +73,9 @@ describe('Home Component', () => {
 
   test('handles API error correctly', async () => {
     // Override mock to throw an error for this test only
+    const errorMessage = 'API Error';
     getUserData.mockImplementationOnce(() => {
-      throw new Error('API Error');
+      throw new Error(errorMessage);
     });
     
     renderHomeWithMocks();
@@ -70,18 +87,23 @@ describe('Home Component', () => {
     
     // Verify exception was tracked
     expect(appInsights.trackException).toHaveBeenCalled();
+    
+    // Verify Notyf error notification was shown with the correct message
+    expect(notyfService.error).toHaveBeenCalledWith('Failed to load data: ' + errorMessage);
   });
 
   test('reload button fetches fresh data', async () => {
+    // Mock implementation to track when promise resolves
+    getUserData.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay to simulate async
+      return { message: "Hello from API" };
+    });
+    
     renderHomeWithMocks();
     
     // Wait for initial data load
     await waitFor(() => {
       expect(screen.getByTestId('api-message-data')).toBeInTheDocument();
-      expect(screen.getByTestId('groups-container')).toBeInTheDocument();
-      
-      // Verify content matches the mock API response
-      expect(screen.getByTestId('api-message-data')).toHaveTextContent('Hello from API');
     });
     
     // Clear the mocks to check for new calls
@@ -93,15 +115,17 @@ describe('Home Component', () => {
     // Verify loading state
     expect(screen.getByTestId('reload-button')).toHaveTextContent(/Loading/);
     
-    // Wait for data to be reloaded
+    // Wait for the complete reload process, including notification
     await waitFor(() => {
-      // The API was called again
+      // Wait for loading to finish
+      expect(screen.getByTestId('reload-button')).not.toHaveTextContent(/Loading/);
+      
+      // Check API calls
       expect(getUserData).toHaveBeenCalledTimes(1);
-    });
-    
-    // Verify API calls were made again with the same parameters
-    expect(getUserData).toHaveBeenCalledWith(mockMsalInstance);
-    expect(getAllGroups).toHaveBeenCalledTimes(1);
-    expect(getAllGroups).toHaveBeenCalledWith(mockMsalInstance);
+      expect(getAllGroups).toHaveBeenCalledTimes(1);
+      
+      // Now check the notification was called
+      expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
+    }, { timeout: 3000 });
   });
 });

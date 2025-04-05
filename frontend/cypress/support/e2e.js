@@ -16,18 +16,16 @@
 // Alternatively you can use CommonJS syntax:
 // require('./commands')
 // Import commands.js using ES2015 syntax:
+import 'cypress-wait-until';
 import './msalMock';
+import '@cypress/code-coverage/support';
+
 // Example of global behavior modification
 Cypress.on('uncaught:exception', (err, runnable) => {
-    // returning false here prevents Cypress from
-    // failing the test on uncaught exceptions
-    return false
-  })
-  
-  // Example of adding custom command
-  // Cypress.Commands.add('login', (email, password) => {
-  //   cy.visit('/login')
-  //   cy.get('#email').type(email)
-  //   cy.get('#password').type(password)
-  //   cy.get('form').submit()
-  // })
+  // returning false here prevents Cypress from
+  // failing the test on uncaught exceptions
+  return false
+});
+
+// For tasks, define them in cypress.config.js instead of here
+// Do NOT use Cypress.on('task', {...}) in this file

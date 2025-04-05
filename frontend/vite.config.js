@@ -3,7 +3,7 @@ import fs from 'fs';
 // import { normalizePath } from 'vite';
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
-// import { viteStaticCopy } from 'vite-plugin-static-copy';
+import istanbul from 'vite-plugin-istanbul'
 
 const isMockEnabled = process.env.npm_config_mock === 'true';
 console.log(`Mocking ${isMockEnabled ? 'enabled' : 'disabled'}`);
@@ -74,7 +74,16 @@ const getAliases = () => {
 };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Add Istanbul plugin for code coverage
+    istanbul({
+      include: 'src/*',
+      exclude: ['node_modules', 'test/'],
+      extension: ['.js', '.jsx'],
+      requireEnv: false,
+    })
+  ],
   base: "/",
   resolve: {
     alias: getAliases()
