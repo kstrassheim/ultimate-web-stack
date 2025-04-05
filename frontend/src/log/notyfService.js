@@ -8,7 +8,7 @@ const notyf = new Notyf({
   types: [
     {
       type: 'success',
-      background: '#28a745',
+      background: 'rgba(40, 167, 69, 0.9)', // Added 0.8 alpha for transparency
       icon: {
         className: 'notyf__icon--success',
         tagName: 'i'
@@ -16,7 +16,7 @@ const notyf = new Notyf({
     },
     {
       type: 'error',
-      background: '#dc3545',
+      background: 'rgba(220, 53, 69, 0.9)', // Added 0.8 alpha for transparency
       icon: {
         className: 'notyf__icon--error',
         tagName: 'i'
@@ -24,12 +24,12 @@ const notyf = new Notyf({
     },
     {
       type: 'warning',
-      background: '#ffc107',
+      background: 'rgba(255, 193, 7, 0.9)', // Added 0.8 alpha for transparency
       icon: false
     },
     {
       type: 'info',
-      background: '#17a2b8',
+      background: 'rgba(23, 162, 184, 0.9)', // Added 0.8 alpha for transparency
       icon: false
     }
   ]
