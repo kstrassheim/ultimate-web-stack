@@ -33,10 +33,13 @@ function App() {
           {/* Hamburger toggle button */}
           <Navbar.Toggle 
             aria-controls="basic-navbar-nav"
-            className="border-0 text-light focus-ring focus-ring-light navbar-dark"
+            className="border border-secondary navbar-dark"
             variant="dark"
-            style={{ boxShadow: 'none', backgroundColor: 'transparent'  }}
-            onClick={(e) => e.currentTarget.blur()}
+            style={{ 
+              boxShadow: 'none', 
+              backgroundColor: 'transparent',
+              borderColor: 'rgba(255, 255, 255, 0.2) !important' 
+            }}
           />
           {/* Collapsible navigation content */}
           <Navbar.Collapse id="basic-navbar-nav" className="order-lg-2">
