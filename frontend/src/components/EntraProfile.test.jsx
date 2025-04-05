@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, waitForElementToBeRemoved } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
 import EntraProfile from './EntraProfile';
@@ -229,5 +229,70 @@ describe('EntraProfile Component', () => {
     
     // Check authenticated container now present
     expect(screen.getByTestId('authenticated-container')).toBeInTheDocument();
+  });
+
+  test('displays tooltip on mouse enter and hides on mouse leave', async () => {
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    renderWithRouter(<EntraProfile />);
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+  
+    const profileImage = screen.getByTestId('profile-image');
+    
+    // Initially, tooltip should not be visible
+    const tooltipSelector = '.profile-custom-tooltip';
+    expect(screen.queryByText(mockAccount.name, { selector: tooltipSelector })).not.toBeInTheDocument();
+    
+    // Mouse enter: tooltip appears with class profile-custom-tooltip
+    fireEvent.mouseEnter(profileImage);
+    expect(screen.queryByText(mockAccount.name, { selector: tooltipSelector })).toBeInTheDocument();
+
+    // Mouse leave: tooltip becomes invisible
+    fireEvent.mouseLeave(profileImage);
+    
+    // Toggle the dropdown to reset states
+    const dropdownToggle = screen.getByTestId('profile-dropdown').querySelector('.dropdown-toggle');
+    fireEvent.click(dropdownToggle);  // Open dropdown
+    fireEvent.click(dropdownToggle);  // Close dropdown
+    
+    // Now check that tooltip (specifically) is gone
+    await waitFor(() => {
+      expect(screen.queryByText(mockAccount.name, { selector: tooltipSelector })).not.toBeInTheDocument();
+    });
+  });
+  
+  test('forces a new login (change account) when selected', async () => {
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    msalInstance.loginPopup = jest.fn(); // Use msalInstance, not instance
+    renderWithRouter(<EntraProfile />);
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+  
+    // Open profile menu and click "change account"
+    fireEvent.click(screen.getByTestId('profile-image'));
+    fireEvent.click(screen.getByTestId('change-account-button'));
+  
+    // Ensure logon function is called with forcePopup
+    expect(msalInstance.loginPopup).toHaveBeenCalledWith(expect.objectContaining({}));
+  });
+  
+  test('logs out and navigates away when sign-out is clicked', async () => {
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    msalInstance.logoutPopup = jest.fn(); // Use msalInstance, not instance
+    renderWithRouter(<EntraProfile />);
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+  
+    // Open menu and click "sign out"
+    fireEvent.click(screen.getByTestId('profile-image'));
+    fireEvent.click(screen.getByTestId('sign-out-button'));
+  
+    // Ensure logout logic ran
+    expect(msalInstance.logoutPopup).toHaveBeenCalled();
+    // If your code navigates after logout, verify that as well:
+    // expect(mockedNavigate).toHaveBeenCalledWith('/post-logout');
   });
 });
