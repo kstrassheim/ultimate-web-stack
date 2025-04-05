@@ -94,7 +94,7 @@ const EntraProfile = () => {
         data-testid="profile-image" 
       />
       {showTooltip && account && !dropdownOpen && ( // Only render tooltip if dropdown is closed
-        <span className="profile-custom-tooltip">{account.name}</span>
+        <span className="profile-custom-tooltip" data-testid="profile-custom-tooltip">{account.name}</span>
       )}
     </div>
   ));
@@ -114,7 +114,7 @@ const EntraProfile = () => {
             >
               <Dropdown.Toggle as={CustomToggle} id="dropdown-profile" />
               
-              <Dropdown.Menu variant="dark">
+              <Dropdown.Menu variant="dark" data-testid="profile-dropdown-menu">
                 <Dropdown.Item as="div" className="text-light" disabled>
                   Signed in as: <strong>{account.name}</strong>
                 </Dropdown.Item>
