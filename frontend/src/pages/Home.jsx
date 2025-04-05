@@ -6,6 +6,7 @@ import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
 import GroupsList from '@/components/GroupsList';
 import Loading, {sleep} from '@/components/Loading';
+import notyfService from '@/log/notyfService';
 
 const Home = () => {
   const { instance } = useMsal();
@@ -26,9 +27,12 @@ const Home = () => {
    
       setData(userData);
       setGroupData(groupsData);
-      // await sleep(1000);
+      // Show success notification
+      notyfService.success('Data reloaded successfully!');
     } catch (err) {
       setError(err.message);
+      // Show error notification
+      notyfService.error('Failed to load data: ' + err.message);
       appInsights.trackException({ exception: err });
     } finally {
       setLoading(false);
@@ -50,7 +54,6 @@ const Home = () => {
       
       <div data-testid="home-container">
         <h1>Home Page</h1>
-        {/* <p>Environment: {env}</p> */}
         
         {error && <div data-testid="error-message" className="error">Error: {error}</div>}
         

@@ -3,28 +3,32 @@ import './Home.css';
 import { getAdminData } from '@/api/api';
 import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
-import Loading, { sleep } from '@/components/Loading'; // Import the Loading component
+import Loading from '@/components/Loading';
+import notyfService from '@/log/notyfService';
 
 const Admin = () => {
   const { instance } = useMsal();
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false); // Add loading state
-  const [error, setError] = useState(null); // Add error state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const initFetchCompleted = useRef(false);
 
   const fetchData = async () => {
-    setLoading(true); // Start loading
-    setError(null); // Clear any previous errors
+    setLoading(true);
+    setError(null);
     
     try {
       const result = await getAdminData(instance);
-      //await sleep(1000); // Optional: Add a delay to show the loading state
       setData(result);
+      // Show success notification
+      notyfService.success('Data reloaded successfully!');
     } catch (err) {
       setError(err.message);
+      // Show error notification
+      notyfService.error('Failed to load data: ' + err.message);
       appInsights.trackException({ exception: err });
     } finally {
-      setLoading(false); // End loading regardless of success/failure
+      setLoading(false);
     }
   }
 
@@ -39,16 +43,13 @@ const Admin = () => {
 
   return (
     <>
-      {/* Add the loading overlay */}
       <Loading visible={loading} message="Loading admin data..." />
       
       <div data-testid="admin-page">
         <h1 data-testid="admin-heading">Admin Page</h1>
         
-        {/* Show error message if there is one */}
         {error && <div className="error" data-testid="admin-error">Error: {error}</div>}
         
-        {/* Show data or a message if no data */}
         <div className="card" data-testid="admin-card">
           <h2 data-testid="admin-card-heading">Admin Data</h2>
           <p data-testid="admin-data-message">{data ? data.message : 'No data available'}</p>
