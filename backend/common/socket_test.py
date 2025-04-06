@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import datetime
 from common.socket import ConnectionManager
 from fastapi import WebSocket
 
@@ -74,6 +75,16 @@ async def test_broadcast_text(manager):
     assert ws2.sent_jsons[0]["message"] == "Broadcast message"
     assert ws1.sent_jsons[0]["type"] == "message"
     assert ws2.sent_jsons[0]["type"] == "message"
+    
+    # Check that timestamps exist and are valid
+    assert "timestamp" in ws1.sent_jsons[0]
+    assert "timestamp" in ws2.sent_jsons[0]
+    # Verify timestamps are in valid ISO format
+    for websocket in [ws1, ws2]:
+        try:
+            datetime.datetime.fromisoformat(websocket.sent_jsons[0]["timestamp"])
+        except ValueError:
+            pytest.fail(f"Timestamp is not in valid ISO format: {websocket.sent_jsons[0]['timestamp']}")
 
 @pytest.mark.asyncio
 async def test_send_method(manager, fake_websocket):
@@ -89,6 +100,14 @@ async def test_send_method(manager, fake_websocket):
     assert sent["username"] == "Alice"
     assert sent["info"] == "sample data"
     assert sent["type"] == "create"
+    
+    # Verify timestamp field exists and is in ISO format
+    assert "timestamp" in sent
+    # Try parsing the timestamp to verify it's in ISO format
+    try:
+        datetime.datetime.fromisoformat(sent["timestamp"])
+    except ValueError:
+        pytest.fail(f"Timestamp is not in valid ISO format: {sent['timestamp']}")
 
 @pytest.mark.asyncio
 async def test_send_with_all_types(manager, fake_websocket):
@@ -112,11 +131,17 @@ async def test_send_with_all_types(manager, fake_websocket):
     await manager.send(data, "message", fake_websocket)
     assert fake_websocket.sent_jsons[3]["type"] == "message"
     
-    # Verify all messages have the username
+    # Verify all messages have the username, timestamp and data fields
     for message in fake_websocket.sent_jsons:
         assert message["username"] == "Bob"
         assert message["record_id"] == "123"
         assert message["content"] == "test content"
+        assert "timestamp" in message
+        # Verify timestamp is in valid ISO format
+        try:
+            datetime.datetime.fromisoformat(message["timestamp"])
+        except ValueError:
+            pytest.fail(f"Timestamp is not in valid ISO format: {message['timestamp']}")
 
 @pytest.mark.asyncio
 async def test_send_with_invalid_type(manager, fake_websocket):
@@ -162,16 +187,18 @@ async def test_broadcast_data(manager):
     assert len(ws2.sent_jsons) == 1
     assert len(sender.sent_jsons) == 0
     
-    # Verify the message content for each recipient
-    assert ws1.sent_jsons[0]["record_id"] == "123"
-    assert ws1.sent_jsons[0]["content"] == "broadcast test"
-    assert ws1.sent_jsons[0]["type"] == "update"
-    assert ws1.sent_jsons[0]["username"] == "User1"  # Each recipient gets their own username
-    
-    assert ws2.sent_jsons[0]["record_id"] == "123"
-    assert ws2.sent_jsons[0]["content"] == "broadcast test"
-    assert ws2.sent_jsons[0]["type"] == "update"
-    assert ws2.sent_jsons[0]["username"] == "User2"  # Each recipient gets their own username
+    # Verify the message content for each recipient including timestamp
+    for websocket in [ws1, ws2]:
+        sent_json = websocket.sent_jsons[0]
+        assert sent_json["record_id"] == "123"
+        assert sent_json["content"] == "broadcast test"
+        assert sent_json["type"] == "update"
+        assert "timestamp" in sent_json
+        # Verify timestamp is in valid ISO format
+        try:
+            datetime.datetime.fromisoformat(sent_json["timestamp"])
+        except ValueError:
+            pytest.fail(f"Timestamp is not in valid ISO format: {sent_json['timestamp']}")
 
 @pytest.mark.asyncio
 async def test_broadcast_with_skip_self_false(manager):

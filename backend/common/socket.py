@@ -3,6 +3,7 @@ from jose import JWTError
 from common.auth import verify_token
 from typing import List
 from common.log import logger
+import datetime
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -142,10 +143,14 @@ class ConnectionManager:
         if hasattr(websocket.state, "user"):
             username = websocket.state.user.get("name", "unknown")
         
+        # Add current timestamp in ISO format
+        current_time = datetime.datetime.now().isoformat()
+
         data_with_metadata = {
             **data, 
             "username": username,
-            "type": type
+            "type": type,
+            "timestamp": current_time
         }
         
         await websocket.send_json(data_with_metadata)
