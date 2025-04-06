@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 # get routers
 from api.api import api_router
+from api.future_gadget_api import future_gadget_api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # Init FastAPI
@@ -31,6 +32,9 @@ app.add_middleware( FastAPIMiddleware,  exporter=log_azure_exporter, sampler=Pro
 
 # Register API Router
 app.include_router(api_router, prefix="/api")
+
+# Register Future gadget Router
+app.include_router(future_gadget_api_router, prefix="/future-gadget-lab")
 
 @app.get("/health")
 @app.head("/health") 
