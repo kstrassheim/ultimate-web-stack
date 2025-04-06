@@ -33,7 +33,7 @@ export const loginRequest = {
   scopes: tfconfig.requested_graph_api_delegated_permissions.value,
 };
 
-export const retreiveTokenForBackend = async (instance, extraScopes = []) => {
+export const retrieveTokenForBackend = async (instance, extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Token' });
   const account = instance.getActiveAccount();
   const tokenResponse = await instance.acquireTokenSilent({

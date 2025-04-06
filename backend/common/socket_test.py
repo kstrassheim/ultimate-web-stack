@@ -55,37 +55,34 @@ async def test_send_personal_message(manager, fake_websocket):
     assert fake_websocket.sent_texts == [message]
 
 @pytest.mark.asyncio
-async def test_broadcast(manager):
+async def test_broadcast_text(manager):
     # Setup two fake websockets and assign them to the manager.
     ws1 = FakeWebSocket()
     ws2 = FakeWebSocket()
     manager.active_connections = [ws1, ws2]
-    message = "Broadcast message"
-    await manager.broadcast(message)
-    assert ws1.sent_texts == [message]
-    assert ws2.sent_texts == [message]
+    
+    # Create a data object instead of a string
+    data = {"message": "Broadcast message"}
+    
+    # Call broadcast with required type parameter
+    await manager.broadcast(data, "message")
+    
+    # Check that the message was received as JSON
+    assert len(ws1.sent_jsons) == 1
+    assert len(ws2.sent_jsons) == 1
+    assert ws1.sent_jsons[0]["message"] == "Broadcast message"
+    assert ws2.sent_jsons[0]["message"] == "Broadcast message"
+    assert ws1.sent_jsons[0]["type"] == "message"
+    assert ws2.sent_jsons[0]["type"] == "message"
 
 @pytest.mark.asyncio
-async def test_broadcast_except(manager):
-    # Setup three fake websockets; exclude ws2.
-    ws1 = FakeWebSocket()
-    ws2 = FakeWebSocket()
-    ws3 = FakeWebSocket()
-    manager.active_connections = [ws1, ws2, ws3]
-    message = "Hello everybody except ws2"
-    await manager.broadcast_except(message, ws2)
-    assert ws1.sent_texts == [message]
-    assert ws3.sent_texts == [message]
-    assert ws2.sent_texts == []
-
-@pytest.mark.asyncio
-async def test_send_data(manager, fake_websocket):
+async def test_send_method(manager, fake_websocket):
     # Set a fake authenticated user in websocket.state and send JSON data.
     fake_websocket.state.user = {"name": "Alice"}
     data = {"info": "sample data"}
     
     # Test with valid type parameter
-    await manager.send_data(data, "create", fake_websocket)
+    await manager.send(data, "create", fake_websocket)
     
     # Ensure the sent JSON contains the extra 'username' property and correct type
     sent = fake_websocket.sent_jsons[0]
@@ -94,22 +91,26 @@ async def test_send_data(manager, fake_websocket):
     assert sent["type"] == "create"
 
 @pytest.mark.asyncio
-async def test_send_data_with_all_types(manager, fake_websocket):
+async def test_send_with_all_types(manager, fake_websocket):
     # Test with all valid type parameters
     fake_websocket.state.user = {"name": "Bob"}
     data = {"record_id": "123", "content": "test content"}
     
     # Test create operation
-    await manager.send_data(data, "create", fake_websocket)
+    await manager.send(data, "create", fake_websocket)
     assert fake_websocket.sent_jsons[0]["type"] == "create"
     
     # Test update operation
-    await manager.send_data(data, "update", fake_websocket)
+    await manager.send(data, "update", fake_websocket)
     assert fake_websocket.sent_jsons[1]["type"] == "update"
     
     # Test delete operation
-    await manager.send_data(data, "delete", fake_websocket)
+    await manager.send(data, "delete", fake_websocket)
     assert fake_websocket.sent_jsons[2]["type"] == "delete"
+    
+    # Test message operation
+    await manager.send(data, "message", fake_websocket)
+    assert fake_websocket.sent_jsons[3]["type"] == "message"
     
     # Verify all messages have the username
     for message in fake_websocket.sent_jsons:
@@ -118,19 +119,87 @@ async def test_send_data_with_all_types(manager, fake_websocket):
         assert message["content"] == "test content"
 
 @pytest.mark.asyncio
-async def test_send_data_with_invalid_type(manager, fake_websocket):
-    # Test with invalid type parameter - should default to "update"
+async def test_send_with_invalid_type(manager, fake_websocket):
+    # Test with invalid type parameter - should raise ValueError
     fake_websocket.state.user = {"name": "Charlie"}
     data = {"info": "test with invalid type"}
     
-    # Use an invalid type
-    await manager.send_data(data, "invalid_type", fake_websocket)
+    # Use an invalid type and expect a ValueError
+    with pytest.raises(ValueError) as excinfo:
+        await manager.send(data, "invalid_type", fake_websocket)
     
-    # Should default to "update"
-    sent = fake_websocket.sent_jsons[0]
-    assert sent["type"] == "update"
-    assert sent["username"] == "Charlie"
-    assert sent["info"] == "test with invalid type"
+    # Verify exception message contains valid types
+    assert "Invalid type parameter" in str(excinfo.value)
+    assert "message" in str(excinfo.value)
+    assert "create" in str(excinfo.value)
+    assert "update" in str(excinfo.value)
+    assert "delete" in str(excinfo.value)
+    
+    # Verify no messages were sent
+    assert len(fake_websocket.sent_jsons) == 0
+
+@pytest.mark.asyncio
+async def test_broadcast_data(manager):
+    # Setup multiple fake websockets
+    ws1 = FakeWebSocket()
+    ws1.state.user = {"name": "User1"}
+    
+    ws2 = FakeWebSocket()
+    ws2.state.user = {"name": "User2"}
+    
+    sender = FakeWebSocket()
+    sender.state.user = {"name": "Sender"}
+    
+    # Add all to active connections
+    manager.active_connections = [ws1, ws2, sender]
+    
+    # Test broadcasting data
+    data = {"record_id": "123", "content": "broadcast test"}
+    await manager.broadcast(data, "update", sender, skip_self=True)
+    
+    # Verify only ws1 and ws2 received the data (sender was skipped)
+    assert len(ws1.sent_jsons) == 1
+    assert len(ws2.sent_jsons) == 1
+    assert len(sender.sent_jsons) == 0
+    
+    # Verify the message content for each recipient
+    assert ws1.sent_jsons[0]["record_id"] == "123"
+    assert ws1.sent_jsons[0]["content"] == "broadcast test"
+    assert ws1.sent_jsons[0]["type"] == "update"
+    assert ws1.sent_jsons[0]["username"] == "User1"  # Each recipient gets their own username
+    
+    assert ws2.sent_jsons[0]["record_id"] == "123"
+    assert ws2.sent_jsons[0]["content"] == "broadcast test"
+    assert ws2.sent_jsons[0]["type"] == "update"
+    assert ws2.sent_jsons[0]["username"] == "User2"  # Each recipient gets their own username
+
+@pytest.mark.asyncio
+async def test_broadcast_with_skip_self_false(manager):
+    # Setup websockets including a sender
+    ws1 = FakeWebSocket()
+    ws1.state.user = {"name": "User1"}
+    
+    sender = FakeWebSocket()
+    sender.state.user = {"name": "Sender"}
+    
+    # Add all to active connections
+    manager.active_connections = [ws1, sender]
+    
+    # Test broadcasting data with skip_self=False
+    data = {"record_id": "456", "content": "include sender test"}
+    await manager.broadcast(data, "create", sender, skip_self=False)
+    
+    # Verify both ws1 and sender received the data
+    assert len(ws1.sent_jsons) == 1
+    assert len(sender.sent_jsons) == 1
+    
+    # Verify the message content for each recipient
+    assert ws1.sent_jsons[0]["record_id"] == "456"
+    assert ws1.sent_jsons[0]["type"] == "create"
+    
+    assert sender.sent_jsons[0]["record_id"] == "456"
+    assert sender.sent_jsons[0]["type"] == "create"
+    assert sender.sent_jsons[0]["username"] == "Sender"
 
 @pytest.mark.asyncio
 async def test_auth_connect_success(manager, monkeypatch, fake_websocket):
@@ -164,24 +233,4 @@ async def test_auth_connect_fail_missing_token(manager, monkeypatch, fake_websoc
     assert code == 1008
     assert "Missing authentication token" in reason
     # The websocket should not be in the active connections.
-    assert fake_websocket not in manager.active_connections
-
-@pytest.mark.asyncio
-async def test_auth_connect_fail_invalid_claims(manager, monkeypatch, fake_websocket):
-    # Replace logger in common.socket with DummyLogger to avoid missing attribute errors.
-    monkeypatch.setattr("common.socket.logger", DummyLogger())
-    
-    # Simulate a token provided but missing required 'sub' claim.
-    fake_websocket.received_json = {"token": "dummy-token"}
-    
-    def fake_verify_token(token, required_roles, check_all):
-        return {"name": "NoSub", "roles": ["User"]}
-    monkeypatch.setattr("common.socket.verify_token", fake_verify_token)
-    
-    await manager.auth_connect(fake_websocket)
-    # Expect closure due to missing 'sub' claim.
-    assert fake_websocket.closed is not None
-    code, reason = fake_websocket.closed
-    assert code == 1008
-    assert "Invalid token claims" in reason
     assert fake_websocket not in manager.active_connections

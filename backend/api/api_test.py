@@ -191,27 +191,67 @@ class TestWebSocketEndpoint:
         mock_manager = MagicMock()
         mock_manager.auth_connect = AsyncMock()
         mock_manager.send_personal_message = AsyncMock()
-        mock_manager.broadcast_except = AsyncMock()
-        mock_manager.active_connections = []
+
+        # Create a list to track broadcast calls manually
+        broadcast_calls = []
         
+        # Create a custom async mock for broadcast that tracks all arguments
+        async def mock_broadcast(data, type, **kwargs):
+            broadcast_calls.append((data, type, kwargs))
+            return None
+        
+        mock_manager.broadcast = mock_broadcast
+        mock_manager.active_connections = []
+
         # Patch the ChatConnectionManager in api.py
         monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
-        
+
         # Set up the mock to return one message then raise WebSocketDisconnect
         mock_websocket.receive_text = AsyncMock(side_effect=[
             "Hello, WebSocket!",
             WebSocketDisconnect()
         ])
-        
+
+        # Make sure state.user is properly configured
+        mock_websocket.state.user = {"name": "Test User"}
+
         # Call the WebSocket endpoint
         try:
             await api_router.routes[-1].endpoint(mock_websocket)
         except Exception as e:
             print(f"Expected exception: {e}")
-        
+
         # Verify personal message was sent
-        assert mock_manager.send_personal_message.call_count == 1
-        assert mock_manager.broadcast_except.call_count == 1
+        assert mock_manager.send_personal_message.called
+        assert "You sent: Hello, WebSocket!" in mock_manager.send_personal_message.call_args[0][0]
+
+        # Verify broadcast was called twice (once for the message, once for disconnect)
+        assert len(broadcast_calls) == 2
+
+        # Get the call arguments for both calls
+        first_call = broadcast_calls[0]  # First call
+        first_call_data = first_call[0]  # Data argument
+        first_call_type = first_call[1]  # Type argument
+        first_call_kwargs = first_call[2]  # Keyword arguments
+
+        second_call = broadcast_calls[1]  # Second call
+        second_call_data = second_call[0]  # Data argument
+        second_call_type = second_call[1]  # Type argument
+        second_call_kwargs = second_call[2]  # Keyword arguments
+
+        # Verify first call (message broadcast)
+        assert "content" in first_call_data
+        assert first_call_data["content"] == "Test User: Hello, WebSocket!"
+        assert first_call_type == "message"
+        assert first_call_kwargs["sender_websocket"] == mock_websocket
+        assert first_call_kwargs["skip_self"] == True
+
+        # Verify second call (disconnect notification)
+        assert "content" in second_call_data
+        assert "Test User left the chat" in second_call_data["content"]
+        assert second_call_type == "message"
+        # Disconnect broadcast doesn't use a sender_websocket since the connection is already gone
+        assert "sender_websocket" not in second_call_kwargs or second_call_kwargs["sender_websocket"] is None
     
     @pytest.mark.asyncio
     async def test_websocket_disconnect_handling(self, monkeypatch, mock_websocket):
@@ -223,26 +263,27 @@ class TestWebSocketEndpoint:
         call_tracker = {}
         
         # Create async functions for all methods that will be awaited
-        async def mock_auth_connect(websocket, required_roles=None):
+        async def mock_auth_connect(websocket):
             call_tracker['auth_connect'] = True
             return None
             
         async def mock_send_personal(message, websocket):
             call_tracker['send_personal'] = message
             return None
-            
-        async def mock_broadcast_except(message, exclude_websocket):
-            call_tracker['broadcast_except'] = message
-            return None
-            
-        async def mock_broadcast(message):
-            call_tracker['broadcast'] = message
+        
+        # Updated mock_broadcast to match new signature with data dict and type
+        async def mock_broadcast(data, type, sender_websocket=None, skip_self=True):
+            call_tracker['broadcast'] = {
+                'data': data,
+                'type': type,
+                'sender_websocket': sender_websocket,
+                'skip_self': skip_self
+            }
             return None
         
         # Assign the async functions to the manager methods
         mock_manager.auth_connect = mock_auth_connect
         mock_manager.send_personal_message = mock_send_personal
-        mock_manager.broadcast_except = mock_broadcast_except
         mock_manager.broadcast = mock_broadcast
         
         # Setup non-async method
@@ -271,30 +312,42 @@ class TestWebSocketEndpoint:
         
         # Verify disconnect was handled
         assert mock_manager.disconnect.called
+        
         # Check that the broadcast method was called with the disconnect message
         assert 'broadcast' in call_tracker
-        assert "Test User left the chat" in call_tracker['broadcast']
+        assert call_tracker['broadcast']['type'] == "message"
+        assert "Test User left the chat" in call_tracker['broadcast']['data']['content']
     
     @pytest.mark.asyncio
     async def test_websocket_exception_handling(self, monkeypatch, mock_websocket):
         """Test WebSocket general exception handling"""
         # Create a mock connection manager
         mock_manager = MagicMock()
+        
+        # Make auth_connect raise an exception to test the exception handler
+        async def mock_auth_connect(websocket):
+            raise Exception("Test connection error")
+            
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = MagicMock()
         mock_manager.active_connections = [mock_websocket]
         
-        # Set up auth_connect to throw an exception
-        async def mock_auth_connect_error(websocket, required_roles):
-            raise ValueError("Test authentication error")
-        mock_manager.auth_connect = mock_auth_connect_error
+        # Mock the logger
+        mock_logger = MagicMock()
         
-        # Set up disconnection for cleanup
-        mock_manager.disconnect = MagicMock()
-        
-        # Patch the ChatConnectionManager in api.py
+        # Patch both the connection manager and logger
         monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        monkeypatch.setattr("api.api.logger", mock_logger)
         
         # Call the WebSocket endpoint
-        await api_router.routes[-1].endpoint(mock_websocket)
+        try:
+            await api_router.routes[-1].endpoint(mock_websocket)
+        except Exception as e:
+            print(f"Unexpected exception: {e}")
         
-        # Verify exception was caught and disconnect was called
-        mock_manager.disconnect.assert_called_once_with(mock_websocket)
+        # Check that the exception was logged
+        assert mock_logger.error.call_count == 1
+        assert "WebSocket error" in mock_logger.error.call_args[0][0]
+        
+        # Check that disconnect was called to clean up
+        assert mock_manager.disconnect.call_count == 1

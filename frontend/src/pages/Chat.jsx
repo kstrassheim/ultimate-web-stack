@@ -12,6 +12,7 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const socketClientRef = useRef(null);
 
+
   useEffect(() => {
     // Create WebSocket client instance
     if (!socketClientRef.current) {
@@ -24,6 +25,10 @@ const Chat = () => {
     
     // Subscribe to messages and status updates
     const unsubscribeMessages = socketClient.subscribeToMessages((message) => {
+      // // Extract username from the message
+      // const username = extractUsername(message);
+      
+      
       setMessages(prevMessages => [...prevMessages, message]);
     });
     
@@ -84,7 +89,8 @@ const Chat = () => {
           messages.map((msg, index) => (
             <div key={index} className={`message ${msg.type}`}>
               <span className="timestamp">{msg.timestamp}</span>
-              <span className="text">{msg.text}</span>
+              {msg.username && <span className="username">{msg.username}:</span>}
+              <span className="text">{msg.parsedText || msg.text}</span>
             </div>
           ))
         )}

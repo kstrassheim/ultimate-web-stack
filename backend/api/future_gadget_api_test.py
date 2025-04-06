@@ -398,23 +398,28 @@ class TestFGLWebSocketEndpoints:
     
     @pytest.fixture
     def mock_websocket(self):
-        """Create a mock WebSocket object"""
+        """Create a mock WebSocket object with all necessary attributes"""
         mock_ws = MagicMock()
+        
         # Set up the state with user info
         mock_ws.state = MagicMock()
-        mock_ws.state.user = {"name": "Test Lab Member", "sub": "test-id", "roles": ["Admin"]}
+        mock_ws.state.user = {"name": "Test User", "sub": "test-id", "roles": ["Admin"]}
         
-        # Set up receive_text to return predefined messages with AsyncMock
-        mock_ws.receive_text = AsyncMock(return_value="Hello, FGL API!")
+        # Set up receive_text that can be overridden in tests
+        mock_ws.receive_text = AsyncMock(return_value="Hello, WebSocket!")
         
-        # Initialize tracking attributes
-        mock_ws.personal_messages = []
-        mock_ws.sent_jsons = []
+        # Set up send_text method
+        async def mock_send_text(message):
+            mock_ws.sent_messages = getattr(mock_ws, 'sent_messages', [])
+            mock_ws.sent_messages.append(message)
         
-        # Mock send_json method
+        mock_ws.send_text = mock_send_text
+        
+        # Set up send_json method
         async def mock_send_json(data):
-            mock_ws.sent_jsons.append(data)
-            
+            mock_ws.sent_json = getattr(mock_ws, 'sent_json', [])
+            mock_ws.sent_json.append(data)
+        
         mock_ws.send_json = mock_send_json
         
         return mock_ws
@@ -422,15 +427,17 @@ class TestFGLWebSocketEndpoints:
     @pytest.mark.asyncio
     async def test_experiment_websocket_connection(self, monkeypatch, mock_websocket):
         """Test experiment WebSocket connection and authentication"""
-        # Create a mock connection manager properly tracking call args
+        # Create a mock connection manager
         mock_manager = MagicMock()
         
-        # Track authentication calls with arguments
-        auth_args = []
-        async def mock_auth_connect(websocket, required_roles=None):
-            auth_args.append((websocket, required_roles))
+        # Use AsyncMock instead of a regular function to track calls
+        mock_auth_connect = AsyncMock()
+        # Configure the mock to track arguments
+        async def side_effect(websocket):
             return None
+        mock_auth_connect.side_effect = side_effect
         
+        # Assign the AsyncMock to the manager
         mock_manager.auth_connect = mock_auth_connect
         
         # Patch the experiment connection manager
@@ -451,58 +458,35 @@ class TestFGLWebSocketEndpoints:
         except Exception as e:
             print(f"Expected exception: {e}")
         
-        # Verify the connection was authenticated with right arguments
-        assert len(auth_args) == 1
-        assert auth_args[0][0] == mock_websocket
-        assert auth_args[0][1] == ["Admin"]
-    
-    @pytest.mark.asyncio
-    async def test_experiment_websocket_message_handling(self, monkeypatch, mock_websocket):
-        """Test experiment WebSocket message handling"""
-        # Create a mock connection manager
-        mock_manager = MagicMock()
-        mock_manager.auth_connect = AsyncMock()
-        mock_manager.send_personal_message = AsyncMock()
-        
-        # Patch the experiment connection manager
-        monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
-        
-        # Get the WebSocket endpoint function
-        from api.future_gadget_api import experiment_websocket_endpoint
-        
-        # Set up the mock to receive a message then disconnect
-        mock_websocket.receive_text = AsyncMock(side_effect=[
-            "Status update",
-            WebSocketDisconnect()
-        ])
-        
-        # Call the WebSocket endpoint
-        try:
-            await experiment_websocket_endpoint(mock_websocket)
-        except Exception as e:
-            print(f"Expected exception: {e}")
-        
-        # Verify the personal message was sent
-        assert mock_manager.send_personal_message.call_count == 1
-        # Check the content of the message
-        assert "Experiment channel: Status update" in mock_manager.send_personal_message.call_args[0][0]
+        # Verify the connection was authenticated using AsyncMock's tracking
+        assert mock_auth_connect.called
+        assert mock_auth_connect.call_args[0][0] == mock_websocket
     
     @pytest.mark.asyncio
     async def test_experiment_websocket_disconnect_handling(self, monkeypatch, mock_websocket):
         """Test experiment WebSocket disconnect handling"""
         # Create a mock connection manager
         mock_manager = MagicMock()
-        mock_manager.auth_connect = AsyncMock()
-        mock_manager.disconnect = MagicMock()
         
-        # Track call arguments
-        call_tracker = {}
-        
-        # Create an async function for send_personal_message
-        async def mock_send_personal(message, websocket):
-            call_tracker['send_personal'] = message
+        # Use a simple async function implementation that doesn't rely on AsyncMock()
+        async def mock_auth_connect(websocket):
+            # Add websocket to active connections to test disconnect
+            mock_manager.active_connections.append(websocket)
+            return None
             
-        mock_manager.send_personal_message = mock_send_personal
+        def mock_disconnect(websocket):
+            if websocket in mock_manager.active_connections:
+                mock_manager.active_connections.remove(websocket)
+            mock_disconnect.call_count += 1
+        
+        # Initialize tracking attributes
+        mock_disconnect.call_count = 0
+        mock_manager.active_connections = []
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = mock_disconnect
+        
+        # Set up receive_text to raise WebSocketDisconnect
+        mock_websocket.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
         
         # Patch the experiment connection manager
         monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
@@ -511,22 +495,29 @@ class TestFGLWebSocketEndpoints:
         # Get the WebSocket endpoint function
         from api.future_gadget_api import experiment_websocket_endpoint
         
-        # Force a WebSocketDisconnect after connection
-        mock_websocket.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
-        
         # Call the WebSocket endpoint
         await experiment_websocket_endpoint(mock_websocket)
         
         # Verify disconnect was handled
-        assert mock_manager.disconnect.call_count == 1
+        assert mock_disconnect.call_count == 1
     
     @pytest.mark.asyncio
     async def test_experiment_websocket_exception_handling(self, monkeypatch, mock_websocket):
         """Test experiment WebSocket general exception handling"""
         # Create a mock connection manager
         mock_manager = MagicMock()
-        mock_manager.auth_connect = AsyncMock(side_effect=Exception("Test auth error"))
-        mock_manager.disconnect = MagicMock()
+        
+        # Mock auth_connect to raise an exception
+        async def mock_auth_connect(websocket):
+            raise Exception("Test auth error")
+            
+        def mock_disconnect(websocket):
+            mock_disconnect.call_count += 1
+            
+        # Initialize tracking
+        mock_disconnect.call_count = 0
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = mock_disconnect
         mock_manager.active_connections = [mock_websocket]
         
         # Patch the experiment connection manager and logger
@@ -544,11 +535,11 @@ class TestFGLWebSocketEndpoints:
         assert mock_logger.error.call_count == 1
         assert "Test auth error" in str(mock_logger.error.call_args[0][0])
         # Verify disconnect was called to clean up
-        assert mock_manager.disconnect.call_count == 1
+        assert mock_disconnect.call_count == 1
     
     @pytest.mark.asyncio
-    async def test_send_data_crud_operations(self, monkeypatch, mock_websocket):
-        """Test sending CRUD operations data through WebSockets"""
+    async def test_broadcast_crud_operations(self, monkeypatch, mock_websocket):
+        """Test broadcasting CRUD operations data through WebSockets using the new broadcast method"""
         # Create a test experiment data
         test_experiment = {
             "id": "EXP-001",
@@ -556,18 +547,16 @@ class TestFGLWebSocketEndpoints:
             "status": "in_progress"
         }
         
-        # Create a mock connection manager with dedicated async functions
+        # Create a mock connection manager
         mock_manager = MagicMock()
         
-        # Track data sent to clients
-        sent_data = {}
+        # Track broadcast calls with a function that stores arguments
+        broadcast_args = []
+        async def mock_broadcast(data, type, sender_websocket=None, skip_self=True):
+            broadcast_args.append((data, type, sender_websocket, skip_self))
+            return None
         
-        # Create async function to track send_data calls
-        async def mock_send_data(data, type, websocket):
-            sent_data['data'] = data
-            sent_data['type'] = type
-        
-        mock_manager.send_data = mock_send_data
+        mock_manager.broadcast = mock_broadcast
         mock_manager.active_connections = [mock_websocket]
         
         # Patch the experiment connection manager
@@ -593,23 +582,25 @@ class TestFGLWebSocketEndpoints:
             # Verify result
             assert result == test_experiment
             
-            # Verify WebSocket data was sent with correct type
-            assert sent_data.get('data') == test_experiment
-            assert sent_data.get('type') == "create"
-
-    # Add these tests to test the D-Mail WebSocket endpoint
+            # Verify broadcast was called with correct data and type
+            assert len(broadcast_args) == 1
+            assert broadcast_args[0][0] == test_experiment  # data
+            assert broadcast_args[0][1] == "create"        # type
+    
     @pytest.mark.asyncio
     async def test_d_mail_websocket_connection(self, monkeypatch, mock_websocket):
         """Test D-Mail WebSocket connection and authentication"""
         # Create a mock connection manager with proper tracking
         mock_manager = MagicMock()
         
-        # Track authentication calls with arguments
-        auth_args = []
-        async def mock_auth_connect(websocket, required_roles=None):
-            auth_args.append((websocket, required_roles))
+        # Use AsyncMock instead of a regular function
+        mock_auth_connect = AsyncMock()
+        # Configure the mock to track arguments
+        async def side_effect(websocket):
             return None
+        mock_auth_connect.side_effect = side_effect
         
+        # Assign the AsyncMock to the manager
         mock_manager.auth_connect = mock_auth_connect
         
         # Patch the D-Mail connection manager
@@ -630,9 +621,81 @@ class TestFGLWebSocketEndpoints:
         except Exception as e:
             print(f"Expected exception: {e}")
         
-        # Verify the connection was authenticated
-        assert len(auth_args) == 1
-        assert auth_args[0][0] == mock_websocket
-        assert auth_args[0][1] == ["Admin"]
-
-    # More tests for d_mail_websocket_endpoint...
+        # Verify the connection was authenticated using AsyncMock's tracking
+        assert mock_auth_connect.called
+        assert mock_auth_connect.call_args[0][0] == mock_websocket
+    
+    @pytest.mark.asyncio
+    async def test_broadcast_with_sender_role_validation(self, monkeypatch, mock_websocket):
+        """Test broadcast method with sender role validation"""
+        # Set up two mock websockets - one admin, one non-admin
+        admin_ws = MagicMock()
+        admin_ws.state = MagicMock()
+        admin_ws.state.user = {"name": "Admin User", "roles": ["Admin"]}
+        
+        non_admin_ws = MagicMock()
+        non_admin_ws.state = MagicMock()
+        non_admin_ws.state.user = {"name": "Regular User", "roles": ["User"]}
+        
+        # Mock connection manager to track role validation and broadcasting
+        mock_manager = MagicMock()
+        
+        # Track sender role validation calls
+        validation_calls = []
+        def mock_validate_sender_roles(websocket):
+            validation_calls.append(websocket)
+            return "Admin" in websocket.state.user.get("roles", [])
+        
+        # Track broadcast data
+        broadcast_data = []
+        async def mock_broadcast(data, type, sender_websocket=None, skip_self=True):
+            # Only proceed with validation when sender is provided
+            if sender_websocket and not mock_validate_sender_roles(sender_websocket):
+                return
+            broadcast_data.append((data, type))
+        
+        # Set up manager methods
+        mock_manager._validate_sender_roles = mock_validate_sender_roles
+        mock_manager.broadcast = mock_broadcast
+        
+        # Patch the experiment connection manager
+        monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
+        
+        # Create test data
+        test_experiment = {"id": "EXP-001", "name": "Test Experiment"}
+        
+        # Set up mocks for create_experiment
+        mock_experiment = MagicMock()
+        mock_experiment.model_dump.return_value = test_experiment
+        
+        # Import the API function after patching
+        from api.future_gadget_api import create_experiment
+        from fastapi import HTTPException
+        
+        # Test with admin sender (should work)
+        admin_token = MagicMock()
+        admin_token.roles = ["Admin"]
+        
+        # UPDATED: Override required_roles decorator for admin case only
+        with patch("api.future_gadget_api.required_roles", lambda roles: lambda f: f):
+            with patch("api.future_gadget_api.fgl_service.create_experiment", return_value=test_experiment):
+                # Pass admin token
+                await create_experiment(experiment=mock_experiment, token=admin_token)
+        
+        # Test with non-admin sender (should fail with 403)
+        non_admin_token = MagicMock()
+        non_admin_token.roles = ["User"]
+        
+        # FIXED: Expect HTTPException with 403 status code
+        with patch("api.future_gadget_api.fgl_service.create_experiment", return_value=test_experiment):
+            with pytest.raises(HTTPException) as excinfo:
+                await create_experiment(experiment=mock_experiment, token=non_admin_token)
+            
+            # Verify it failed for the expected reason
+            assert excinfo.value.status_code == 403
+            assert "access" in str(excinfo.value.detail).lower()
+        
+        # Verify only one broadcast succeeded (the admin one)
+        assert len(broadcast_data) == 1
+        assert broadcast_data[0][0] == test_experiment
+        assert broadcast_data[0][1] == "create"

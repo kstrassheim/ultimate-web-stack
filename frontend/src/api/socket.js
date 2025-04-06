@@ -1,5 +1,5 @@
 import { backendSocketUrl } from '@/config';
-import { retreiveTokenForBackend } from '@/auth/entraAuth';
+import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 
 export class WebSocketClient {
@@ -21,7 +21,7 @@ export class WebSocketClient {
       appInsights.trackEvent({ name: 'WebSocket - Connect' });
       
       // Get the auth token
-      const token = await retreiveTokenForBackend(instance);
+      const token = await retrieveTokenForBackend(instance);
       
       // Form the complete URL from backendSocketUrl and the path
       const url = `${backendSocketUrl}/${this.path}`;
@@ -43,14 +43,49 @@ export class WebSocketClient {
       
       this.socket.onmessage = (event) => {
         console.log("WebSocket message received:", event.data);
-        const message = {
-          text: event.data,
-          type: event.data.includes('You sent:') ? 'sent' : 'received',
-          timestamp: new Date().toLocaleTimeString()
-        };
-        
-        // Notify all listeners about the new message
-        this.messageListeners.forEach(listener => listener(message));
+        try {
+          // Try to parse as JSON first
+          let jsonData;
+          let messageType = 'received';
+          let messageText = '';
+          
+          try {
+            jsonData = JSON.parse(event.data);
+            
+            // Handle structured message with type property
+            if (jsonData.type === 'message') {
+              messageText = jsonData.content || JSON.stringify(jsonData);
+            } else {
+              // For other types (create, update, delete)
+              messageText = `[${jsonData.type}] ${jsonData.content || JSON.stringify(jsonData)}`;
+            }
+            
+            // Determine if this is a sent message acknowledgment
+            if (messageText.includes('You sent:')) {
+              messageType = 'sent';
+            }
+          } catch (e) {
+            // Not valid JSON, treat as plain text
+            messageText = event.data;
+            // Check for "You sent:" prefix to determine if it's a sent message confirmation
+            if (messageText.includes('You sent:')) {
+              messageType = 'sent';
+            }
+          }
+          
+          const message = {
+            text: messageText,
+            type: messageType,
+            timestamp: new Date().toLocaleTimeString(),
+            rawData: jsonData || event.data
+          };
+          
+          // Notify all listeners about the new message
+          this.messageListeners.forEach(listener => listener(message));
+        } catch (error) {
+          console.error("Error processing WebSocket message:", error);
+          appInsights.trackException({ error });
+        }
       };
       
       this.socket.onerror = (error) => {

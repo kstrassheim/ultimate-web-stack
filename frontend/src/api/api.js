@@ -1,11 +1,11 @@
 import { backendUrl } from '@/config';
-import { retreiveTokenForBackend } from '@/auth/entraAuth';
+import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights'; 
 
 export const getUserData = async (instance) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getUserData' });
-    const accessToken = await retreiveTokenForBackend(instance);
+    const accessToken = await retrieveTokenForBackend(instance);
     const response = await fetch(`${backendUrl}/api/user-data`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
@@ -25,7 +25,7 @@ export const getUserData = async (instance) => {
 export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
   try {
     appInsights.trackEvent({ name: 'Api Call - getAdminData' });
-    const accessToken = await retreiveTokenForBackend(instance, ['Group.Read.All']);
+    const accessToken = await retrieveTokenForBackend(instance, ['Group.Read.All']);
     
     // Changed to POST request with JSON body
     const response = await fetch(`${backendUrl}/api/admin-data`, {

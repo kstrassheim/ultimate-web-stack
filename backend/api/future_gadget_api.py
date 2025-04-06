@@ -18,11 +18,26 @@ future_gadget_api_router = APIRouter(prefix="/future-gadget-lab", tags=["Future 
 # Initialize data service with memory storage
 fgl_service = FutureGadgetLabDataService(use_memory_storage=True)
 
-# Create separate connection managers for each entity type
-experiment_connection_manager = ConnectionManager()
-d_mail_connection_manager = ConnectionManager()
-divergence_reading_connection_manager = ConnectionManager()
-lab_member_connection_manager = ConnectionManager()
+# Create separate connection managers for each entity type with proper role permissions
+experiment_connection_manager = ConnectionManager(
+    receiver_roles=["Admin"],  # Only Admin can connect to receive updates
+    sender_roles=["Admin"]     # Only Admin can send updates
+)
+
+d_mail_connection_manager = ConnectionManager(
+    receiver_roles=["Admin"], 
+    sender_roles=["Admin"]
+)
+
+divergence_reading_connection_manager = ConnectionManager(
+    receiver_roles=["Admin"],
+    sender_roles=["Admin"]
+)
+
+lab_member_connection_manager = ConnectionManager(
+    receiver_roles=["Admin"],
+    sender_roles=["Admin"]
+)
 
 # --- Pydantic Models for Request/Response Validation ---
 
@@ -175,13 +190,11 @@ async def create_experiment(
     logger.info(f"Future Gadget Lab API - Creating new experiment: {experiment.name}")
     created_experiment = fgl_service.create_experiment(experiment.model_dump())
     
-    # Notify all connected clients about the new experiment
-    for connection in experiment_connection_manager.active_connections:
-        await experiment_connection_manager.send_data(
-            data=created_experiment,
-            type="create",
-            websocket=connection
-        )
+    # Use the new broadcast method for simplified notification
+    await experiment_connection_manager.broadcast(
+        data=created_experiment,
+        type="create"
+    )
     
     return created_experiment
 
@@ -199,13 +212,11 @@ async def update_experiment(
     
     updated_experiment = fgl_service.update_experiment(experiment_id, experiment.model_dump(exclude_unset=True))
     
-    # Notify all connected clients about the updated experiment
-    for connection in experiment_connection_manager.active_connections:
-        await experiment_connection_manager.send_data(
-            data=updated_experiment,
-            type="update",
-            websocket=connection
-        )
+    # Use broadcast method
+    await experiment_connection_manager.broadcast(
+        data=updated_experiment,
+        type="update"
+    )
     
     return updated_experiment
 
@@ -226,13 +237,11 @@ async def delete_experiment(
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to delete experiment with ID {experiment_id}")
     
-    # Notify all connected clients about the deleted experiment
-    for connection in experiment_connection_manager.active_connections:
-        await experiment_connection_manager.send_data(
-            data={"id": experiment_id, "name": experiment.get("name", "Unknown")},
-            type="delete",
-            websocket=connection
-        )
+    # Use broadcast with minimal data for delete operation
+    await experiment_connection_manager.broadcast(
+        data={"id": experiment_id, "name": experiment.get("name", "Unknown")},
+        type="delete"
+    )
     
     return {"message": f"Experiment with ID {experiment_id} successfully deleted"}
 
@@ -511,8 +520,8 @@ async def delete_lab_member(
 async def experiment_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for experiment data updates"""
     try:
-        # Connect with authentication - require Admin role
-        await experiment_connection_manager.auth_connect(websocket, required_roles=["Admin"])
+        # Remove the required_roles parameter - now defined in the manager's constructor
+        await experiment_connection_manager.auth_connect(websocket)
         
         try:
             # Keep connection alive
@@ -532,8 +541,8 @@ async def experiment_websocket_endpoint(websocket: WebSocket):
 async def d_mail_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for D-Mail data updates"""
     try:
-        # Connect with authentication - require Admin role
-        await d_mail_connection_manager.auth_connect(websocket, required_roles=["Admin"])
+        # Remove the required_roles parameter - now defined in the manager's constructor
+        await d_mail_connection_manager.auth_connect(websocket)
         
         try:
             # Keep connection alive
@@ -553,8 +562,8 @@ async def d_mail_websocket_endpoint(websocket: WebSocket):
 async def divergence_reading_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for divergence meter reading updates"""
     try:
-        # Connect with authentication - require Admin role
-        await divergence_reading_connection_manager.auth_connect(websocket, required_roles=["Admin"])
+        # Remove the required_roles parameter - now defined in the manager's constructor
+        await divergence_reading_connection_manager.auth_connect(websocket)
         
         try:
             # Keep connection alive
@@ -574,8 +583,8 @@ async def divergence_reading_websocket_endpoint(websocket: WebSocket):
 async def lab_member_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for lab member data updates"""
     try:
-        # Connect with authentication - require Admin role
-        await lab_member_connection_manager.auth_connect(websocket, required_roles=["Admin"])
+        # Remove the required_roles parameter - now defined in the manager's constructor
+        await lab_member_connection_manager.auth_connect(websocket)
         
         try:
             # Keep connection alive

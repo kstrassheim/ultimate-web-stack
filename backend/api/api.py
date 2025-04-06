@@ -33,29 +33,45 @@ async def get_admin_data(request: AdminDataRequest = Body(...), token=Security(a
         "received": True
     }
 
-# Create a manager instance
-chatConnectionManager = ConnectionManager()
+# Create a manager instance with appropriate role configuration
+chatConnectionManager = ConnectionManager(
+    receiver_roles=[],  # Empty means anyone can connect
+    sender_roles=[]     # Empty means anyone can send messages
+)
 
 # WebSocket endpoint
 @api_router.websocket("/chat")
 async def websocket_endpoint(websocket: WebSocket):
     try:
-        # connect with authentication
-        await chatConnectionManager.auth_connect(websocket, required_roles=[])
+        # Connect with authentication - no required_roles parameter (defined in constructor)
+        await chatConnectionManager.auth_connect(websocket)
         
         try:
             while True:
                 data = await websocket.receive_text()
-                # Include user info in messages
-                user_name = websocket.state.user.get("name")
+                user_name = websocket.state.user.get("name", "Unknown User")
+                
+                # Send personal acknowledgment using send_personal_message (unchanged)
                 await chatConnectionManager.send_personal_message(f"You sent: {data}", websocket)
-                await chatConnectionManager.broadcast_except(f"{user_name}: {data}", websocket)
+                
+                # Fix: Wrap the data in a dictionary with a "content" field
+                await chatConnectionManager.broadcast(
+                    data={"content": f"{user_name}: {data}"},
+                    type="message",
+                    sender_websocket=websocket,
+                    skip_self=True  # Don't send to the sender
+                )
         except WebSocketDisconnect:
             chatConnectionManager.disconnect(websocket)
-            user_name = websocket.state.user.get("name", "Unknown")
-            await chatConnectionManager.broadcast(f"{user_name} left the chat")
+            user_name = websocket.state.user.get("name", "Unknown User")
+            
+            # Broadcast leave message using the new format
+            await chatConnectionManager.broadcast(
+                data={"content": f"{user_name} left the chat"},
+                type="message"
+            )
             
     except Exception as e:
-        print(f"WebSocket error: {str(e)}")
+        logger.error(f"WebSocket error: {str(e)}")
         if websocket in chatConnectionManager.active_connections:
             chatConnectionManager.disconnect(websocket)
