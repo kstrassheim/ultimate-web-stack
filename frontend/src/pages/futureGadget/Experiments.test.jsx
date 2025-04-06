@@ -602,4 +602,142 @@ describe('Experiments Component', () => {
       expect(screen.getByText('Reloaded Experiment')).toBeInTheDocument();
     });
   });
+
+  test('handles invalid WebSocket message gracefully', async () => {
+    // Capture the subscribe callback for manual testing
+    let messageCallback;
+    let statusCallback;
+    
+    experimentsSocket.subscribe.mockImplementation(callback => {
+      messageCallback = callback;
+      return jest.fn();
+    });
+    
+    experimentsSocket.subscribeToStatus.mockImplementation(callback => {
+      statusCallback = callback;
+      return jest.fn();
+    });
+    
+    const { unmount } = render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Test edge case: undefined message
+    act(() => {
+      messageCallback(undefined);
+    });
+    
+    // Test edge case: message with no rawData
+    act(() => {
+      messageCallback({
+        someOtherProperty: 'value'
+      });
+    });
+    
+    // Test edge case: message with rawData but missing type
+    act(() => {
+      messageCallback({
+        rawData: {
+          data: { id: 'exp-999' }
+        }
+      });
+    });
+    
+    // Test edge case: message with unknown type
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'unknown_type',
+          data: { id: 'exp-999' }
+        }
+      });
+    });
+    
+    // Test edge case: null data
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'create',
+          data: null
+        }
+      });
+    });
+    
+    // Test edge case: undefined data
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'update',
+          data: undefined
+        }
+      });
+    });
+    
+    // Test edge case: data missing ID
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'delete',
+          data: { name: 'Missing ID Experiment' }
+        }
+      });
+    });
+    
+    // Send null for status
+    act(() => {
+      statusCallback(null);
+    });
+    
+    // Send undefined for status
+    act(() => {
+      statusCallback(undefined);
+    });
+    
+    // The component should not crash, and the UI should remain intact
+    expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    expect(screen.getByText('Divergence Meter')).toBeInTheDocument();
+    
+    // Unmount to exercise cleanup
+    unmount();
+  });
+
+  test('renders all possible status badge colors', async () => {
+    // Override mock to include experiments with different statuses
+    const allStatusExperiments = [
+      { id: 'exp-planned', name: 'Planned Experiment', status: 'planned', creator_id: 'okabe' },
+      { id: 'exp-progress', name: 'In Progress Experiment', status: 'in_progress', creator_id: 'okabe' },
+      { id: 'exp-completed', name: 'Completed Experiment', status: 'completed', creator_id: 'okabe' },
+      { id: 'exp-failed', name: 'Failed Experiment', status: 'failed', creator_id: 'okabe' },
+      { id: 'exp-abandoned', name: 'Abandoned Experiment', status: 'abandoned', creator_id: 'okabe' },
+      { id: 'exp-unknown', name: 'Unknown Status Experiment', status: 'some_unknown_status', creator_id: 'okabe' }
+    ];
+    
+    getAllExperiments.mockResolvedValue(allStatusExperiments);
+    
+    render(<Experiments />);
+    
+    // Wait for all experiments to render
+    await waitFor(() => {
+      expect(screen.getByText('Unknown Status Experiment')).toBeInTheDocument();
+    });
+    
+    // Verify each status has appropriate badge
+    const badges = screen.getAllByTestId('experiment-status');
+    
+    // Check badge colors by examining their classes
+    const badgeClasses = badges.map(badge => {
+      return Array.from(badge.classList)
+        .find(cls => cls.startsWith('bg-'))
+        ?.replace('bg-', '');
+    });
+    
+    // Verify all status colors are rendered
+    expect(badgeClasses).toContain('info');       // planned
+    expect(badgeClasses).toContain('primary');    // in_progress  
+    expect(badgeClasses).toContain('success');    // completed
+    expect(badgeClasses).toContain('danger');     // failed
+    expect(badgeClasses).toContain('secondary');  // abandoned
+    expect(badgeClasses).toContain('light');      // unknown status
+  });
 });

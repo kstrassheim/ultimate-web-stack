@@ -147,23 +147,36 @@ const Experiments = () => {
   useEffect(() => {
     experimentsSocket.connect(instance);
     const unsubscribe = experimentsSocket.subscribe((message) => {
-      if (message?.rawData?.type === 'create') {
-        setExperiments(prev => [...prev, message.rawData.data]);
-        notyfService.info('New experiment created by another user');
-      } else if (message?.rawData?.type === 'update') {
-        setExperiments(prev => 
-          prev.map(exp => exp.id === message.rawData.data.id ? message.rawData.data : exp)
-        );
-        notyfService.info('An experiment was updated by another user');
-      } else if (message?.rawData?.type === 'delete') {
-        setExperiments(prev => 
-          prev.filter(exp => exp.id !== message.rawData.data.id)
-        );
-        notyfService.info('An experiment was deleted by another user');
+      if (!message?.rawData?.type || !message?.rawData?.data) return;
+      
+      if (message.rawData.type === 'create' && message.rawData.data) {
+        // Make sure the data has an id before adding
+        if (message.rawData.data.id) {
+          setExperiments(prev => [...prev, message.rawData.data]);
+          notyfService.info('New experiment created by another user');
+        }
+      } else if (message.rawData.type === 'update' && message.rawData.data) {
+        // Make sure the data has an id before updating
+        if (message.rawData.data.id) {
+          setExperiments(prev => 
+            prev.map(exp => exp.id === message.rawData.data.id ? message.rawData.data : exp)
+          );
+          notyfService.info('An experiment was updated by another user');
+        }
+      } else if (message.rawData.type === 'delete' && message.rawData.data) {
+        // Make sure the data has an id before deleting
+        if (message.rawData.data.id) {
+          setExperiments(prev => 
+            prev.filter(exp => exp.id !== message.rawData.data.id)
+          );
+          notyfService.info('An experiment was deleted by another user');
+        }
       }
     });
     const unsubscribeStatus = experimentsSocket.subscribeToStatus((status) => {
-      setConnectionStatus(status);
+      if (status) {
+        setConnectionStatus(status);
+      }
     });
     if (!initFetchCompleted.current) {
       fetchExperiments();
