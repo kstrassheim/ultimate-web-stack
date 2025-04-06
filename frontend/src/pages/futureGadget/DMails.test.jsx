@@ -745,7 +745,57 @@ describe('DMails Component', () => {
     render(<DMails />);
     
     await waitFor(() => {
+      expect(screen.getByTestId('no-dmails')).toBeInTheDocument();
       expect(screen.getByText('No D-Mails found.')).toBeInTheDocument();
+      expect(screen.getByTestId('send-first-dmail-btn')).toBeInTheDocument();
+    });
+  });
+
+
+  test('handleSubmit calls handleUpdateMail when formMode is edit', async () => {
+    const updateMailMock = jest.fn();
+    updateDMail.mockImplementation(updateMailMock);
+
+    // Mock the fetch by ID API call
+    getDMailById.mockResolvedValue(mockMails[0]);
+
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    });
+
+    // Click the edit button for the first mail
+    const editButtons = screen.getAllByRole('button', { name: /view\/edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Wait for the edit modal
+    await waitFor(() => {
+      expect(screen.getByText(/view\/edit d-mail/i)).toBeInTheDocument();
+    });
+
+    // Update the mail
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: 'Updated Lottery Numbers' }
+    });
+
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /update d-mail/i }));
+
+    // Verify the update was called
+    await waitFor(() => {
+      expect(updateMailMock).toHaveBeenCalled();
+    });
+  });
+
+  test('displays "No D-Mails found" message when mails array is empty and not loading', async () => {
+    getAllDMails.mockResolvedValue([]);
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('no-dmails')).toBeInTheDocument();
+      expect(screen.getByText('No D-Mails found.')).toBeInTheDocument();
+      expect(screen.getByTestId('send-first-dmail-btn')).toBeInTheDocument();
     });
   });
 });
