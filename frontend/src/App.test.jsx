@@ -121,7 +121,7 @@ describe('App Component', () => {
     expect(screen.getByTestId('mocked-admin-page')).toBeInTheDocument();
   });
   
-  test('renders experiments route with correct protection', () => {
+  test('renders experiments route with Admin role protection', () => {
     render(
       <MemoryRouter 
         initialEntries={['/experiments']}
@@ -133,11 +133,11 @@ describe('App Component', () => {
     
     const protectedRoute = screen.getByTestId('mocked-protected-route');
     expect(protectedRoute).toBeInTheDocument();
-    expect(protectedRoute).toHaveAttribute('data-roles', ''); // No required roles
+    expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
     expect(screen.getByTestId('mocked-experiments-page')).toBeInTheDocument();
   });
   
-  test('renders dmails route with correct protection', () => {
+  test('renders dmails route with Admin role protection', () => {
     render(
       <MemoryRouter 
         initialEntries={['/dmails']}
@@ -149,7 +149,7 @@ describe('App Component', () => {
     
     const protectedRoute = screen.getByTestId('mocked-protected-route');
     expect(protectedRoute).toBeInTheDocument();
-    expect(protectedRoute).toHaveAttribute('data-roles', ''); // No required roles
+    expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
     expect(screen.getByTestId('mocked-dmails-page')).toBeInTheDocument();
   });
 

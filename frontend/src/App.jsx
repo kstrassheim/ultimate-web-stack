@@ -90,7 +90,7 @@ function App() {
           <Route
             path="/experiments"
             element={
-              <ProtectedRoute requiredRoles={[]}>
+              <ProtectedRoute requiredRoles={["Admin"]}>
                 <Experiments />
               </ProtectedRoute>
             }
@@ -98,7 +98,7 @@ function App() {
           <Route
             path="/dmails"
             element={
-              <ProtectedRoute requiredRoles={[]}>
+              <ProtectedRoute requiredRoles={["Admin"]}>
                 <DMails />
               </ProtectedRoute>
             }
