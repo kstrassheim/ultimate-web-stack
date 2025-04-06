@@ -93,15 +93,6 @@ jest.mock('@/config', () => ({
     frontendUrl: 'http://localhost:5173'
   }));
 
-  jest.mock('@/components/Loading', () => {
-    return {
-      __esModule: true,
-      default: jest.fn(() => null), // Renders nothing
-      // Optionally mock the sleep if needed
-      sleep: jest.fn().mockResolvedValue(undefined)
-    };
-  });
-
 // Configure jest-preview
 jestPreviewConfigure({
     port: 3336,
