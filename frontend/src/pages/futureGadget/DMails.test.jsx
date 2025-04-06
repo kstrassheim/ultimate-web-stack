@@ -798,4 +798,125 @@ describe('DMails Component', () => {
       expect(screen.getByTestId('send-first-dmail-btn')).toBeInTheDocument();
     });
   });
+
+  // Add these tests to your file
+
+  // Test for line 100: tests the handleSubmit function's create branch
+  test('handleSubmit calls handleCreateMail when formMode is create', async () => {
+    // Setup the mock
+    const createMailMock = jest.fn().mockResolvedValue({ id: 'test-id' });
+    createDMail.mockImplementation(createMailMock);
+    
+    render(<DMails />);
+    
+    // Wait for initial load to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    });
+    
+    // Open the form by clicking the button directly
+    const newDMailBtn = screen.getByTestId('new-dmail-btn');
+    act(() => {
+      fireEvent.click(newDMailBtn);
+    });
+    
+    // Wait for the form to be fully rendered
+    const form = await screen.findByTestId('dmail-form-element');
+    
+    // Fill in required fields
+    fireEvent.change(screen.getByLabelText(/subject/i), { 
+      target: { value: 'Test Subject' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/content/i), { 
+      target: { value: 'Test Content' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/recipient/i), { 
+      target: { value: 'test@example.com' } 
+    });
+    
+    // Submit the form
+    const submitButton = screen.getByRole('button', { name: /send d-mail/i });
+    act(() => {
+      fireEvent.click(submitButton);
+    });
+    
+    // Verify createDMail was called
+    await waitFor(() => {
+      expect(createMailMock).toHaveBeenCalled();
+    });
+  });
+
+  // Test for lines 307-336: WebSocket message handling with missing IDs
+  test('handles WebSocket messages with missing or invalid IDs', async () => {
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    });
+
+    // Test a create message without an ID (should not be added)
+    act(() => {
+      dMailsSocket.messageHandler({
+        rawData: {
+          type: 'create',
+          data: { subject: 'Missing ID Mail' }
+        }
+      });
+    });
+    
+    // Verify the message wasn't added
+    expect(screen.queryByText('Missing ID Mail')).not.toBeInTheDocument();
+    
+    // Test an update message without an ID (should not update anything)
+    act(() => {
+      dMailsSocket.messageHandler({
+        rawData: {
+          type: 'update',
+          data: { subject: 'Missing ID Update' }
+        }
+      });
+    });
+    
+    // Verify no UI changes
+    expect(screen.queryByText('Missing ID Update')).not.toBeInTheDocument();
+    
+    // Test a delete message without an ID (should not delete anything)
+    act(() => {
+      dMailsSocket.messageHandler({
+        rawData: {
+          type: 'delete',
+          data: { subject: 'No ID To Delete' }
+        }
+      });
+    });
+    
+    // Verify all original mails are still there
+    expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    expect(screen.getByText('IBN 5100 Location')).toBeInTheDocument();
+  });
+
+  // Test for lines 368-370: transitions from loading to empty state
+  test('transitions from loading to empty state when no mails exist', async () => {
+    // Mock a delayed empty response
+    getAllDMails.mockImplementation(() => 
+      new Promise(resolve => setTimeout(() => resolve([]), 100))
+    );
+    
+    render(<DMails />);
+    
+    // First verify loading state
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByTestId('no-dmails')).not.toBeInTheDocument();
+    
+    // Then wait for the empty state
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.getByTestId('no-dmails')).toBeInTheDocument();
+    });
+    
+    // Verify empty state content
+    expect(screen.getByText('No D-Mails found.')).toBeInTheDocument();
+  });
 });
