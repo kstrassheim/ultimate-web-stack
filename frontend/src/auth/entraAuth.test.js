@@ -3,6 +3,20 @@ import appInsights from '@/log/appInsights'; // mock or spy as needed
 import { LogLevel } from '@azure/msal-browser';
 
 describe('entraAuth Module', () => {
+  let originalConsoleLog;
+  
+  beforeAll(() => {
+    // Save original console.log
+    originalConsoleLog = console.log;
+    // Replace with silent mock
+    console.log = jest.fn();
+  });
+  
+  afterAll(() => {
+    // Restore original console.log
+    console.log = originalConsoleLog;
+  });
+
   describe('msalConfig', () => {
     it('should return the correct MSAL configuration object', () => {
       const config = msalConfig();

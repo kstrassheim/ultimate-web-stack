@@ -18,8 +18,25 @@ delete window.getProfilePhoto;
 jest.unmock('@/api/graphApi');
 
 describe('graphApi', () => {
+  let originalConsoleError;
+  let originalConsoleLog;
+
   beforeEach(() => {
+    // Save original console methods
+    originalConsoleError = console.error;
+    originalConsoleLog = console.log;
+    
+    // Replace with silent mocks for tests
+    console.error = jest.fn();
+    console.log = jest.fn();
+    
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    // Restore original console methods
+    console.error = originalConsoleError;
+    console.log = originalConsoleLog;
   });
 
   describe('getProfilePhoto', () => {
@@ -62,6 +79,8 @@ describe('graphApi', () => {
       fetch.mockRejectedValue(new Error('Network error'));
       await getProfilePhoto({}, { username: 'testuser' });
       expect(appInsights.trackException).toHaveBeenCalled();
+      // Optionally verify the console.error was called without seeing the output
+      expect(console.error).toHaveBeenCalled();
     });
   });
 
@@ -104,6 +123,8 @@ describe('graphApi', () => {
       fetch.mockRejectedValue(new Error('Network error'));
       await expect(getAllGroups(mockInstance)).rejects.toThrow();
       expect(appInsights.trackException).toHaveBeenCalled();
+      // Optionally verify the console.error was called without seeing the output
+      expect(console.error).toHaveBeenCalled();
     });
   });
 });

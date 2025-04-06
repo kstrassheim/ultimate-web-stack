@@ -57,8 +57,18 @@ describe('WebSocketClient', () => {
   let client;
   let mockInstance;
   let mockWebSocket;
+  let originalConsoleError;
+  let originalConsoleLog;
   
   beforeEach(() => {
+    // Save original console methods
+    originalConsoleError = console.error;
+    originalConsoleLog = console.log;
+    
+    // Replace with silent mocks during tests
+    console.error = jest.fn();
+    console.log = jest.fn();
+    
     // Reset mocks
     jest.clearAllMocks();
     
@@ -73,7 +83,7 @@ describe('WebSocketClient', () => {
     // Setup auth mock to return a token
     retrieveTokenForBackend.mockResolvedValue('mock-token-123');
     
-    // Create new WebSocketClient
+    // Create new WebSocketClient with the mock logger
     client = new WebSocketClient('api/test-socket');
     
     // Capture created WebSocket instance
@@ -83,6 +93,12 @@ describe('WebSocketClient', () => {
     });
   });
   
+  afterEach(() => {
+    // Restore original console methods
+    console.error = originalConsoleError;
+    console.log = originalConsoleLog;
+  });
+
   describe('constructor', () => {
     it('should initialize with correct default values', () => {
       expect(client.path).toBe('api/test-socket');

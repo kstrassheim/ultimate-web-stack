@@ -3,12 +3,13 @@ import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 
 export class WebSocketClient {
-  constructor(path) {
+  constructor(path, logger = console) {
     this.path = path;
     this.socket = null;
     this.listeners = [];
     this.statusListeners = [];
     this.connectionStatus = 'disconnected';
+    this.logger = logger;
   }
 
   async connect(instance) {
@@ -28,11 +29,11 @@ export class WebSocketClient {
       this.socket = new WebSocket(url);
       
       this.socket.onopen = () => {
-        console.log("WebSocket connected");
+        this.logger.log("WebSocket connected");
         
         // Send authentication immediately after connection
         if (this.socket.readyState === WebSocket.OPEN) {
-          console.log("WebSocket opened, sending authentication");
+          this.logger.log("WebSocket opened, sending authentication");
           this.socket.send(JSON.stringify({
             type: 'authenticate',
             token: token
@@ -42,7 +43,7 @@ export class WebSocketClient {
       };
       
       this.socket.onmessage = (event) => {
-        console.log("WebSocket message received:", event.data);
+        this.logger.log("WebSocket message received:", event.data);
         try {
           // Try to parse as JSON first
           let jsonData;
@@ -83,26 +84,26 @@ export class WebSocketClient {
           // Notify all listeners about the new message
           this.listeners.forEach(listener => listener(message));
         } catch (error) {
-          console.error("Error processing WebSocket message:", error);
+          this.logger.error("Error processing WebSocket message:", error);
           appInsights.trackException({ error });
         }
       };
       
       this.socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
+        this.logger.error("WebSocket error:", error);
         appInsights.trackException({ error });
         this.setStatus('error');
       };
       
       this.socket.onclose = () => {
-        console.log("WebSocket disconnected");
+        this.logger.log("WebSocket disconnected");
         this.setStatus('disconnected');
       };
       
       return true;
     } catch (error) {
       appInsights.trackException({ error });
-      console.error('WebSocket connection error:', error);
+      this.logger.error('WebSocket connection error:', error);
       this.setStatus('error');
       return false;
     }
@@ -141,7 +142,7 @@ export class WebSocketClient {
       return true;
     } catch (error) {
       appInsights.trackException({ error });
-      console.error('Error sending WebSocket message:', error);
+      this.logger.error('Error sending WebSocket message:', error);
       return false;
     }
   }
@@ -154,7 +155,7 @@ export class WebSocketClient {
         return true;
       } catch (error) {
         appInsights.trackException({ error });
-        console.error('Error disconnecting WebSocket:', error);
+        this.logger.error('Error disconnecting WebSocket:', error);
         return false;
       }
     }
