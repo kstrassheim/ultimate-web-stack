@@ -66,7 +66,10 @@ describe('Future Gadget Lab API', () => {
 
   // Helper to verify common aspects of API calls
   const verifyCommonApiCall = (method = 'GET', endpoint, body = null) => {
-    expect(retrieveTokenForBackend).toHaveBeenCalledWith(mockInstance);
+    expect(retrieveTokenForBackend).toHaveBeenCalledWith(
+      mockInstance,
+      endpoint.includes('admin') ? ['Group.Read.All'] : []
+    );
     expect(appInsights.trackEvent).toHaveBeenCalledWith({
       name: `Api Call - Future Gadget Lab - ${method} ${endpoint}`
     });
@@ -114,7 +117,7 @@ describe('Future Gadget Lab API', () => {
     it('getAllExperiments fetches all experiments', async () => {
       const result = await getAllExperiments(mockInstance);
       
-      verifyCommonApiCall('GET', '/experiments');
+      verifyCommonApiCall('GET', '/lab-experiments');
       expect(result).toEqual(mockResponse);
     });
     
@@ -122,7 +125,7 @@ describe('Future Gadget Lab API', () => {
       const experimentId = 'exp-123';
       const result = await getExperimentById(mockInstance, experimentId);
       
-      verifyCommonApiCall('GET', `/experiments/${experimentId}`);
+      verifyCommonApiCall('GET', `/lab-experiments/${experimentId}`);
       expect(result).toEqual(mockResponse);
     });
     
@@ -130,7 +133,7 @@ describe('Future Gadget Lab API', () => {
       const experimentData = { name: 'New Experiment', description: 'Testing' };
       const result = await createExperiment(mockInstance, experimentData);
       
-      verifyCommonApiCall('POST', '/experiments', experimentData);
+      verifyCommonApiCall('POST', '/lab-experiments', experimentData);
       expect(result).toEqual(mockResponse);
     });
     
@@ -139,7 +142,7 @@ describe('Future Gadget Lab API', () => {
       const experimentData = { name: 'Updated Experiment' };
       const result = await updateExperiment(mockInstance, experimentId, experimentData);
       
-      verifyCommonApiCall('PUT', `/experiments/${experimentId}`, experimentData);
+      verifyCommonApiCall('PUT', `/lab-experiments/${experimentId}`, experimentData);
       expect(result).toEqual(mockResponse);
     });
     
@@ -153,7 +156,7 @@ describe('Future Gadget Lab API', () => {
       
       const result = await deleteExperiment(mockInstance, experimentId);
       
-      verifyCommonApiCall('DELETE', `/experiments/${experimentId}`);
+      verifyCommonApiCall('DELETE', `/lab-experiments/${experimentId}`);
       expect(result).toEqual({ success: true });
     });
     
@@ -357,14 +360,14 @@ describe('Future Gadget Lab API', () => {
       expect(appInsights.trackException).toHaveBeenCalledWith({
         exception: networkError,
         properties: { 
-          operation: 'GET /experiments', 
+          operation: 'GET /lab-experiments', 
           source: 'Future Gadget Lab API' 
         }
       });
       
       // Verify console.error was called with the right message
       expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('Error in Future Gadget Lab API (GET /experiments)'),
+        expect.stringContaining('Error in Future Gadget Lab API (GET /lab-experiments)'),
         networkError
       );
     });
