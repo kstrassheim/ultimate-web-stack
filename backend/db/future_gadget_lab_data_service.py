@@ -275,6 +275,221 @@ class FutureGadgetLabDataService:
         # Sort by timestamp (descending) and return the first one
         return sorted(readings, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
 
+    # Add missing create_lab_member method
+    def create_lab_member(self, member_data: Dict) -> Dict:
+        """Create a new lab member"""
+        if 'id' not in member_data:
+            # Generate ID if not provided
+            member_data['id'] = f"LM-{uuid.uuid4()}"
+        
+        # Set creation timestamp if not provided
+        if 'created_at' not in member_data:
+            member_data['created_at'] = datetime.datetime.now().isoformat()
+        
+        # Insert the lab member
+        self.lab_members_table.insert(member_data)
+        return member_data
+
+    def get_all_lab_members(self) -> List[Dict]:
+        """Get all lab members"""
+        return self.lab_members_table.all()
+
+def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Dict]]:
+    """Generate test data for all tables in the Future Gadget Lab database
+    
+    Args:
+        service: The FutureGadgetLabDataService instance to populate
+        
+    Returns:
+        A dictionary containing the generated data for each table
+    """
+    # Dictionary to store all created items
+    created_items = {
+        "experiments": [],
+        "d_mails": [],
+        "divergence_readings": [],
+        "lab_members": []
+    }
+    
+    # Create lab members
+    lab_members = [
+        {
+            "name": "Rintaro Okabe", 
+            "codename": "Hououin Kyouma", 
+            "role": "Lab Leader"
+        },
+        {
+            "name": "Kurisu Makise", 
+            "codename": "Christina", 
+            "role": "Senior Researcher"
+        },
+        {
+            "name": "Itaru Hashida", 
+            "codename": "Daru", 
+            "role": "Super Hacker"
+        },
+        {
+            "name": "Mayuri Shiina", 
+            "codename": "Mayushii", 
+            "role": "Hostage"
+        },
+        {
+            "name": "Suzuha Amane", 
+            "codename": "John Titor", 
+            "role": "Time Traveler"
+        },
+        {
+            "name": "Ruka Urushibara", 
+            "codename": "Rukako", 
+            "role": "Lab Member"
+        }
+    ]
+    
+    for member_data in lab_members:
+        created_member = service.create_lab_member(member_data)
+        created_items["lab_members"].append(created_member)
+    
+    # Create experiments
+    experiments = [
+        {
+            "name": "Phone Microwave (Name subject to change)",
+            "description": "A microwave that can send text messages to the past",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Kurisu Makise", "Itaru Hashida"],
+            "results": "Successfully sent messages to the past, causing world line shifts"
+        },
+        {
+            "name": "Divergence Meter",
+            "description": "Device that measures the divergence between world lines",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Kurisu Makise",
+            "collaborators": ["Rintaro Okabe"],
+            "results": "Accurately displays the current world line divergence value"
+        },
+        {
+            "name": "Time Leap Machine",
+            "description": "Device that allows transferring memories to the past self",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Kurisu Makise",
+            "collaborators": ["Rintaro Okabe", "Itaru Hashida"],
+            "results": "Successfully allows transferring consciousness to past self within 48-hour limit"
+        },
+        {
+            "name": "IBN 5100 Decoder",
+            "description": "Using the IBN 5100 to decode SERN's classified database",
+            "status": ExperimentStatus.FAILED.value,
+            "creator_id": "Itaru Hashida",
+            "collaborators": ["Suzuha Amane"],
+            "results": "IBN 5100 was lost before project could be completed"
+        },
+        {
+            "name": "Upa Metal Coating",
+            "description": "Method to transform normal Upas into metal ones",
+            "status": ExperimentStatus.IN_PROGRESS.value,
+            "creator_id": "Mayuri Shiina",
+            "collaborators": [],
+            "results": "Initial tests show limited durability of coating"
+        }
+    ]
+    
+    for exp_data in experiments:
+        created_exp = service.create_experiment(exp_data)
+        created_items["experiments"].append(created_exp)
+    
+    # Create divergence readings
+    readings = [
+        {
+            "reading": 1.048596,
+            "status": WorldLineStatus.STEINS_GATE.value,
+            "recorded_by": "Rintaro Okabe",
+            "notes": "Steins;Gate worldline - mission accomplished"
+        },
+        {
+            "reading": 0.571024,
+            "status": WorldLineStatus.ALPHA.value,
+            "recorded_by": "Rintaro Okabe",
+            "notes": "Alpha worldline - SERN dystopia"
+        },
+        {
+            "reading": 0.523299,
+            "status": WorldLineStatus.ALPHA.value,
+            "recorded_by": "Rintaro Okabe",
+            "notes": "Alpha worldline variant - Mayuri dies in different way"
+        },
+        {
+            "reading": 1.130205,
+            "status": WorldLineStatus.BETA.value,
+            "recorded_by": "Suzuha Amane",
+            "notes": "Beta worldline - World War 3 occurs"
+        },
+        {
+            "reading": 1.382733,
+            "status": WorldLineStatus.BETA.value,
+            "recorded_by": "Suzuha Amane",
+            "notes": "Beta worldline variant - Failed attempt to save Kurisu"
+        }
+    ]
+    
+    for reading_data in readings:
+        created_reading = service.create_divergence_reading(reading_data)
+        created_items["divergence_readings"].append(created_reading)
+    
+    # Create D-Mails
+    d_mails = [
+        {
+            "sender_id": "Rintaro Okabe",
+            "recipient": "Rintaro Okabe (past)",
+            "content": "Don't follow Kurisu into the room.",
+            "target_timestamp": "2010-07-28T12:30:00",
+            "world_line_before": 1.130205,
+            "world_line_after": 0.571024,
+            "observed_changes": "Changed Alpha -> Beta worldline, prevented Kurisu's 'death'"
+        },
+        {
+            "sender_id": "Itaru Hashida",
+            "recipient": "Itaru Hashida (past)",
+            "content": "Buy IBM stock now.",
+            "target_timestamp": "2010-07-29T08:45:00",
+            "world_line_before": 0.571024,
+            "world_line_after": 0.571015,
+            "observed_changes": "Minor divergence, Daru becomes interested in stocks"
+        },
+        {
+            "sender_id": "Rintaro Okabe",
+            "recipient": "Moeka Kiryu",
+            "content": "FB is waiting on Braun Tube workshop. Go there now.",
+            "target_timestamp": "2010-08-04T18:20:00",
+            "world_line_before": 0.523299,
+            "world_line_after": 0.523307,
+            "observed_changes": "Moeka's actions delayed by a few hours"
+        },
+        {
+            "sender_id": "Kurisu Makise",
+            "recipient": "Rintaro Okabe (past)",
+            "content": "Lottery numbers: 03-07-10-26-41-42",
+            "target_timestamp": "2010-07-30T15:45:00",
+            "world_line_before": 0.571024,
+            "world_line_after": 0.409431,
+            "observed_changes": "Lab members became wealthy, attracted attention from SERN"
+        },
+        {
+            "sender_id": "Rintaro Okabe",
+            "recipient": "Rintaro Okabe (past)",
+            "content": "Operation Skuld will succeed. El Psy Kongroo.",
+            "target_timestamp": "2010-08-21T13:45:00",
+            "world_line_before": 1.382733,
+            "world_line_after": 1.048596,
+            "observed_changes": "Successfully reached Steins;Gate worldline"
+        }
+    ]
+    
+    for d_mail_data in d_mails:
+        created_d_mail = service.create_d_mail(d_mail_data)
+        created_items["d_mails"].append(created_d_mail)
+    
+    # Return all created items
+    return created_items
 
 # Create a default instance for quick testing
 # In production code, you would inject this service where needed
@@ -311,3 +526,25 @@ if __name__ == "__main__":
     })
     
     print(f"Created divergence reading: {new_reading}")
+
+    # Create a test instance
+    test_db = FutureGadgetLabDataService(use_memory_storage=True)
+    
+    # Generate test data
+    test_data = generate_test_data(test_db)
+    
+    # Print summary of created data
+    print(f"Created {len(test_data['lab_members'])} lab members")
+    print(f"Created {len(test_data['experiments'])} experiments")
+    print(f"Created {len(test_data['divergence_readings'])} divergence readings")
+    print(f"Created {len(test_data['d_mails'])} D-Mails")
+    
+    # Example of fetching data from the populated database
+    print("\nLab Members:")
+    for member in test_db.lab_members_table.all():
+        print(f"- {member['name']} ({member['codename']}): {member['role']}")
+    
+    print("\nCurrent Worldline:")
+    latest_reading = test_db.get_latest_divergence_reading()
+    if latest_reading:
+        print(f"Divergence: {latest_reading['reading']}, Status: {latest_reading['status']}")

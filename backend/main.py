@@ -36,6 +36,20 @@ app.include_router(api_router, prefix="/api")
 # Register Future gadget Router
 app.include_router(future_gadget_api_router, prefix="/future-gadget-lab")
 
+# Generate test data for Future Gadget Lab
+from db.future_gadget_lab_data_service import generate_test_data
+from api.future_gadget_api import fgl_service
+
+# Only generate test data if the database is empty
+if not fgl_service.get_all_experiments() and not fgl_service.get_all_d_mails() and not fgl_service.get_all_divergence_readings() and not fgl_service.get_all_lab_members():
+    test_data = generate_test_data(fgl_service)
+    print("=== Generated Future Gadget Lab Test Data ===")
+    print(f"Created {len(test_data['lab_members'])} lab members")
+    print(f"Created {len(test_data['experiments'])} experiments")
+    print(f"Created {len(test_data['divergence_readings'])} divergence readings")
+    print(f"Created {len(test_data['d_mails'])} D-Mails")
+    print("===========================================")
+
 @app.get("/health")
 @app.head("/health") 
 async def health():
