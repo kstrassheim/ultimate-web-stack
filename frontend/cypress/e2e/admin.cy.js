@@ -8,7 +8,7 @@ describe('Authenticated Admin Flow', () => {
     cy.visit('/');
   });
   
-  it('should log in and access admin page through bootstrap navigation', () => {
+  it('should log in and access admin page through dropdown navigation', () => {
     // Find and click the sign-in button in the unauthenticated template
     cy.get('[data-testid="unauthenticated-container"]')
       .should('be.visible')
@@ -22,7 +22,10 @@ describe('Authenticated Admin Flow', () => {
     // Test the Bootstrap navigation component
     cy.get('[data-testid="main-navigation"]').should('be.visible');
     
-    // Navigate to the admin page using the Bootstrap navbar
+    // First click on the Future Gadget Lab dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Now click on the Admin Panel link within the dropdown
     cy.get('[data-testid="nav-admin"]').click();
     
     // Verify we're on the admin page (not access denied)
@@ -52,6 +55,9 @@ describe('Authenticated Admin Flow', () => {
   it('tests the reload button and toast notifications', () => {
     cy.setMockRole('Admin');
     cy.get('[data-testid="sign-in-button"]').click();
+    
+    // Navigate through dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
     cy.get('[data-testid="nav-admin"]').click();
     
     // Ensure Admin page is visible first
@@ -73,7 +79,8 @@ describe('Authenticated Admin Flow', () => {
       body: { error: 'Server Error' }
     }).as('adminDataError');
     
-    // Navigate to admin page
+    // Navigate to admin page through dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
     cy.get('[data-testid="nav-admin"]').click();
     
     // Wait for the failed request
@@ -85,5 +92,23 @@ describe('Authenticated Admin Flow', () => {
     
     // Verify error state in the UI
     cy.get('[data-testid="admin-error"]').should('be.visible');
+  });
+  
+  // Add tests for exploring other Future Gadget Lab pages
+  it('can navigate to other Future Gadget Lab pages', () => {
+    // Quick login
+    cy.get('[data-testid="sign-in-button"]').click();
+    
+    // Click on Future Gadget Lab dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Navigate to Experiments page
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+    
+    // Go back to dropdown and visit D-Mail system
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    cy.get('[data-testid="nav-dmails"]').click();
+    cy.get('[data-testid="dmails-heading"]', { timeout: 10000 }).should('be.visible');
   });
 });
