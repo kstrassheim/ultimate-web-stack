@@ -6,7 +6,7 @@ export class WebSocketClient {
   constructor(path) {
     this.path = path;
     this.socket = null;
-    this.messageListeners = [];
+    this.listeners = [];
     this.statusListeners = [];
     this.connectionStatus = 'disconnected';
   }
@@ -81,7 +81,7 @@ export class WebSocketClient {
           };
           
           // Notify all listeners about the new message
-          this.messageListeners.forEach(listener => listener(message));
+          this.listeners.forEach(listener => listener(message));
         } catch (error) {
           console.error("Error processing WebSocket message:", error);
           appInsights.trackException({ error });
@@ -117,18 +117,33 @@ export class WebSocketClient {
     return this.connectionStatus;
   }
 
-  sendMessage(message) {
-    if (this.socket && this.connectionStatus === 'connected') {
-      try {
-        this.socket.send(message);
-        return true;
-      } catch (error) {
-        appInsights.trackException({ error });
-        console.error('Error sending WebSocket message:', error);
-        return false;
-      }
+  send(data) {
+    if (!this.socket || this.connectionStatus !== 'connected') {
+      return false;
     }
-    return false;
+    
+    try {
+      // Handle different message types
+      if (typeof data === 'string') {
+        // Simple string message - send as is
+        this.socket.send(data);
+      } else if (typeof data === 'object') {
+        // Object message - convert to JSON with type if not specified
+        const dataToSend = {
+          ...data,
+          type: data.type || 'message' // Default to 'message' type
+        };
+        this.socket.send(JSON.stringify(dataToSend));
+      } else {
+        // Convert other types to string
+        this.socket.send(String(data));
+      }
+      return true;
+    } catch (error) {
+      appInsights.trackException({ error });
+      console.error('Error sending WebSocket message:', error);
+      return false;
+    }
   }
 
   disconnect() {
@@ -146,10 +161,10 @@ export class WebSocketClient {
     return false;
   }
 
-  subscribeToMessages(callback) {
-    this.messageListeners.push(callback);
+  subscribe(callback) {
+    this.listeners.push(callback);
     return () => {
-      this.messageListeners = this.messageListeners.filter(listener => listener !== callback);
+      this.listeners = this.listeners.filter(listener => listener !== callback);
     };
   }
 
