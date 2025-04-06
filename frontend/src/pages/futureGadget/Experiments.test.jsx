@@ -740,4 +740,175 @@ describe('Experiments Component', () => {
     expect(badgeClasses).toContain('secondary');  // abandoned
     expect(badgeClasses).toContain('light');      // unknown status
   });
+
+  test('handles all WebSocket message edge cases correctly', async () => {
+    // Set up direct access to WebSocket callbacks
+    let messageCallback;
+    let statusCallback;
+    
+    experimentsSocket.subscribe.mockImplementation(callback => {
+      messageCallback = callback;
+      return jest.fn();
+    });
+    
+    experimentsSocket.subscribeToStatus.mockImplementation(callback => {
+      statusCallback = callback;
+      return jest.fn();
+    });
+    
+    const { unmount } = render(<Experiments />);
+    
+    // Wait for initial render to complete
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Test CREATE message with malformed data - should not cause crash
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'create',
+          data: { name: 'Malformed Data' } // Missing ID
+        }
+      });
+    });
+    
+    // Verify component still works
+    expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    expect(screen.queryByText('Malformed Data')).not.toBeInTheDocument();
+    
+    // Test CREATE message with proper data
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'create',
+          data: { 
+            id: 'exp-new', 
+            name: 'New Socket Experiment',
+            status: 'planned',
+            creator_id: 'system'
+          }
+        }
+      });
+    });
+    
+    // Verify the experiment was added
+    await waitFor(() => {
+      expect(screen.getByText('New Socket Experiment')).toBeInTheDocument();
+    });
+    
+    // Test UPDATE with non-existent ID - should not crash
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'update',
+          data: { 
+            id: 'non-existent-id', 
+            name: 'This Should Not Appear'
+          }
+        }
+      });
+    });
+    
+    // Verify component still works and didn't add the non-existent item
+    expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    expect(screen.queryByText('This Should Not Appear')).not.toBeInTheDocument();
+    
+    // Test UPDATE with valid ID
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'update',
+          data: { 
+            id: 'exp-1', 
+            name: 'Updated Socket Experiment',
+            description: 'Send messages to the past',
+            status: 'completed',
+            creator_id: 'okabe'
+          }
+        }
+      });
+    });
+    
+    // Verify the update happened
+    await waitFor(() => {
+      expect(screen.getByText('Updated Socket Experiment')).toBeInTheDocument();
+    });
+    
+    // Test DELETE with non-existent ID - should not crash
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'delete',
+          data: { id: 'non-existent-id' }
+        }
+      });
+    });
+    
+    // Verify component still works
+    expect(screen.getByText('Updated Socket Experiment')).toBeInTheDocument();
+    
+    // Test DELETE with valid ID
+    act(() => {
+      messageCallback({
+        rawData: {
+          type: 'delete',
+          data: { id: 'exp-2' }
+        }
+      });
+    });
+    
+    // Verify the deletion happened
+    await waitFor(() => {
+      expect(screen.queryByText('Divergence Meter')).not.toBeInTheDocument();
+    });
+    
+    // Send multiple mixed messages in succession to stress test
+    act(() => {
+      // Valid update
+      messageCallback({
+        rawData: {
+          type: 'update',
+          data: { 
+            id: 'exp-1', 
+            name: 'Stress Test Update',
+          }
+        }
+      });
+      
+      // Invalid type
+      messageCallback({
+        rawData: {
+          type: 'invalid_type',
+          data: { id: 'exp-1' }
+        }
+      });
+      
+      // Missing data
+      messageCallback({
+        rawData: {
+          type: 'update',
+        }
+      });
+      
+      // Null message
+      messageCallback(null);
+      
+      // Status changes
+      statusCallback('reconnecting');
+      statusCallback('connected');
+    });
+    
+    // Verify the component handled the stress test
+    await waitFor(() => {
+      expect(screen.getByText('Stress Test Update')).toBeInTheDocument();
+    });
+    
+    // Verify status was updated
+    expect(screen.getByText('Connected')).toBeInTheDocument();
+    
+    // Unmount to test cleanup
+    unmount();
+    expect(experimentsSocket.disconnect).toHaveBeenCalled();
+  });
 });
