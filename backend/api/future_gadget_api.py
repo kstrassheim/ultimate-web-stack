@@ -13,7 +13,7 @@ from db.future_gadget_lab_data_service import (
 )
 
 # Initialize router
-future_gadget_api_router = APIRouter(prefix="/future-gadget-lab", tags=["Future Gadget Lab"])
+future_gadget_api_router = APIRouter(tags=["Future Gadget Lab"])
 
 # Initialize data service with memory storage
 fgl_service = FutureGadgetLabDataService(use_memory_storage=True)
@@ -152,7 +152,7 @@ class LabMemberUpdate(BaseModel):
 
 # ----- EXPERIMENTS ROUTES -----
 
-@future_gadget_api_router.get("/experiments", response_model=List[Dict])
+@future_gadget_api_router.get("/lab-experiments", response_model=List[Dict])
 @required_roles(["Admin"])
 async def get_all_experiments(
     name: Optional[str] = Query(None, description="Filter by experiment name"),
@@ -169,7 +169,7 @@ async def get_all_experiments(
         return fgl_service.search_experiments(query_params)
     return fgl_service.get_all_experiments()
 
-@future_gadget_api_router.get("/experiments/{experiment_id}", response_model=Dict)
+@future_gadget_api_router.get("/lab-experiments/{experiment_id}", response_model=Dict)
 @required_roles(["Admin"])
 async def get_experiment_by_id(
     experiment_id: str = Path(..., description="The ID of the experiment to retrieve"),
@@ -181,7 +181,7 @@ async def get_experiment_by_id(
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
     return experiment
 
-@future_gadget_api_router.post("/experiments", response_model=Dict, status_code=201)
+@future_gadget_api_router.post("/lab-experiments", response_model=Dict, status_code=201)
 @required_roles(["Admin"])
 async def create_experiment(
     experiment: ExperimentCreate,
@@ -198,7 +198,7 @@ async def create_experiment(
     
     return created_experiment
 
-@future_gadget_api_router.put("/experiments/{experiment_id}", response_model=Dict)
+@future_gadget_api_router.put("/lab-experiments/{experiment_id}", response_model=Dict)
 @required_roles(["Admin"])
 async def update_experiment(
     experiment_id: str = Path(..., description="The ID of the experiment to update"),
@@ -220,7 +220,7 @@ async def update_experiment(
     
     return updated_experiment
 
-@future_gadget_api_router.delete("/experiments/{experiment_id}", response_model=Dict)
+@future_gadget_api_router.delete("/lab-experiments/{experiment_id}", response_model=Dict)
 @required_roles(["Admin"])
 async def delete_experiment(
     experiment_id: str = Path(..., description="The ID of the experiment to delete"),

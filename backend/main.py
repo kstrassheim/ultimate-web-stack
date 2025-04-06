@@ -53,6 +53,13 @@ dist = Path("./dist")
 frontend_router = APIRouter()
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
+
+    # Exclude API paths - prevent serving HTML for API routes
+    if path.startswith('api/') or path.startswith('future-gadget-lab/'):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="API path not found")
+    
+
     fp = dist / path
     if path == '' or not fp.exists():
         fp = dist / "index.html"

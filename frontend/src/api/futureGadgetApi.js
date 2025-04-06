@@ -11,7 +11,10 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
   try {
     appInsights.trackEvent({ name: `Api Call - Future Gadget Lab - ${method} ${url}` });
     
-    const accessToken = await retrieveTokenForBackend(instance);
+    const accessToken = await retrieveTokenForBackend(
+      instance, 
+      url.includes('admin') ? ['Group.Read.All'] : []
+    );
     
     const headers = {
       'Authorization': `Bearer ${accessToken}`,
@@ -47,23 +50,23 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
 // ----- EXPERIMENTS API -----
 
 export const getAllExperiments = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/experiments');
+  return makeAuthenticatedRequest(instance, '/lab-experiments');
 };
 
 export const getExperimentById = async (instance, experimentId) => {
-  return makeAuthenticatedRequest(instance, `/experiments/${experimentId}`);
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`);
 };
 
 export const createExperiment = async (instance, experimentData) => {
-  return makeAuthenticatedRequest(instance, '/experiments', 'POST', experimentData);
+  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', experimentData);
 };
 
 export const updateExperiment = async (instance, experimentId, experimentData) => {
-  return makeAuthenticatedRequest(instance, `/experiments/${experimentId}`, 'PUT', experimentData);
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'PUT', experimentData);
 };
 
 export const deleteExperiment = async (instance, experimentId) => {
-  return makeAuthenticatedRequest(instance, `/experiments/${experimentId}`, 'DELETE');
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE');
 };
 
 // ----- D-MAIL API -----
