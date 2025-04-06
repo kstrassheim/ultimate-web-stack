@@ -249,4 +249,357 @@ describe('Experiments Component', () => {
     unmount();
     expect(experimentsSocket.disconnect).toHaveBeenCalled();
   });
+
+  test('handles error when creating a new experiment', async () => {
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /new experiment/i })).toBeInTheDocument();
+    });
+
+    // Click the "New Experiment" button
+    fireEvent.click(screen.getByRole('button', { name: /new experiment/i }));
+
+    // Fill the form
+    fireEvent.change(screen.getByLabelText(/experiment name/i), {
+      target: { value: 'Failed Test Experiment' }
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: 'This experiment will fail' }
+    });
+
+    // Mock an API error
+    const errorMessage = 'API Error: Failed to create';
+    createExperiment.mockRejectedValue(new Error(errorMessage));
+
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /create experiment/i }));
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith(`Failed to create experiment: ${errorMessage}`);
+    });
+  });
+
+  test('opens edit form and updates an experiment', async () => {
+    // Mock the fetch by ID API call
+    const experimentDetail = { 
+      ...mockExperiments[0],
+      collaborators: ['daru', 'mayuri']
+    };
+    getExperimentById.mockResolvedValue(experimentDetail);
+    updateExperiment.mockResolvedValue({ success: true });
+
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Click the edit button for the first experiment
+    const editButtons = screen.getAllByRole('button', { name: /edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Wait for the edit modal
+    await waitFor(() => {
+      expect(screen.getByText(/edit experiment/i)).toBeInTheDocument();
+    });
+
+    // Check that form is pre-filled
+    expect(screen.getByLabelText(/experiment name/i).value).toBe('Phone Microwave');
+    expect(screen.getByLabelText(/description/i).value).toBe('Send messages to the past');
+    expect(screen.getByLabelText(/collaborators/i).value).toBe('daru, mayuri');
+
+    // Update the experiment
+    fireEvent.change(screen.getByLabelText(/experiment name/i), {
+      target: { value: 'Phone Microwave (Temporary Name)' }
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /update experiment/i }));
+
+    // Verify the update was called
+    await waitFor(() => {
+      expect(updateExperiment).toHaveBeenCalledWith(
+        mockInstance, 
+        'exp-1', 
+        expect.objectContaining({
+          name: 'Phone Microwave (Temporary Name)',
+          description: 'Send messages to the past'
+        })
+      );
+    });
+
+    expect(notyfService.success).toHaveBeenCalledWith('Experiment updated successfully');
+    expect(getAllExperiments).toHaveBeenCalledTimes(2);
+  });
+
+  test('handles error when updating an experiment', async () => {
+    // Mock the fetch by ID API call
+    getExperimentById.mockResolvedValue(mockExperiments[0]);
+    const errorMessage = 'API Error: Failed to update';
+    updateExperiment.mockRejectedValue(new Error(errorMessage));
+
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Click the edit button
+    const editButtons = screen.getAllByRole('button', { name: /edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Wait for the edit modal
+    await waitFor(() => {
+      expect(screen.getByLabelText(/experiment name/i)).toBeInTheDocument();
+    });
+
+    // Submit the form without changes
+    fireEvent.click(screen.getByRole('button', { name: /update experiment/i }));
+
+    // Verify error handling
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith(`Failed to update experiment: ${errorMessage}`);
+    });
+  });
+
+  test('handles error when fetching experiment details', async () => {
+    // Mock error response for getExperimentById
+    const errorMessage = 'Failed to fetch experiment';
+    getExperimentById.mockRejectedValue(new Error(errorMessage));
+
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Click edit button
+    const editButtons = screen.getAllByRole('button', { name: /edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Verify error notification appeared
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith(
+        expect.stringContaining(errorMessage)
+      );
+    });
+    
+    // Modal should not appear
+    expect(screen.queryByText(/edit experiment/i)).not.toBeInTheDocument();
+  });
+
+  test('handles error when deleting an experiment', async () => {
+    const errorMessage = 'API Error: Failed to delete';
+    deleteExperiment.mockRejectedValue(new Error(errorMessage));
+
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Click the delete button
+    const deleteButtons = screen.getAllByRole('button', { name: /delete/i });
+    fireEvent.click(deleteButtons[0]);
+
+    // Confirm deletion
+    await waitFor(() => {
+      expect(screen.getByText(/are you sure you want to delete/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /delete experiment/i }));
+
+    // Verify error handling
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith(`Failed to delete experiment: ${errorMessage}`);
+    });
+  });
+
+  test('form validation prevents submission of invalid data', async () => {
+    // Make sure the initial fetch completes successfully
+    getAllExperiments.mockResolvedValue(mockExperiments);
+    
+    render(<Experiments />);
+    
+    // First wait for the initial loading to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    });
+    
+    // Click the "New Experiment" button 
+    fireEvent.click(screen.getByRole('button', { name: /new experiment/i }));
+    
+    // Wait for the modal to appear
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /create new experiment/i })).toBeInTheDocument();
+    });
+    
+    // Wait for the form to be visible and accessible
+    const form = await screen.findByTestId('experiment-form-element');
+    expect(form).toBeInTheDocument();
+    
+    // Submit without filling required fields
+    const submitButton = screen.getByRole('button', { name: /create experiment/i });
+    fireEvent.click(submitButton);
+    
+    // Should not call the API
+    expect(createExperiment).not.toHaveBeenCalled();
+    
+    // Should display validation feedback
+    expect(screen.getByText('Please provide an experiment name.')).toBeInTheDocument();
+    expect(screen.getByText('Please provide a description.')).toBeInTheDocument();
+  });
+
+  test('handles collaborative form updates correctly', async () => {
+    // Mock successful response first so loading completes
+    createExperiment.mockResolvedValue({ id: 'collab-1' });
+    
+    render(<Experiments />);
+    
+    // Wait for loading to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    });
+    
+    // Open create form
+    fireEvent.click(screen.getByRole('button', { name: /new experiment/i }));
+    
+    // Wait for the modal to be visible
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-element')).toBeInTheDocument();
+    });
+    
+    // Now fill the form when it's accessible
+    fireEvent.change(screen.getByLabelText(/experiment name/i), { 
+      target: { value: 'Collaborative Experiment' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/description/i), { 
+      target: { value: 'Testing collaborators' } 
+    });
+    
+    // Add collaborators
+    fireEvent.change(screen.getByLabelText(/collaborators/i), { 
+      target: { value: 'daru, mayuri, suzuha' } 
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /create experiment/i }));
+    
+    // Verify collaborators were processed correctly
+    await waitFor(() => {
+      expect(createExperiment).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          collaborators: ['daru', 'mayuri', 'suzuha']
+        })
+      );
+    });
+  });
+
+  test('displays empty state when no experiments exist', async () => {
+    // Override the mock to return empty array
+    getAllExperiments.mockResolvedValue([]);
+    
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('no-experiments')).toBeInTheDocument();
+      expect(screen.getByText('No experiments found.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /create your first experiment/i })).toBeInTheDocument();
+    });
+    
+    // Click the create button in empty state
+    fireEvent.click(screen.getByRole('button', { name: /create your first experiment/i }));
+    
+    // Modal should appear
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /create new experiment/i })).toBeInTheDocument();
+    });
+  });
+
+  test('reacts to WebSocket update message', async () => {
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Simulate an update message from WebSocket
+    const updatedExperiment = {
+      ...mockExperiments[0],
+      name: 'Updated Phone Microwave',
+      status: 'failed'
+    };
+
+    act(() => {
+      experimentsSocket.messageHandler({
+        rawData: {
+          type: 'update',
+          data: updatedExperiment
+        }
+      });
+    });
+    
+    // Check that UI was updated
+    await waitFor(() => {
+      expect(screen.getByText('Updated Phone Microwave')).toBeInTheDocument();
+    });
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'An experiment was updated by another user'
+    );
+  });
+
+  test('reacts to WebSocket delete message', async () => {
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+
+    // Simulate a delete message from WebSocket
+    act(() => {
+      experimentsSocket.messageHandler({
+        rawData: {
+          type: 'delete',
+          data: { id: 'exp-1' }
+        }
+      });
+    });
+    
+    // Check that item was removed
+    await waitFor(() => {
+      expect(screen.queryByText('Phone Microwave')).not.toBeInTheDocument();
+    });
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'An experiment was deleted by another user'
+    );
+  });
+
+  test('shows reload button functionality', async () => {
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+    
+    // Clear previous calls
+    getAllExperiments.mockClear();
+    
+    // Update the mock to return different data on reload
+    const updatedExperiments = [
+      ...mockExperiments,
+      {
+        id: 'exp-3',
+        name: 'Reloaded Experiment',
+        description: 'This appeared after reload',
+        status: 'planned',
+        creator_id: 'okabe'
+      }
+    ];
+    getAllExperiments.mockResolvedValue(updatedExperiments);
+    
+    // Click reload button
+    fireEvent.click(screen.getByRole('button', { name: /reload/i }));
+    
+    // Check that API was called again
+    expect(getAllExperiments).toHaveBeenCalled();
+    
+    // Check that new data appears
+    await waitFor(() => {
+      expect(screen.getByText('Reloaded Experiment')).toBeInTheDocument();
+    });
+  });
 });
