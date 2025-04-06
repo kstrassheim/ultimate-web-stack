@@ -351,3 +351,56 @@ class TestWebSocketEndpoint:
         
         # Check that disconnect was called to clean up
         assert mock_manager.disconnect.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_websocket_security_warning_for_auth_data(self, monkeypatch, mock_websocket):
+        """Test security warning is sent when authentication data is detected in messages"""
+        # Create a mock connection manager with AsyncMock methods
+        mock_manager = MagicMock()
+        mock_manager.auth_connect = AsyncMock()
+        mock_manager.send_personal_message = AsyncMock()
+        
+        # Track broadcast calls to ensure they don't happen
+        broadcast_calls = []
+        async def mock_broadcast(data, type, **kwargs):
+            broadcast_calls.append((data, type, kwargs))
+            return None
+        
+        mock_manager.broadcast = mock_broadcast
+        mock_manager.active_connections = []
+        
+        # Patch the ChatConnectionManager in api.py
+        monkeypatch.setattr("api.api.chatConnectionManager", mock_manager)
+        
+        # Set up the mock to return a message with authentication data, then a normal message, then disconnect
+        mock_websocket.receive_text = AsyncMock(side_effect=[
+            "here is my token: xyz123",  # Message containing sensitive data
+            "Hello, normal message",     # Normal message
+            WebSocketDisconnect()
+        ])
+        
+        # Make sure state.user is properly configured
+        mock_websocket.state.user = {"name": "Test User"}
+        
+        # Call the WebSocket endpoint
+        try:
+            await api_router.routes[-1].endpoint(mock_websocket)
+        except Exception as e:
+            print(f"Expected exception: {e}")
+        
+        # Fix the spelling error - "chat" not "chatt"
+        assert mock_manager.send_personal_message.call_args_list[0][0][0] == "!!! Security warning: Authentication data should not be sent in chat messages !!!"
+        
+        # Verify normal acknowledgment was sent for the second message
+        assert mock_manager.send_personal_message.call_args_list[1][0][0] == "You sent: Hello, normal message"
+        
+        # Verify broadcast was called only once (for the normal message) and not for the sensitive one
+        assert len(broadcast_calls) == 2  # One for the normal message, one for disconnect
+        
+        # Get the arguments of the first broadcast call
+        first_call_data = broadcast_calls[0][0]  # Data argument
+        
+        # Verify it only contains the normal message, not the token message
+        assert "content" in first_call_data
+        assert first_call_data["content"] == "Test User: Hello, normal message"
+        assert "token" not in first_call_data["content"]

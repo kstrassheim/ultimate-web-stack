@@ -3,6 +3,8 @@ import asyncio
 import datetime
 from common.socket import ConnectionManager
 from fastapi import WebSocket
+import sys
+import gc
 
 # Create a dummy logger class for tests to avoid missing attributes on the logger.
 class DummyLogger:
@@ -261,3 +263,50 @@ async def test_auth_connect_fail_missing_token(manager, monkeypatch, fake_websoc
     assert "Missing authentication token" in reason
     # The websocket should not be in the active connections.
     assert fake_websocket not in manager.active_connections
+
+@pytest.mark.asyncio
+async def test_auth_data_clear(manager, fake_websocket):
+    """Test that sensitive auth data is properly cleared from memory."""
+    # Create auth data with a fake token
+    token_value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    auth_data = {"token": token_value, "other_field": "test"}
+    
+    # Attach the auth data to the fake websocket for the receive_json method
+    fake_websocket.received_json = auth_data
+    
+    # Keep reference to original dict to check it later
+    original_auth_data = auth_data
+    
+    # Mock necessary methods for a successful connection
+    # Create a mock verify_token function - NOT async
+    def mock_verify_token(token, roles, check_all):
+        return {"sub": "test-subject", "name": "Test User", "roles": []}
+    
+    # Mock verify_token function temporarily
+    import common.socket
+    original_verify_token = common.socket.verify_token
+    common.socket.verify_token = mock_verify_token
+    
+    try:
+        # Call auth_connect which should clear the auth_data
+        await manager.auth_connect(fake_websocket)
+        
+        # Check if the original dictionary is now empty (cleared)
+        assert len(original_auth_data) == 0, "auth_data was not cleared properly"
+        
+        # Validate that token is no longer in the dictionary
+        assert "token" not in original_auth_data, "Token was not removed from auth_data"
+        
+        # Force a garbage collection to make the test more reliable
+        gc.collect()
+        
+        # Verify the websocket was accepted and added to connections
+        assert fake_websocket.accepted is True
+        assert fake_websocket in manager.active_connections
+        
+        # Verify user details were set from claims
+        assert fake_websocket.state.user["name"] == "Test User"
+        
+    finally:
+        # Restore original verify_token
+        common.socket.verify_token = original_verify_token

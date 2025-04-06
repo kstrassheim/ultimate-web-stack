@@ -41,10 +41,14 @@ class ConnectionManager:
             logger.warning("WebSocket connection attempt with missing token")
             await websocket.close(code=1008, reason="Missing authentication token")
             return
-            
+
+        token = auth_data.get("token")
+        # Clear sensitive data from memory as soon as possible
+        auth_data.clear()
+
         try:
             # Validate token against receiver roles to allow connection
-            claims = verify_token(auth_data["token"], self.receiver_roles, self.check_all)
+            claims = verify_token(token, self.receiver_roles, self.check_all)
             
             if not claims:
                 logger.warning("WebSocket connection attempt with invalid token (no claims)")

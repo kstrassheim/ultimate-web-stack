@@ -51,6 +51,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 data = await websocket.receive_text()
                 user_name = websocket.state.user.get("name", "Unknown User")
                 
+                # SECURITY CHECK: Skip broadcasting authentication messages
+                # Check if this is an authentication message
+                if 'token' in data.lower() or 'authenticate' in data.lower():
+                    # Send private warning
+                    await chatConnectionManager.send_personal_message(
+                        "!!! Security warning: Authentication data should not be sent in chat messages !!!", 
+                        websocket
+                    )
+                    continue  # Skip further processing of this message
+
                 # Send personal acknowledgment using send_personal_message (unchanged)
                 await chatConnectionManager.send_personal_message(f"You sent: {data}", websocket)
                 
