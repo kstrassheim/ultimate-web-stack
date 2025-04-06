@@ -294,6 +294,40 @@ class FutureGadgetLabDataService:
         """Get all lab members"""
         return self.lab_members_table.all()
 
+    def get_lab_member_by_id(self, member_id: str) -> Optional[Dict]:
+        """Get lab member by ID"""
+        Member = Query()
+        results = self.lab_members_table.search(Member.id == member_id)
+        return results[0] if results else None
+
+    def update_lab_member(self, member_id: str, member_data: Dict) -> Optional[Dict]:
+        """Update an existing lab member"""
+        # Get the lab member
+        existing_member = self.get_lab_member_by_id(member_id)
+        if not existing_member:
+            return None
+        
+        # Update the lab member
+        Member = Query()
+        # Remove the ID from update data if present
+        if 'id' in member_data:
+            del member_data['id']
+        
+        # Add updated_at timestamp
+        member_data['updated_at'] = datetime.datetime.now().isoformat()
+        
+        # Update the lab member
+        self.lab_members_table.update(member_data, Member.id == member_id)
+        
+        # Return the updated lab member
+        return self.get_lab_member_by_id(member_id)
+
+    def delete_lab_member(self, member_id: str) -> bool:
+        """Delete a lab member"""
+        Member = Query()
+        removed = self.lab_members_table.remove(Member.id == member_id)
+        return len(removed) > 0
+
 def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Dict]]:
     """Generate test data for all tables in the Future Gadget Lab database
     

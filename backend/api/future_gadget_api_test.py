@@ -14,7 +14,7 @@ from common.log import logger
 app = FastAPI()
 app.include_router(future_gadget_api_router)
 client = TestClient(app)
-API_PREFIX = "/future-gadget-lab"
+API_PREFIX = ""
 
 # Fixture to override security and logging similar to api_test.py
 @pytest.fixture
@@ -81,57 +81,101 @@ def setup_fgl_service():
 
 
 class TestExperimentEndpoints:
-    """Test the experiment endpoints"""
+    """Test the experiment endpoints with updated paths"""
 
     def test_get_all_experiments(self, client_with_overridden_dependencies, setup_fgl_service):
-        test_client, mock_logger = client_with_overridden_dependencies
-        response = test_client.get(f"{API_PREFIX}/experiments")
-        assert response.status_code == 200
-        # Optionally, verify that we get the dummy data
-        experiments = response.json()
-        assert isinstance(experiments, list)
-        assert experiments[0]["id"] == "FG-01"
+        with patch("api.future_gadget_api.fgl_service.get_all_experiments", return_value=[
+            {
+                "id": "EXP-001",
+                "name": "Phone Microwave",
+                "description": "Send messages to the past",
+                "status": "in_progress",
+                "creator_id": "001",
+                "collaborators": ["002", "003"],
+                "results": None
+            }
+        ]):
+            test_client, _ = client_with_overridden_dependencies
+            # Use the correct lab-experiments route
+            response = test_client.get(f"{API_PREFIX}/lab-experiments")
+            assert response.status_code == 200
+            experiments = response.json()
+            assert isinstance(experiments, list)
+            assert experiments[0]["id"] == "EXP-001"
 
     def test_get_experiment_by_id(self, client_with_overridden_dependencies, setup_fgl_service):
-        test_client, mock_logger = client_with_overridden_dependencies
-        response = test_client.get(f"{API_PREFIX}/experiments/FG-01")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == "FG-01"
+        with patch("api.future_gadget_api.fgl_service.get_experiment_by_id", return_value={
+            "id": "EXP-001",
+            "name": "Phone Microwave",
+            "description": "Send messages to the past",
+            "status": "in_progress",
+            "creator_id": "001",
+            "collaborators": ["002", "003"],
+            "results": None
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            # Updated from /experiments to /lab-experiments
+            response = test_client.get(f"{API_PREFIX}/lab-experiments/EXP-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == "EXP-001"
 
     def test_create_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
-        test_client, mock_logger = client_with_overridden_dependencies
-        new_experiment = {
-            "name": "New Experiment",
-            "description": "Test experiment",
+        with patch("api.future_gadget_api.fgl_service.create_experiment", return_value={
+            "id": "EXP-002",
+            "name": "Time Leap Machine",
+            "description": "Transfer memories to the past",
             "status": "planned",
             "creator_id": "001",
-            "collaborators": []
-        }
-        response = test_client.post(f"{API_PREFIX}/experiments", json=new_experiment)
-        # Expect 201 status code for creation
-        assert response.status_code == 201
-        data = response.json()
-        assert data["id"] == "FG-02"
+            "collaborators": ["002"],
+            "results": None
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            new_experiment = {
+                "name": "Time Leap Machine",
+                "description": "Transfer memories to the past",
+                "status": "planned",
+                "creator_id": "001",
+                "collaborators": ["002"],
+                "results": None
+            }
+            # Updated from /experiments to /lab-experiments
+            response = test_client.post(f"{API_PREFIX}/lab-experiments", json=new_experiment)
+            assert response.status_code == 201
+            data = response.json()
+            assert data["id"] == "EXP-002"
 
     def test_update_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
-        test_client, mock_logger = client_with_overridden_dependencies
-        update_data = {
-            "name": "Updated Experiment",
-            "description": "Updated description",
-            "results": "Updated results"
-        }
-        response = test_client.put(f"{API_PREFIX}/experiments/FG-01", json=update_data)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "Updated Experiment"
+        with patch("api.future_gadget_api.fgl_service.update_experiment", return_value={
+            "id": "EXP-001",
+            "name": "Phone Microwave (Name subject to change)",
+            "description": "Send messages to the past",
+            "status": "completed",
+            "creator_id": "001",
+            "collaborators": ["002", "003"],
+            "results": "Successful test with banana"
+        }):
+            test_client, _ = client_with_overridden_dependencies
+            update_data = {
+                "name": "Phone Microwave (Name subject to change)",
+                "status": "completed",
+                "results": "Successful test with banana"
+            }
+            # Updated from /experiments to /lab-experiments
+            response = test_client.put(f"{API_PREFIX}/lab-experiments/EXP-001", json=update_data)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["name"] == "Phone Microwave (Name subject to change)"
+            assert data["status"] == "completed"
 
     def test_delete_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
-        test_client, mock_logger = client_with_overridden_dependencies
-        response = test_client.delete(f"{API_PREFIX}/experiments/FG-01")
-        assert response.status_code == 200
-        data = response.json()
-        assert "successfully deleted" in data["message"].lower()
+        with patch("api.future_gadget_api.fgl_service.delete_experiment", return_value=True):
+            test_client, _ = client_with_overridden_dependencies
+            # Updated from /experiments to /lab-experiments
+            response = test_client.delete(f"{API_PREFIX}/lab-experiments/EXP-001")
+            assert response.status_code == 200
+            data = response.json()
+            assert "successfully deleted" in data["message"].lower()
 
 
 class TestDMailEndpoints:

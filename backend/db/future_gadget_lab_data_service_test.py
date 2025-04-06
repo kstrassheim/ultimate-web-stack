@@ -3,7 +3,8 @@ import datetime
 from db.future_gadget_lab_data_service import (
     FutureGadgetLabDataService, 
     WorldLineStatus, 
-    ExperimentStatus
+    ExperimentStatus,
+    generate_test_data  # Add this import for the new test
 )
 from common.log import logger
 
@@ -165,4 +166,87 @@ def test_divergence_reading_crud(db_service):
     assert db_service.get_divergence_reading_by_id(created_reading['id']) is None
     assert len(db_service.get_all_divergence_readings()) == initial_count
 
-# Removed file-based storage test to avoid permission errors
+# Test Lab Member CRUD
+def test_lab_member_crud(db_service):
+    """Test CRUD operations for Lab Members"""
+    # Get initial count
+    initial_count = len(db_service.get_all_lab_members())
+    
+    # Create a new lab member
+    new_lab_member = {
+        'name': 'Maho Hiyajo',
+        'codename': 'Professor Hiyajosephina',
+        'role': 'AI Researcher'
+    }
+    
+    created_member = db_service.create_lab_member(new_lab_member)
+    assert created_member['id'] is not None
+    assert created_member['name'] == 'Maho Hiyajo'
+    
+    # Verify the count increased
+    assert len(db_service.get_all_lab_members()) == initial_count + 1
+    
+    # Get by ID - now we can use get_lab_member_by_id directly
+    retrieved_member = db_service.get_lab_member_by_id(created_member['id'])
+    assert retrieved_member is not None
+    assert retrieved_member['name'] == created_member['name']
+    
+    # Update lab member - now we can test update functionality
+    update_data = {
+        'codename': 'Hiyajo-san',
+        'role': 'Lead AI Researcher'
+    }
+    updated_member = db_service.update_lab_member(created_member['id'], update_data)
+    assert updated_member['codename'] == 'Hiyajo-san'
+    assert updated_member['role'] == 'Lead AI Researcher'
+    assert updated_member['name'] == 'Maho Hiyajo'  # Original name should be preserved
+    assert 'updated_at' in updated_member  # Should have added an updated_at timestamp
+    
+    # Delete lab member - now we can test delete functionality
+    assert db_service.delete_lab_member(created_member['id']) is True
+    assert db_service.get_lab_member_by_id(created_member['id']) is None
+    assert len(db_service.get_all_lab_members()) == initial_count
+
+# Test the new data generation function
+def test_generate_test_data(db_service):
+    """Test that generate_test_data correctly populates the database with sample data"""
+    # Make sure we start with empty tables
+    db_service.experiments_table.truncate()
+    db_service.d_mails_table.truncate() 
+    db_service.divergence_readings_table.truncate()
+    db_service.lab_members_table.truncate()
+    
+    # Verify tables are empty
+    assert len(db_service.get_all_experiments()) == 0
+    assert len(db_service.get_all_d_mails()) == 0
+    assert len(db_service.get_all_divergence_readings()) == 0
+    assert len(db_service.get_all_lab_members()) == 0
+    
+    # Generate test data
+    test_data = generate_test_data(db_service)
+    
+    # Verify data was created in all tables
+    assert len(test_data['experiments']) > 0
+    assert len(test_data['d_mails']) > 0
+    assert len(test_data['divergence_readings']) > 0
+    assert len(test_data['lab_members']) > 0
+    
+    # Verify the database was populated
+    assert len(db_service.get_all_experiments()) == len(test_data['experiments'])
+    assert len(db_service.get_all_d_mails()) == len(test_data['d_mails'])
+    assert len(db_service.get_all_divergence_readings()) == len(test_data['divergence_readings'])
+    assert len(db_service.get_all_lab_members()) == len(test_data['lab_members'])
+    
+    # Check some specific data to ensure it was correctly inserted
+    lab_members = db_service.get_all_lab_members()
+    assert any(member['name'] == 'Rintaro Okabe' for member in lab_members)
+    assert any(member['codename'] == 'Christina' for member in lab_members)
+    
+    experiments = db_service.get_all_experiments()
+    assert any(exp['name'] == 'Phone Microwave (Name subject to change)' for exp in experiments)
+    
+    d_mails = db_service.get_all_d_mails()
+    assert any('Lottery numbers' in mail['content'] for mail in d_mails)
+    
+    readings = db_service.get_all_divergence_readings()
+    assert any(reading['reading'] == 1.048596 for reading in readings)
