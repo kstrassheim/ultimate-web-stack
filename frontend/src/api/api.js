@@ -1,54 +1,73 @@
 import { backendUrl } from '@/config';
-import { retreiveTokenForBackend } from '@/auth/entraAuth';
-import appInsights from '@/log/appInsights'; 
+import { retrieveTokenForBackend } from '@/auth/entraAuth';
+import appInsights from '@/log/appInsights';
 
-export const getUserData = async (instance) => {
-  try {
-    appInsights.trackEvent({ name: 'Api Call - getUserData' });
-    const accessToken = await retreiveTokenForBackend(instance);
-    const response = await fetch(`${backendUrl}/api/user-data`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
-    if (!response.ok) {
-      throw new Error('Network response was not ok');
-    }
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    appInsights.trackException({ error });
-    console.error('Error fetching data:', error);
-  }
-};
+// Base URL for API endpoints
+const BASE_URL = `${backendUrl}/api`;
 
-export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
+// Helper function to make authenticated API requests
+const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = null) => {
   try {
-    appInsights.trackEvent({ name: 'Api Call - getAdminData' });
-    const accessToken = await retreiveTokenForBackend(instance, ['Group.Read.All']);
+    appInsights.trackEvent({ name: `Api Call - ${method === 'GET' ? 'get' : 'post'}${url.charAt(0).toUpperCase() + url.slice(1)}` });
     
-    // Changed to POST request with JSON body
-    const response = await fetch(`${backendUrl}/api/admin-data`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        message: message,
-        status: status
-      })
-    });
+    // Get the authentication token
+    const accessToken = await retrieveTokenForBackend(
+      instance, 
+      url.includes('admin') ? ['Group.Read.All'] : []
+    );
+    
+    // Setup headers and options
+    const headers = {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    };
+    
+    const options = {
+      method,
+      headers
+    };
+    
+    // Add request body for non-GET requests
+    if (body && (method === 'POST' || method === 'PUT')) {
+      options.body = JSON.stringify(body);
+    }
+    
+    // Make the API request
+    const response = await fetch(`${BASE_URL}${url}`, options);
     
     if (!response.ok) {
       throw new Error(`Network response was not ok (${response.status}): ${response.statusText}`);
     }
     
-    const data = await response.json();
-    return data;
+    // Parse and return the response
+    return await response.json();
   } catch (error) {
-    appInsights.trackException({ error });
-    console.error('Error fetching admin data:', error);
-    throw error; // Re-throw to allow caller to handle it
+    appInsights.trackException({ 
+      error, 
+      properties: { operation: `${method} ${url}`, source: 'API' }
+    });
+    console.error(`Error in API (${method} ${url}):`, error);
+    
+    // For user data, return undefined (consistent with current tests)
+    // For admin data, rethrow the error (consistent with current tests)
+    if (url.includes('admin')) {
+      throw error;
+    }
+    
+    // Return undefined for getUserData as expected by tests
+    return undefined;
   }
+};
+
+export const getUserData = async (instance) => {
+  return makeAuthenticatedRequest(instance, '/user-data');
+};
+
+export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
+  const body = {
+    message,
+    status
+  };
+  
+  return makeAuthenticatedRequest(instance, '/admin-data', 'POST', body);
 };

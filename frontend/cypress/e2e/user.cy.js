@@ -77,9 +77,6 @@ describe('User Flow Test', () => {
   });
   
   it('should display and interact with the home page - intercept long delay', () => {
-    // Don't navigate again, we're already on the home page from beforeEach
-    // Comment out or remove: cy.visit('/');
-
     // Intercept the user-data request and delay it
     cy.intercept('GET', '**/api/user-data', {
       body: { message: 'Hello from API' },
@@ -100,7 +97,10 @@ describe('User Flow Test', () => {
   });
   
   it('should be denied access to admin page', () => {
-    // Try to navigate to admin page using the Bootstrap navbar
+    // First click on the dropdown menu
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Then click on the Admin Panel item
     cy.get('[data-testid="nav-admin"]').click();
     
     // Should be redirected to access denied page
@@ -112,10 +112,58 @@ describe('User Flow Test', () => {
     // Admin page content should not be visible
     cy.get('[data-testid="admin-heading"]').should('not.exist');
   });
+
+  it('should be denied access to experiments page', () => {
+    // First click on the dropdown menu
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Then click on the Experiments item
+    cy.get('[data-testid="nav-experiments"]').click();
+    
+    // Should be redirected to access denied page
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
+    cy.get('[data-testid="access-denied-role-message"]').should('be.visible');
+    cy.get('[data-testid="access-denied-required-roles"]').should('contain', 'Admin');
+    
+    // Experiments page content should not be visible
+    cy.get('[data-testid="experiments-heading"]').should('not.exist');
+  });
+
+  it('should be denied access to dmails page', () => {
+    // First click on the dropdown menu
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Then click on the D-Mail System item
+    cy.get('[data-testid="nav-dmails"]').click();
+    
+    // Should be redirected to access denied page
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
+    cy.get('[data-testid="access-denied-role-message"]').should('be.visible');
+    cy.get('[data-testid="access-denied-required-roles"]').should('contain', 'Admin');
+    
+    // DMails page content should not be visible
+    cy.get('[data-testid="dmails-heading"]').should('not.exist');
+  });
   
-  it('should interact with the Bootstrap navbar correctly', () => {
+  it('should interact with the Bootstrap navbar and dropdown correctly', () => {
     // Test the Bootstrap navigation
     cy.get('[data-testid="main-navigation"]').should('be.visible');
+    
+    // Check that Future Gadget Lab dropdown exists
+    cy.get('[data-testid="nav-future-gadget"]').should('be.visible');
+    
+    // Open the dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Check all dropdown items are visible
+    cy.get('[data-testid="nav-admin"]').should('be.visible');
+    cy.get('[data-testid="nav-experiments"]').should('be.visible');
+    cy.get('[data-testid="nav-dmails"]').should('be.visible');
+    
+    // Close dropdown by clicking elsewhere
+    cy.get('body').click();
     
     // Navigate to chat page
     cy.get('[data-testid="nav-chat"]').click();
@@ -154,9 +202,6 @@ describe('User Flow Test', () => {
     cy.get('[data-testid="reload-button"]', { timeout: 10000 })
       .should('not.be.disabled');
     
-    // Verify error handling by checking for ANY error indication
-    // cy.contains('Error:', { timeout: 10000 }).should('be.visible');
-    
     // Check for the actual error element if it exists
     cy.get('body').then($body => {
       if ($body.find('[data-testid="error-message"]').length > 0) {
@@ -183,7 +228,7 @@ describe('User Flow Test', () => {
     cy.get('[data-testid="sign-out-button"]').should('be.visible');
   });
   
-  it('should test responsive behavior', () => {
+  it('should test responsive behavior with dropdown', () => {
     // Set viewport to mobile size
     cy.viewport('iphone-x');
     
@@ -196,10 +241,19 @@ describe('User Flow Test', () => {
     // Menu should be visible
     cy.get('.navbar-collapse').should('be.visible');
     
+    // Check dropdown is visible in mobile view
+    cy.get('[data-testid="nav-future-gadget"]').should('be.visible');
+    
+    // Open dropdown in mobile view
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Check dropdown items are visible
+    cy.get('[data-testid="nav-admin"]').should('be.visible');
+    cy.get('[data-testid="nav-experiments"]').should('be.visible');
+    cy.get('[data-testid="nav-dmails"]').should('be.visible');
+    
     // Navigate through menu items
-    cy.get('.navbar-collapse').within(() => {
-      cy.get('[data-testid="nav-chat"]').click();
-    });
+    cy.get('[data-testid="nav-chat"]').click();
     
     // Should navigate to chat page
     cy.url().should('include', '/chat');

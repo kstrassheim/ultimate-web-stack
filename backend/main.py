@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 # get routers
 from api.api import api_router
+from api.future_gadget_api import future_gadget_api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # Init FastAPI
@@ -31,6 +32,23 @@ app.add_middleware( FastAPIMiddleware,  exporter=log_azure_exporter, sampler=Pro
 
 # Register API Router
 app.include_router(api_router, prefix="/api")
+
+# Register Future gadget Router
+app.include_router(future_gadget_api_router, prefix="/future-gadget-lab")
+
+# Generate test data for Future Gadget Lab
+from db.future_gadget_lab_data_service import generate_test_data
+from api.future_gadget_api import fgl_service
+
+# Only generate test data if the database is empty
+if not fgl_service.get_all_experiments() and not fgl_service.get_all_d_mails() and not fgl_service.get_all_divergence_readings() and not fgl_service.get_all_lab_members():
+    test_data = generate_test_data(fgl_service)
+    print("=== Generated Future Gadget Lab Test Data ===")
+    print(f"Created {len(test_data['lab_members'])} lab members")
+    print(f"Created {len(test_data['experiments'])} experiments")
+    print(f"Created {len(test_data['divergence_readings'])} divergence readings")
+    print(f"Created {len(test_data['d_mails'])} D-Mails")
+    print("===========================================")
 
 @app.get("/health")
 @app.head("/health") 
@@ -49,6 +67,13 @@ dist = Path("./dist")
 frontend_router = APIRouter()
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
+
+    # Exclude API paths - prevent serving HTML for API routes
+    if path.startswith('api/') or path.startswith('future-gadget-lab/'):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="API path not found")
+    
+
     fp = dist / path
     if path == '' or not fp.exists():
         fp = dist / "index.html"

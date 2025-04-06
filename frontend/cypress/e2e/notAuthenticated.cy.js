@@ -26,7 +26,8 @@ describe('Navigation Tests', () => {
     cy.wait(500);
     cy.url().should('include', '/');
     
-    // Admin navigation test
+    // Admin navigation test - now inside dropdown
+    cy.get('[data-testid="nav-future-gadget"]').should('be.visible').click();
     cy.get('[data-testid="nav-admin"]').should('be.visible').click();
     cy.wait(500);
     
@@ -105,7 +106,8 @@ describe('Unauthenticated Flow Tests', () => {
   });
 
   it('should redirect to access-denied for admin page when not authenticated', () => {
-    // Click the Admin link
+    // Click the dropdown first, then the Admin link
+    cy.get('[data-testid="nav-future-gadget"]').click();
     cy.get('[data-testid="nav-admin"]').click();
     
     // Should redirect to access-denied
@@ -117,6 +119,38 @@ describe('Unauthenticated Flow Tests', () => {
     
     // Verify authenticated elements are not visible
     cy.get('[data-testid="admin-page"]').should('not.exist');
+  });
+
+  it('should redirect to access-denied for experiments page when not authenticated', () => {
+    // Click the dropdown first, then the Experiments link
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    cy.get('[data-testid="nav-experiments"]').click();
+    
+    // Should redirect to access-denied
+    cy.url().should('include', '/access-denied');
+    
+    // Verify access denied page content
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
+    
+    // Verify experiments elements are not visible
+    cy.get('[data-testid="experiments-page"]').should('not.exist');
+  });
+
+  it('should redirect to access-denied for dmails page when not authenticated', () => {
+    // Click the dropdown first, then the D-Mail System link
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    cy.get('[data-testid="nav-dmails"]').click();
+    
+    // Should redirect to access-denied
+    cy.url().should('include', '/access-denied');
+    
+    // Verify access denied page content
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
+    
+    // Verify dmails elements are not visible
+    cy.get('[data-testid="dmails-page"]').should('not.exist');
   });
 
   it('should redirect to access-denied for chat page when not authenticated', () => {
@@ -178,5 +212,19 @@ describe('Navigation Tests', () => {
     
     // Reset viewport
     cy.viewport(1000, 660);
+  });
+
+  it('should properly display and navigate the Future Gadget Lab dropdown', () => {
+    // Check if the dropdown exists
+    cy.get('[data-testid="nav-future-gadget"]').should('be.visible');
+    
+    // Click to open dropdown
+    cy.get('[data-testid="nav-future-gadget"]').click();
+    
+    // Check all dropdown items exist
+    cy.get('[data-testid="nav-admin"]').should('be.visible');
+    cy.get('[data-testid="nav-experiments"]').should('be.visible');
+    cy.get('[data-testid="nav-dmails"]').should('be.visible');
+    
   });
 });

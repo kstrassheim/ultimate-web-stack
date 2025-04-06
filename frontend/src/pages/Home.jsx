@@ -4,7 +4,7 @@ import { getUserData } from '@/api/api'
 import { getAllGroups } from '@/api/graphApi'
 import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
-import GroupsList from '@/components/GroupsList';
+import GroupsList from '@/pages/components/GroupsList';
 import Loading, {sleep} from '@/components/Loading';
 import notyfService from '@/log/notyfService';
 

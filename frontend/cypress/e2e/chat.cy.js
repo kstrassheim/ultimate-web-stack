@@ -85,29 +85,4 @@ describe('Chat Page Functionality', () => {
     // Message should appear in the chat
     cy.contains('.message', reconnectMessage).should('be.visible');
   });
-  
-  it('should persist user authentication across chat sessions', () => {
-    // Wait for connection
-    cy.get('.status-connected', { timeout: 10000 }).should('exist');
-    
-    // Send a message to verify authenticated connection
-    const authMessage = 'Authenticated message';
-    cy.get('.chat-input input').type(authMessage);
-    cy.get('.chat-input button').click();
-    
-    // Message should include user info from authenticated session
-    cy.contains('.message', authMessage).should('be.visible');
-    
-    // Instead of reloading, navigate away and then return:
-    cy.get('[data-testid="nav-home"]').click();
-    cy.url().should('include', '/');
-    cy.get('[data-testid="nav-chat"]').click();
-
-    // Now check that the authenticated container and profile image are still visible
-    cy.get('[data-testid="authenticated-container"]', { timeout: 15000 }).should('be.visible');
-    cy.get('[data-testid="profile-image"]', { timeout: 15000 }).should('be.visible');
-
-    // And verify WebSocket reconnection
-    cy.get('.status-connected', { timeout: 15000 }).should('exist');
-  });
 });

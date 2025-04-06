@@ -12,6 +12,23 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const socketClientRef = useRef(null);
 
+
+  // Parse message content to avoid duplicated usernames
+  const parseMessageContent = (messageText, username) => {
+    if (!messageText) return messageText;
+    
+    // Check for explicit "username: " pattern at beginning
+    const colonIndex = messageText.indexOf(': ');
+    if (colonIndex > 0) {
+      const potentialUsername = messageText.substring(0, colonIndex);
+      if (username && potentialUsername === username) {
+        return messageText.substring(colonIndex + 2);
+      }
+    }
+    
+    return messageText;
+  };
+
   useEffect(() => {
     // Create WebSocket client instance
     if (!socketClientRef.current) {
@@ -23,7 +40,16 @@ const Chat = () => {
     socketClient.connect(instance);
     
     // Subscribe to messages and status updates
-    const unsubscribeMessages = socketClient.subscribeToMessages((message) => {
+    // Use subscribeToMessages if it exists, otherwise fall back to subscribe
+    const messageMethod = socketClient.subscribeToMessages || socketClient.subscribe;
+    if (typeof messageMethod !== 'function') {
+      console.error('WebSocketClient is missing subscribe/subscribeToMessages method');
+      setError('WebSocket client configuration error');
+      return;
+    }
+    
+    const unsubscribe = messageMethod.call(socketClient, (message) => {
+
       setMessages(prevMessages => [...prevMessages, message]);
     });
     
@@ -38,7 +64,7 @@ const Chat = () => {
     
     // Clean up on unmount
     return () => {
-      unsubscribeMessages();
+      unsubscribe();
       unsubscribeStatus();
       socketClient.disconnect();
     };
@@ -53,7 +79,8 @@ const Chat = () => {
 
   const sendMessage = () => {
     if (inputMessage.trim() && connectionStatus === 'connected') {
-      socketClientRef.current.sendMessage(inputMessage);
+      // Use send method (previously sendMessage)
+      socketClientRef.current.send(inputMessage);
       setInputMessage('');
     }
   };
@@ -84,7 +111,8 @@ const Chat = () => {
           messages.map((msg, index) => (
             <div key={index} className={`message ${msg.type}`}>
               <span className="timestamp">{msg.timestamp}</span>
-              <span className="text">{msg.text}</span>
+              {msg.username && <span className="username">{msg.username}</span>}
+              <span className="text">{msg.parsedText || msg.text}</span>
             </div>
           ))
         )}

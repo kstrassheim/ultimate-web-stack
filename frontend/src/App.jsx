@@ -1,5 +1,5 @@
 import { Routes, Route, Link } from "react-router-dom";
-import { Navbar, Nav, Container } from 'react-bootstrap';
+import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
 import '@/App.css';
 // get the components
 import NotFound from '@/pages/404';
@@ -10,6 +10,9 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Home from '@/pages/Home';
 import Chat from '@/pages/Chat';
 import Admin from '@/pages/Admin';
+// Add new imports for Experiments and DMails
+import Experiments from '@/pages/futureGadget/Experiments';
+import DMails from '@/pages/futureGadget/DMails';
 
 function App() {
   return (
@@ -45,7 +48,13 @@ function App() {
             <Nav className="me-auto" data-testid="page-navigation">
               <Nav.Link as={Link} to="/" data-testid="nav-home">Home</Nav.Link>
               <Nav.Link as={Link} to="/chat" data-testid="nav-chat">Chat</Nav.Link>
-              <Nav.Link as={Link} to="/admin" data-testid="nav-admin">Admin</Nav.Link>
+              
+              {/* Replace Admin link with dropdown */}
+              <NavDropdown title="Future Gadget Lab" id="future-gadget-dropdown" data-testid="nav-future-gadget">
+                <NavDropdown.Item as={Link} to="/admin" data-testid="nav-admin">Admin Panel</NavDropdown.Item>
+                <NavDropdown.Item as={Link} to="/experiments" data-testid="nav-experiments">Experiments</NavDropdown.Item>
+                <NavDropdown.Item as={Link} to="/dmails" data-testid="nav-dmails">D-Mail System</NavDropdown.Item>
+              </NavDropdown>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -74,6 +83,23 @@ function App() {
             element={
               <ProtectedRoute requiredRoles={["Admin"]}>
                 <Admin />
+              </ProtectedRoute>
+            }
+          />
+          {/* Add new routes for Experiments and DMails */}
+          <Route
+            path="/experiments"
+            element={
+              <ProtectedRoute requiredRoles={["Admin"]}>
+                <Experiments />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dmails"
+            element={
+              <ProtectedRoute requiredRoles={["Admin"]}>
+                <DMails />
               </ProtectedRoute>
             }
           />

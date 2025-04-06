@@ -33,7 +33,7 @@ module.exports ={
         "\\\\mock\\\\"    // Windows path format (with escaped backslashes)
     ],
     collectCoverageFrom: [
-        "src/**/*.jsx",  // Include all JS/JSX files in src
+        "src/**/*.{js,jsx}",  // Include all JS/JSX files in src
         "!src/**/*.test.{js,jsx}", // Exclude test files
         "!src/index.{js,jsx}", // Optionally exclude entry points
         "!**/node_modules/**",

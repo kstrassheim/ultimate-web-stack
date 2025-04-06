@@ -1,87 +1,62 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { Spinner, Modal } from 'react-bootstrap';
 
-const Loading = ({ visible, message = "Loading data..." }) => {
-  const [rotation, setRotation] = useState(0);
-
-  useEffect(() => {
-    // Only run the animation logic if visible
-    if (!visible) return;
-    
-    let animationFrame;
-    let startTime;
-    
-    const animate = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const progress = timestamp - startTime;
-      // Full rotation every second (360 degrees per 1000ms)
-      const newRotation = ((progress / 1000) * 360) % 360;
-      setRotation(newRotation);
-      animationFrame = requestAnimationFrame(animate);
-    };
-    
-    animationFrame = requestAnimationFrame(animate);
-    
-    return () => {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame);
-      }
-    };
-  }, [visible]);
-
+/**
+ * Loading component that displays a centered spinner overlay
+ * 
+ * @param {Object} props Component props
+ * @param {boolean} props.visible Whether the loading overlay is visible
+ * @param {string} props.message Message to display below the spinner
+ * @param {string} props.variant Bootstrap spinner variant (primary, secondary, etc.)
+ * @param {string} props.size Size of the spinner (sm or lg)
+ * @param {string} props.animation Animation type (border or grow)
+ * @returns {JSX.Element|null} Loading component or null if not visible
+ */
+const Loading = ({ 
+  visible, 
+  message = "Loading data...", 
+  variant = "primary",
+  size = "",
+  animation = "border"
+}) => {
   // Early return if not visible
   if (!visible) return null;
   
-  const overlayStyle = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  };
-
-  const contentStyle = {
-    backgroundColor: 'white',
-    padding: '30px 50px',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  };
-
-  const spinnerStyle = {
-    width: '40px',
-    height: '40px',
-    border: '6px solid #ccc',
-    borderTop: '6px solid #0078d4',
-    borderRadius: '50%',
-    marginBottom: '20px',
-    transform: `rotate(${rotation}deg)`,
-    transition: 'transform 0.1s linear',
-  };
-
-  const textStyle = { 
-    marginTop: '15px', 
-    color: '#333',
-    fontSize: '16px'
-  };
-
   return (
-    <div style={overlayStyle} data-testid="loading-overlay">
-      <div style={contentStyle} data-testid="loading-content">
-        <div style={spinnerStyle} data-testid="loading-spinner" />
-        <p style={textStyle} data-testid="loading-message">{message}</p>
-      </div>
-    </div>
+    <Modal
+      show={visible}
+      centered
+      backdrop="static"
+      keyboard={false}
+      data-testid="loading-overlay"
+      aria-labelledby="loading-modal"
+      className="loading-overlay"
+    >
+      <Modal.Body className="text-center p-4" data-testid="loading-content">
+        <div className="d-flex flex-column align-items-center">
+          <Spinner
+            animation={animation}
+            variant={variant}
+            size={size}
+            role="status"
+            data-testid="loading-spinner"
+            className="mb-3"
+          >
+            <span className="visually-hidden">Loading...</span>
+          </Spinner>
+          <p 
+            className="mt-2 text-dark" 
+            data-testid="loading-message"
+          >
+            {message}
+          </p>
+        </div>
+      </Modal.Body>
+    </Modal>
   );
 };
 
-export default Loading;
-
-// Sleep utility function
+// For testing, provide a simplified sleep utility
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+export default Loading;
