@@ -599,4 +599,153 @@ describe('DMails Component', () => {
       expect(screen.getByText('New Mail After Reload')).toBeInTheDocument();
     });
   });
+
+  test('handles error when fetching mail details', async () => {
+    // Mock error response for getDMailById
+    const errorMessage = 'Failed to fetch mail details';
+    getDMailById.mockRejectedValue(new Error(errorMessage));
+
+    render(<DMails />);
+    await waitFor(() => {
+      expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    });
+
+    // Click view/edit button
+    const editButtons = screen.getAllByRole('button', { name: /view\/edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Verify error notification appeared
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith(
+        expect.stringContaining(errorMessage)
+      );
+    });
+    
+    // Modal should not appear
+    expect(screen.queryByText(/view\/edit d-mail/i)).not.toBeInTheDocument();
+  });
+
+  test('handles form submission in edit mode', async () => {
+    // Mock the fetch by ID API call
+    getDMailById.mockResolvedValue(mockMails[0]);
+    updateDMail.mockResolvedValue({ success: true });
+
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    });
+
+    // Click the edit button for the first mail
+    const editButtons = screen.getAllByRole('button', { name: /view\/edit/i });
+    fireEvent.click(editButtons[0]);
+
+    // Wait for the edit modal
+    await waitFor(() => {
+      expect(screen.getByText(/view\/edit d-mail/i)).toBeInTheDocument();
+    });
+
+    // Check that form is pre-filled
+    expect(screen.getByLabelText(/subject/i).value).toBe('Lottery Numbers');
+    expect(screen.getByLabelText(/content/i).value).toBe('Buy ticket with numbers 03, 07, 10, 26, 41, 42');
+
+    // Update the mail
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: 'Updated Lottery Numbers' }
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /update d-mail/i }));
+
+    // Verify the update was called
+    await waitFor(() => {
+      expect(updateDMail).toHaveBeenCalledWith(
+        mockInstance, 
+        'dmail-1', 
+        expect.objectContaining({
+          subject: 'Updated Lottery Numbers'
+        })
+      );
+    });
+
+    expect(notyfService.success).toHaveBeenCalledWith('D-Mail updated successfully');
+    expect(getAllDMails).toHaveBeenCalledTimes(2);
+  });
+
+  test('handles collaborative form updates correctly', async () => {
+    // Mock successful response first so loading completes
+    createDMail.mockResolvedValue({ id: 'collab-1' });
+    
+    render(<DMails />);
+    
+    // Wait for loading to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    });
+    
+    // Open create form
+    fireEvent.click(screen.getByTestId('new-dmail-btn'));
+    
+    // Wait for the modal to be visible
+    await waitFor(() => {
+      expect(screen.getByTestId('dmail-form-element')).toBeInTheDocument();
+    });
+    
+    // Now fill the form when it's accessible
+    fireEvent.change(screen.getByLabelText(/subject/i), { 
+      target: { value: 'Collaborative D-Mail' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/content/i), { 
+      target: { value: 'Testing collaborators' } 
+    });
+    
+    // Add collaborators
+    fireEvent.change(screen.getByLabelText(/recipient/i), { 
+      target: { value: 'daru@example.com, mayuri@example.com, suzuha@example.com' } 
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByRole('button', { name: /send d-mail/i }));
+    
+    // Verify collaborators were processed correctly
+    await waitFor(() => {
+      expect(createDMail).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          recipient: 'daru@example.com, mayuri@example.com, suzuha@example.com'
+        })
+      );
+    });
+  });
+
+  test('handles WebSocket messages with missing data gracefully', async () => {
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+    });
+
+    // Simulate a WebSocket message with missing data
+    act(() => {
+      dMailsSocket.messageHandler({
+        rawData: {
+          type: 'create',
+          data: null // Simulate missing data
+        }
+      });
+    });
+    
+    // Check that the component doesn't crash
+    expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+  });
+
+  test('displays "No D-Mails found" message when mails array is empty and not loading', async () => {
+    getAllDMails.mockResolvedValue([]);
+    render(<DMails />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('No D-Mails found.')).toBeInTheDocument();
+    });
+  });
 });
