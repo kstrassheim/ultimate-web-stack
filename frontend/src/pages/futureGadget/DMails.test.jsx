@@ -4,7 +4,8 @@ import {
   screen,
   fireEvent,
   waitFor,
-  act
+  act, 
+  within
 } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import DMails from './DMails';
@@ -48,32 +49,33 @@ jest.mock('@/log/notyfService', () => ({
   warning: jest.fn()
 }));
 
-describe('DMails Component', () => {
-  const mockMails = [
-    {
-      id: 'dmail-1',
-      subject: 'Lottery Numbers',
-      content: 'Buy ticket with numbers 03, 07, 10, 26, 41, 42',
-      sender: 'okabe.rintaro@future-gadget-lab.org',
-      recipient: 'past-self@future-gadget-lab.org',
-      worldLineOrigin: '1.130426',
-      worldLineDestination: '1.048596',
-      divergence: 0.081830,
-      status: 'sent'
-    },
-    {
-      id: 'dmail-2',
-      subject: 'IBN 5100 Location',
-      content: 'Check Yanabayashi Shrine for the IBN 5100',
-      sender: 'suzuha.amane@future-gadget-lab.org',
-      recipient: 'okabe.rintaro@future-gadget-lab.org',
-      worldLineOrigin: '1.130205',
-      worldLineDestination: '1.130426',
-      divergence: 0.000221,
-      status: 'received'
-    }
-  ];
+// Move the mockMails definition outside the describe block so it's accessible to all tests
+const mockMails = [
+  {
+    id: 'dmail-1',
+    subject: 'Lottery Numbers',
+    content: 'Buy ticket with numbers 03, 07, 10, 26, 41, 42',
+    sender: 'okabe.rintaro@future-gadget-lab.org',
+    recipient: 'past-self@future-gadget-lab.org',
+    worldLineOrigin: '1.130426',
+    worldLineDestination: '1.048596',
+    divergence: 0.081830,
+    status: 'sent'
+  },
+  {
+    id: 'dmail-2',
+    subject: 'IBN 5100 Location',
+    content: 'Check Yanabayashi Shrine for the IBN 5100',
+    sender: 'suzuha.amane@future-gadget-lab.org',
+    recipient: 'okabe.rintaro@future-gadget-lab.org',
+    worldLineOrigin: '1.130205',
+    worldLineDestination: '1.130426',
+    divergence: 0.000221,
+    status: 'received'
+  }
+];
 
+describe('DMails Component', () => {
   const mockInstance = {
     getActiveAccount: jest.fn().mockReturnValue({
       username: 'okabe.rintaro@future-gadget-lab.org'
@@ -752,6 +754,47 @@ describe('DMails Component', () => {
   });
 
 
+  test('handleSubmit calls handleCreateMail when formMode is create', async () => {
+    // Setup the mock
+    const createMailMock = jest.fn().mockResolvedValue({ id: 'test-id' });
+    createDMail.mockImplementation(createMailMock);
+    
+    render(<DMails />);
+    
+    // Wait for initial load to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    });
+    
+    // Open the form by clicking the button directly
+    fireEvent.click(screen.getByTestId('new-dmail-btn'));
+    
+    // Use findByTestId which has built-in waiting functionality
+    const formElement = await screen.findByTestId('dmail-form-element');
+    expect(formElement).toBeInTheDocument();
+    
+    // Fill in required fields
+    fireEvent.change(screen.getByLabelText(/subject/i), { 
+      target: { value: 'Test Subject' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/content/i), { 
+      target: { value: 'Test Content' } 
+    });
+    
+    fireEvent.change(screen.getByLabelText(/recipient/i), { 
+      target: { value: 'test@example.com' } 
+    });
+    
+    // Submit the form
+    fireEvent.click(screen.getByTestId('dmail-form-submit'));
+    
+    // Verify createDMail was called
+    await waitFor(() => {
+      expect(createMailMock).toHaveBeenCalled();
+    });
+  });
+
   test('handleSubmit calls handleUpdateMail when formMode is edit', async () => {
     const updateMailMock = jest.fn();
     updateDMail.mockImplementation(updateMailMock);
@@ -814,33 +857,26 @@ describe('DMails Component', () => {
       expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
     });
     
-    // Open the form by clicking the button directly
+    // Open the form by clicking the button directly - no act() wrapper needed
     const newDMailBtn = screen.getByTestId('new-dmail-btn');
-    act(() => {
-      fireEvent.click(newDMailBtn);
-    });
+    fireEvent.click(newDMailBtn);
     
     // Wait for the form to be fully rendered
     const form = await screen.findByTestId('dmail-form-element');
     
     // Fill in required fields
     fireEvent.change(screen.getByLabelText(/subject/i), { 
-      target: { value: 'Test Subject' } 
+      target: { value: 'Line Coverage Test' } 
     });
-    
     fireEvent.change(screen.getByLabelText(/content/i), { 
-      target: { value: 'Test Content' } 
+      target: { value: 'Test content' } 
     });
-    
     fireEvent.change(screen.getByLabelText(/recipient/i), { 
       target: { value: 'test@example.com' } 
     });
     
-    // Submit the form
-    const submitButton = screen.getByRole('button', { name: /send d-mail/i });
-    act(() => {
-      fireEvent.click(submitButton);
-    });
+    // Submit form in CREATE mode
+    fireEvent.click(screen.getByTestId('dmail-form-submit'));
     
     // Verify createDMail was called
     await waitFor(() => {
@@ -918,5 +954,290 @@ describe('DMails Component', () => {
     
     // Verify empty state content
     expect(screen.getByText('No D-Mails found.')).toBeInTheDocument();
+  });
+});
+
+// Add these super-targeted tests to cover the exact lines:
+
+
+// Explicit test for lines 368-370 - the "!loading &&" condition for empty state
+test('specifically tests the !loading && mails.length === 0 condition', async () => {
+  // Control exactly when the loading state changes
+  let resolvePromise;
+  const loadingPromise = new Promise(resolve => {
+    resolvePromise = resolve;
+  });
+  
+  // First return nothing but control when the promise resolves
+  getAllDMails.mockImplementation(() => loadingPromise);
+  
+  render(<DMails />);
+  
+  // Should be loading initially
+  expect(screen.getByTestId('loading-overlay')).toBeInTheDocument();
+  expect(screen.queryByTestId('no-dmails')).not.toBeInTheDocument();
+  
+  // Now resolve with empty array to test the specific condition
+  act(() => {
+    resolvePromise([]);
+  });
+  
+  // Now specifically the !loading && condition should be hit
+  await waitFor(() => {
+    expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+    expect(screen.getByTestId('no-dmails')).toBeInTheDocument();
+  });
+});
+
+test('handleSubmit calls handleCreateMail when formMode is create', async () => {
+  // Setup the mock
+  const createMailMock = jest.fn().mockResolvedValue({ id: 'test-id' });
+  createDMail.mockImplementation(createMailMock);
+  
+  render(<DMails />);
+  
+  // First ENSURE loading is complete
+  await waitFor(() => {
+    // Check that button is NOT disabled anymore
+    const newDMailBtn = screen.getByTestId('new-dmail-btn');
+    expect(newDMailBtn).not.toBeDisabled();
+  });
+  
+  // Click button when it's definitely enabled
+  fireEvent.click(screen.getByTestId('new-dmail-btn'));
+  
+  // Wait for modal to appear first
+  await waitFor(() => {
+    expect(screen.getByTestId('dmail-form-modal')).toBeInTheDocument();
+  });
+  
+  // Now wait for the form inside the modal - this could be the issue
+  await waitFor(() => {
+    expect(screen.getByTestId('dmail-form-element')).toBeInTheDocument();
+  });
+  
+  // Now fill and submit
+  fireEvent.change(screen.getByLabelText(/subject/i), { 
+    target: { value: 'Test Subject' } 
+  });
+  
+  fireEvent.change(screen.getByLabelText(/content/i), { 
+    target: { value: 'Test Content' } 
+  });
+  
+  fireEvent.change(screen.getByLabelText(/recipient/i), { 
+    target: { value: 'test@example.com' } 
+  });
+  
+  // Make absolutely sure we find the submit button by its test ID
+  const submitButton = screen.getByTestId('dmail-form-submit');
+  expect(submitButton).toBeInTheDocument();
+  
+  // Click it when we're sure it exists
+  fireEvent.click(submitButton);
+  
+  // Verify the call
+  await waitFor(() => {
+    expect(createMailMock).toHaveBeenCalled();
+  });
+});
+
+
+// Replace your failing test with this improved version:
+
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+
+// For the modal class issue:
+test('handleSubmit calls handleCreateMail when formMode is create', async () => {
+  // Setup the mock
+  const createMailMock = jest.fn().mockResolvedValue({ id: 'test-id' });
+  createDMail.mockImplementation(createMailMock);
+  
+  render(<DMails />);
+  
+  // Wait for initial load to complete
+  await waitFor(() => {
+    expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+  });
+  
+  // Open the form by clicking the button directly
+  fireEvent.click(screen.getByTestId('new-dmail-btn'));
+  
+  // Use a safer, more specific waitFor
+  await waitFor(() => {
+    // First check if the modal is in the document
+    const modalElement = screen.queryByTestId('dmail-form-modal');
+    expect(modalElement).toBeInTheDocument();
+    
+    // Then find the form explicitly within the modal container
+    const modalBody = modalElement.querySelector('.modal-body');
+    expect(modalBody).toBeInTheDocument();
+    
+    // Check for the form inside the modal body
+    const formElement = modalBody.querySelector('form[data-testid="dmail-form-element"]');
+    expect(formElement).toBeInTheDocument();
+  });
+  
+  // Fill in required fields
+  fireEvent.change(screen.getByLabelText(/subject/i), { 
+    target: { value: 'Test Subject' } 
+  });
+  
+  fireEvent.change(screen.getByLabelText(/content/i), { 
+    target: { value: 'Test Content' } 
+  });
+  
+  fireEvent.change(screen.getByLabelText(/recipient/i), { 
+    target: { value: 'test@example.com' } 
+  });
+  
+  // Submit the form using a more robust approach
+  const submitButton = screen.getByTestId('dmail-form-submit');
+  fireEvent.click(submitButton);
+  
+  // Verify createDMail was called
+  await waitFor(() => {
+    expect(createMailMock).toHaveBeenCalled();
+  });
+});
+
+// Fix for the "Modal components render and behave correctly" test:
+test('Modal components render and behave correctly', async () => {
+  // Setup mocks - make sure data is loaded correctly
+  getAllDMails.mockResolvedValue(mockMails);
+  getDMailById.mockResolvedValue(mockMails[0]);
+  
+  render(<DMails />);
+  
+  // Wait for initial load AND make sure data appears
+  await waitFor(() => {
+    expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+  });
+  
+  // 1. TEST CREATE MODAL (first part of lines 307-318)
+  // Open create modal
+  fireEvent.click(screen.getByTestId('new-dmail-btn'));
+  
+  // Check modal appears with correct title for create mode
+  await waitFor(() => {
+    const modal = screen.getByTestId('dmail-form-modal');
+    expect(modal).toBeInTheDocument();
+    
+    const title = screen.getByTestId('dmail-form-title');
+    expect(title).toHaveTextContent('Send New D-Mail');
+  });
+  
+  // Verify modal has form inside Modal.Body
+  const form = screen.getByTestId('dmail-form-element');
+  expect(form).toBeInTheDocument();
+  expect(form.closest('.modal-body')).toBeInTheDocument();
+  
+  // Close create modal by clicking X button
+  fireEvent.click(screen.getByRole('button', { name: /close/i }));
+  
+  // Verify create modal closed
+  await waitFor(() => {
+    expect(screen.queryByTestId('dmail-form-element')).not.toBeInTheDocument();
+  });
+  
+  // 2. TEST EDIT MODAL (with different title, lines 307-318)
+  // Make sure the table with data is rendered instead of the "no-dmails" message
+  expect(screen.queryByTestId('no-dmails')).not.toBeInTheDocument();
+  expect(screen.getByRole('table')).toBeInTheDocument();
+  
+  // Now we should have View/Edit buttons
+  const editButtons = screen.getAllByRole('button', { name: /view\/edit/i });
+  expect(editButtons.length).toBeGreaterThan(0);
+  
+  // Open edit modal
+  fireEvent.click(editButtons[0]);
+  
+  // Check modal appears with correct title for edit mode 
+  await waitFor(() => {
+    const title = screen.getByTestId('dmail-form-title');
+    expect(title).toHaveTextContent('View/Edit D-Mail');
+  });
+  
+  // Close edit modal
+  fireEvent.click(screen.getByRole('button', { name: /close/i }));
+  
+  // 3. TEST DELETE MODAL (lines 320-336)
+  // Open delete modal
+  const deleteButton = screen.getAllByRole('button', { name: /delete/i })[0];
+  fireEvent.click(deleteButton);
+  
+  // Check delete modal appears with proper content
+  await waitFor(() => {
+    const deleteModal = screen.getByTestId('delete-confirmation-modal');
+    expect(deleteModal).toBeInTheDocument();
+    
+    // Check for text content in the body
+    expect(screen.getByText(/are you sure you want to delete the d-mail with subject/i)).toBeInTheDocument();
+    
+    // Check for the subject in the content
+    const subjectElement = screen.getByTestId('delete-dmail-subject');
+    expect(subjectElement).toHaveTextContent('Lottery Numbers');
+    
+    // Check for warning text
+    expect(screen.getByText(/temporal paradox/i)).toBeInTheDocument();
+  });
+  
+  // Check modal footer buttons
+  expect(screen.getByTestId('cancel-delete-btn')).toBeInTheDocument();
+  expect(screen.getByTestId('confirm-delete-btn')).toBeInTheDocument();
+  
+  // Close via cancel button
+  fireEvent.click(screen.getByTestId('cancel-delete-btn'));
+  
+  // Verify delete modal closed
+  await waitFor(() => {
+    expect(screen.queryByTestId('delete-confirmation-modal')).not.toBeInTheDocument();
+  });
+});
+
+// Make sure this test is NOT duplicated anywhere else
+test('Modal components render and behave correctly', async () => {
+  // 1. Mock the API BEFORE rendering
+  getAllDMails.mockResolvedValue(mockMails); 
+  getDMailById.mockResolvedValue(mockMails[0]); 
+  
+  // 2. Render after mocks are set
+  render(<DMails />);
+  
+  // 3. Wait for the table (i.e., mails) to render
+  await waitFor(() => {
+    expect(screen.queryByTestId('no-dmails')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    // Also check something from mockMails:
+    expect(screen.getByText('Lottery Numbers')).toBeInTheDocument();
+  });
+
+  // 4. Test the create modal
+  fireEvent.click(screen.getByTestId('new-dmail-btn'));
+  const formModal = await screen.findByTestId('dmail-form-modal');
+  expect(formModal).toBeInTheDocument();
+
+  // Close create modal
+  fireEvent.click(screen.getByRole('button', { name: /close/i }));
+  await waitFor(() => {
+    expect(screen.queryByTestId('dmail-form-element')).not.toBeInTheDocument();
+  });
+
+  // 5. Test edit modal
+  const viewEditButtons = screen.getAllByRole('button', { name: /view\/edit/i });
+  expect(viewEditButtons.length).toBeGreaterThan(0);
+  fireEvent.click(viewEditButtons[0]);
+  await waitFor(() => {
+    expect(screen.getByTestId('dmail-form-title')).toHaveTextContent('View/Edit D-Mail');
+  });
+
+  // Close edit modal
+  fireEvent.click(screen.getByRole('button', { name: /close/i }));
+
+  // 6. Test delete modal
+  const deleteButton = screen.getAllByRole('button', { name: /delete/i })[0];
+  fireEvent.click(deleteButton);
+  await waitFor(() => {
+    expect(screen.getByTestId('delete-confirmation-modal')).toBeInTheDocument();
   });
 });
