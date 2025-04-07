@@ -32,10 +32,8 @@ describe('Navigation Tests', () => {
     cy.wait(500);
     cy.url().should('include', '/access-denied');
     
-    // Experiments navigation test - requires authentication + Admin role
-    cy.get('[data-testid="nav-experiments"]').should('be.visible').click();
-    cy.wait(500);
-    cy.url().should('include', '/access-denied');
+    // Experiments should not be there for unauthenticated users
+    cy.get('[data-testid="nav-experiments"]').should('not.exist');
   });
   
   // Separate test for authentication components
@@ -113,21 +111,6 @@ describe('Unauthenticated Flow Tests', () => {
     cy.get('[data-testid="access-denied-signin-prompt"]').should('be.visible');
   });
 
-  it('should redirect to access-denied for experiments page when not authenticated', () => {
-    // Now directly click on the Experiments link in the main navigation
-    cy.get('[data-testid="nav-experiments"]').click();
-    
-    // Should redirect to access-denied
-    cy.url().should('include', '/access-denied');
-    
-    // Verify access denied page content
-    cy.get('[data-testid="access-denied-page"]').should('be.visible');
-    cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
-    
-    // Verify experiments elements are not visible
-    cy.get('[data-testid="experiments-page"]').should('not.exist');
-  });
-
   it('should redirect to access-denied for chat page when not authenticated', () => {
     // Click the Chat link
     cy.get('[data-testid="nav-chat"]').click();
@@ -157,6 +140,28 @@ describe('Unauthenticated Flow Tests', () => {
     // Should not redirect to access-denied
     cy.url().should('include', '/non-existent-page');
     cy.url().should('not.include', '/access-denied');
+  });
+
+  it('should not show experiments link when not authenticated', () => {
+    // Verify the experiments link is not in the DOM (hidden by ProtectedLink)
+    cy.get('[data-testid="nav-experiments"]').should('not.exist');
+    
+    // Other navigation links should still be visible
+    cy.get('[data-testid="nav-home"]').should('be.visible');
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+    cy.get('[data-testid="nav-chat"]').should('be.visible');
+  });
+
+  it('should redirect to access-denied when directly accessing experiments page', () => {
+    // Directly visit the experiments page
+    cy.visit('/experiments', { failOnStatusCode: false });
+    
+    // Should redirect to access-denied
+    cy.url().should('include', '/access-denied');
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    
+    // Verify experiments elements are not visible
+    cy.get('[data-testid="experiments-page"]').should('not.exist');
   });
 });
 
@@ -230,5 +235,165 @@ describe('Navigation Tests with Admin Role', () => {
     
     // Close dropdown
     cy.get('[data-testid="profile-image"]').click();
+  });
+});
+
+describe('Navigation Tests with Role-Based Access Control', () => {
+  context('When user has no role (default user)', () => {
+    beforeEach(() => {
+      // Clear any existing roles
+      cy.window().then((win) => {
+        win.localStorage.removeItem('MOCKROLE');
+      });
+      cy.visit('/');
+      cy.get('[data-testid="sign-in-button"]').click();
+      cy.get('[data-testid="authenticated-container"]', { timeout: 10000 }).should('be.visible');
+    });
+
+    it('should hide experiments link for users without Admin role', () => {
+      // Check that experiments link is NOT in the DOM because ProtectedLink hides it
+      cy.get('[data-testid="nav-experiments"]').should('not.exist');
+      
+      // Other navigation links should be visible
+      cy.get('[data-testid="nav-home"]').should('be.visible');
+      cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+      cy.get('[data-testid="nav-chat"]').should('be.visible');
+      
+      // Role badge should show "None"
+      cy.get('[data-testid="profile-image"]').click();
+      cy.get('[data-testid="role-badge-none"]').should('be.visible');
+      
+      // Direct access to experiments should be blocked with access denied
+      cy.visit('/experiments', { failOnStatusCode: false });
+      cy.url().should('include', '/access-denied');
+      
+      // Just check that the access denied page is visible
+      cy.get('[data-testid="access-denied-page"]').should('be.visible');
+      
+      // Verify the generic access denied message without looking for specific roles
+      cy.get('[data-testid="access-denied-heading"]').should('be.visible');
+      
+      // We can also check that the page content generally mentions lacking permissions
+      cy.get('[data-testid="access-denied-page"]').should('contain', 'permission');
+    });
+
+    it('should allow access to other protected pages for authenticated users', () => {
+      // Dashboard should be accessible
+      cy.get('[data-testid="nav-dashboard"]').click();
+      cy.url().should('include', '/dashboard');
+      cy.get('[data-testid="dashboard-page"]').should('be.visible');
+
+      // Chat should be accessible
+      cy.get('[data-testid="nav-chat"]').click();
+      cy.url().should('include', '/chat');
+      cy.get('[data-testid="chat-page"]').should('be.visible');
+    });
+  });
+
+  context('When user has Admin role', () => {
+    beforeEach(() => {
+      // Set Admin role
+      cy.setMockRole('Admin');
+      cy.visit('/');
+      cy.get('[data-testid="sign-in-button"]').click();
+      cy.get('[data-testid="authenticated-container"]', { timeout: 10000 }).should('be.visible');
+    });
+
+    it('should show experiments link for users with Admin role', () => {
+      // Check main navigation links exist
+      cy.get('[data-testid="nav-home"]').should('be.visible');
+      cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+      cy.get('[data-testid="nav-chat"]').should('be.visible');
+      
+      // Experiments link should be visible because user has Admin role
+      cy.get('[data-testid="nav-experiments"]').should('be.visible');
+      
+      // Admin badge should be visible in profile
+      cy.get('[data-testid="profile-image"]').click();
+      cy.get('[data-testid="role-badge-Admin"]').should('be.visible');
+      
+      // Should be able to access experiments page
+      cy.get('body').click(); // Close dropdown
+      cy.get('[data-testid="nav-experiments"]').click();
+      cy.url().should('include', '/experiments');
+      cy.get('[data-testid="experiments-page"]').should('be.visible');
+    });
+  });
+  
+  context('When user switches roles', () => {
+    it('should update navigation links when changing from Admin to regular user', () => {
+      // Start as Admin
+      cy.setMockRole('Admin');
+      cy.visit('/');
+      cy.get('[data-testid="sign-in-button"]').click();
+      
+      // Verify experiments link is visible for Admin
+      cy.get('[data-testid="nav-experiments"]').should('be.visible');
+      
+      // Sign out
+      cy.get('[data-testid="profile-image"]').click();
+      cy.get('[data-testid="sign-out-button"]').click();
+      
+      // Sign in as regular user
+      cy.setMockRole('User');
+      cy.get('[data-testid="sign-in-button"]').click();
+      
+      // Verify experiments link is now hidden
+      cy.get('[data-testid="nav-experiments"]').should('not.exist');
+      
+      // But other links should still be visible
+      cy.get('[data-testid="nav-home"]').should('be.visible');
+      cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+      cy.get('[data-testid="nav-chat"]').should('be.visible');
+    });
+  });
+  
+  context('When unauthenticated', () => {
+    beforeEach(() => {
+      // Clear any existing roles
+      cy.window().then((win) => {
+        win.localStorage.clear();
+      });
+      cy.visit('/');
+    });
+    
+    it('should not display experiments link when not authenticated', () => {
+      // Experiments link should not be in the DOM
+      cy.get('[data-testid="nav-experiments"]').should('not.exist');
+      
+      // Other links should be visible
+      cy.get('[data-testid="nav-home"]').should('be.visible');
+      cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+      cy.get('[data-testid="nav-chat"]').should('be.visible');
+    });
+  });
+});
+
+// Keep existing tests for bootstrap components
+describe('Navigation Tests with Bootstrap Components', () => {
+  beforeEach(() => {
+    cy.setMockRole('Admin');
+    cy.visit('/');
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="authenticated-container"]', { timeout: 10000 }).should('be.visible');
+  });
+
+  it('should have working bootstrap navigation components', () => {
+    // Test bootstrap navigation structure
+    cy.get('[data-testid="main-navigation"]').should('have.class', 'navbar');
+    cy.get('[data-testid="main-navigation"]').should('have.class', 'bg-dark');
+    cy.get('.navbar-toggler').should('exist'); // Hamburger menu
+    cy.get('.navbar-collapse').should('exist'); // Collapsible content
+    
+    // Mobile view: Test hamburger menu opens and closes
+    cy.viewport('iphone-x');
+    cy.get('.navbar-collapse').should('not.be.visible');
+    cy.get('.navbar-toggler').click();
+    cy.get('.navbar-collapse').should('be.visible');
+    cy.get('.navbar-toggler').click();
+    cy.get('.navbar-collapse').should('not.be.visible');
+    
+    // Reset viewport
+    cy.viewport(1000, 660);
   });
 });

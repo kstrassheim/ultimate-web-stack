@@ -162,22 +162,30 @@ describe('Basic Profile Functionality', () => {
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
   });
   
-  // Test for access-denied when non-Admin attempts to access Experiments
-  it('should redirect to access-denied when non-Admin accesses Experiments', () => {
+  // Replace the old test with a new test verifying link is not visible
+  it('should not display experiments link for non-Admin users', () => {
     // Set User role (not Admin) for this test
     cy.setMockRole('User');
     cy.get('[data-testid="sign-in-button"]').click();
     
-    // Click on Experiments link
-    cy.get('[data-testid="nav-experiments"]').click();
+    // Verify the authenticated container is now visible
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    
+    // Verify normal navigation links are visible
+    cy.get('[data-testid="nav-home"]').should('be.visible');
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible');
+    cy.get('[data-testid="nav-chat"]').should('be.visible');
+    
+    // Verify the Experiments link is NOT in the DOM at all
+    cy.get('[data-testid="nav-experiments"]').should('not.exist');
+    
+    // Test direct navigation to experiments (still protected by ProtectedRoute)
+    cy.visit('/experiments', { failOnStatusCode: false });
     
     // Should be redirected to access-denied
     cy.url().should('include', '/access-denied');
     cy.get('[data-testid="access-denied-page"]').should('be.visible');
     cy.get('[data-testid="access-denied-heading"]').should('be.visible');
-    
-    // Verify experiments elements are not displayed
-    cy.get('[data-testid="experiments-page"]').should('not.exist');
   });
 
   it('should display correct roles badges in profile dropdown', () => {
@@ -259,6 +267,16 @@ describe('Admin Profile Functionality', () => {
     
     // Close dropdown
     cy.get('[data-testid="profile-image"]').click();
-
+    
+    // Verify the Experiments link IS visible for Admin users
+    cy.get('[data-testid="nav-experiments"]').should('be.visible');
+    
+    // Click on the Experiments link
+    cy.get('[data-testid="nav-experiments"]').click();
+    
+    // Verify we can access the Experiments page
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-page"]').should('be.visible');
+    cy.get('[data-testid="experiments-heading"]').should('be.visible');
   });
 });

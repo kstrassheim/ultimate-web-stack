@@ -6,6 +6,7 @@ import NotFound from '@/pages/404';
 import EntraProfile from '@/components/EntraProfile';
 import AccessDenied from '@/pages/AccessDenied';
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ProtectedLink from "@/components/ProtectedLink";
 // get the pages
 import Home from '@/pages/Home';
 import Dashboard from '@/pages/Dashboard';
@@ -48,7 +49,9 @@ function App() {
               <Nav.Link as={Link} to="/" data-testid="nav-home">Home</Nav.Link>
               <Nav.Link as={Link} to="/dashboard" data-testid="nav-dashboard">Dashboard</Nav.Link>
               <Nav.Link as={Link} to="/chat" data-testid="nav-chat">Chat</Nav.Link>
-              <Nav.Link as={Link} to="/experiments" data-testid="nav-experiments">Experiments</Nav.Link>
+              <ProtectedLink requiredRoles={["Admin"]}>
+                <Nav.Link as={Link} to="/experiments" data-testid="nav-experiments">Experiments</Nav.Link>
+              </ProtectedLink>
             </Nav>
           </Navbar.Collapse>
         </Container>
