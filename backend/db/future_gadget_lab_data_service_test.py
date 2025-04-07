@@ -311,3 +311,111 @@ def test_world_line_change_conversion(db_service):
     created_neg_exp = db_service.create_experiment(negative_exp)
     assert isinstance(created_neg_exp['world_line_change'], float)
     assert created_neg_exp['world_line_change'] == -0.523299
+
+def test_calculate_worldline_status():
+    """Test the calculate_worldline_status function for computing worldline values"""
+    # Import the function
+    from db.future_gadget_lab_data_service import calculate_worldline_status
+    
+    # Create test experiments with timestamps in JS ISO format
+    current_time = datetime.datetime.now(datetime.timezone.utc)
+    js_iso_format = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    # Create experiments with various timestamps to test last_experiment_timestamp
+    older_timestamp = js_iso_format(current_time - datetime.timedelta(minutes=10))
+    newer_timestamp = js_iso_format(current_time - datetime.timedelta(minutes=5))
+    newest_timestamp = js_iso_format(current_time)
+    
+    experiments = [
+        {
+            "id": "EXP-001",
+            "name": "Test Experiment 1",
+            "world_line_change": 0.337192,
+            "timestamp": older_timestamp
+        },
+        {
+            "id": "EXP-002",
+            "name": "Test Experiment 2",
+            "world_line_change": -0.048256,
+            "timestamp": newer_timestamp
+        },
+        {
+            "id": "EXP-003",
+            "name": "Test Experiment 3",
+            "world_line_change": 0.409431,
+            "timestamp": newest_timestamp  # Most recent
+        }
+    ]
+    
+    # Create test readings
+    readings = [
+        {
+            "id": "DR-001",
+            "reading": 1.048596,
+            "status": "steins_gate",
+            "recorded_by": "Test User 1",
+            "notes": "Reading 1"
+        },
+        {
+            "id": "DR-002",
+            "reading": 1.382733,
+            "status": "beta",
+            "recorded_by": "Test User 2",
+            "notes": "Reading 2"
+        }
+    ]
+    
+    # Test 1: Basic calculation with all experiments
+    result = calculate_worldline_status(experiments, readings)
+    
+    # Expected worldline: 1.0 (base) + 0.337192 - 0.048256 + 0.409431 = 1.698367
+    expected_worldline = 1.0 + 0.337192 - 0.048256 + 0.409431
+    
+    # Verify basic calculations
+    assert result["current_worldline"] == round(expected_worldline, 6)
+    assert result["base_worldline"] == 1.0
+    assert result["total_divergence"] == round(expected_worldline - 1.0, 6)
+    assert result["experiment_count"] == 3
+    
+    # Verify last experiment timestamp (should be the most recent)
+    assert result["last_experiment_timestamp"] == newest_timestamp
+    
+    # Verify closest reading (should be reading 2, as 1.382733 is closer to 1.698367 than 1.048596)
+    assert result["closest_reading"]["value"] == readings[1]["reading"]
+    assert result["closest_reading"]["status"] == readings[1]["status"]
+    assert result["closest_reading"]["recorded_by"] == readings[1]["recorded_by"]
+    
+    # Verify distance calculation is correct
+    calculated_distance = abs(readings[1]["reading"] - expected_worldline)
+    assert result["closest_reading"]["distance"] == round(calculated_distance, 6)
+    
+    # Test 2: Empty experiments list
+    empty_result = calculate_worldline_status([], readings)
+    assert empty_result["current_worldline"] == 1.0  # Base worldline
+    assert empty_result["total_divergence"] == 0.0
+    assert empty_result["experiment_count"] == 0
+    assert empty_result["last_experiment_timestamp"] is None
+    
+    # Test 3: No readings
+    no_readings_result = calculate_worldline_status(experiments)
+    assert no_readings_result["current_worldline"] == round(expected_worldline, 6)
+    assert "closest_reading" not in no_readings_result
+    
+    # Test 4: Missing world_line_change values
+    incomplete_experiments = [
+        {"id": "EXP-004", "name": "No Change Value"},
+        {"id": "EXP-005", "name": "With Change Value", "world_line_change": 0.123456}
+    ]
+    incomplete_result = calculate_worldline_status(incomplete_experiments, readings)
+    # Expected: 1.0 (base) + 0.123456 = 1.123456
+    assert incomplete_result["current_worldline"] == 1.123456
+    
+    # Test 5: Negative-only changes
+    negative_experiments = [
+        {"id": "EXP-006", "name": "Negative 1", "world_line_change": -0.2},
+        {"id": "EXP-007", "name": "Negative 2", "world_line_change": -0.3}
+    ]
+    negative_result = calculate_worldline_status(negative_experiments, readings)
+    # Expected: 1.0 (base) - 0.2 - 0.3 = 0.5
+    assert negative_result["current_worldline"] == 0.5
+    assert negative_result["total_divergence"] == -0.5

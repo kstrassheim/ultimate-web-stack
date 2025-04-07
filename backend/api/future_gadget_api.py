@@ -8,7 +8,8 @@ from common.role_based_access import required_roles
 from common.socket import ConnectionManager
 from db.future_gadget_lab_data_service import (
     FutureGadgetLabDataService, 
-    ExperimentStatus
+    ExperimentStatus,
+    calculate_worldline_status
 )
 
 # Initialize router
@@ -21,6 +22,12 @@ fgl_service = FutureGadgetLabDataService(use_memory_storage=True)
 experiment_connection_manager = ConnectionManager(
     receiver_roles=["Admin"],
     sender_roles=["Admin"]
+)
+
+# Add a new connection manager for worldline status updates
+worldline_connection_manager = ConnectionManager(
+    receiver_roles=None,  # Allow any authenticated user to receive
+    sender_roles=["Admin"]  # Only Admins can send
 )
 
 # --- Pydantic Models for Request/Response Validation ---
@@ -127,6 +134,9 @@ async def create_experiment(
         type="create"
     )
     
+    # Broadcast updated worldline status
+    await broadcast_worldline_status(experiment=created_experiment, sender=None)
+    
     return created_experiment
 
 @future_gadget_api_router.put("/lab-experiments/{experiment_id}", response_model=Dict)
@@ -155,6 +165,9 @@ async def update_experiment(
         },
         type="update"
     )
+    
+    # Broadcast updated worldline status
+    await broadcast_worldline_status(experiment=updated_experiment, sender=None)
     
     return updated_experiment
 
@@ -188,6 +201,9 @@ async def delete_experiment(
         type="delete"
     )
     
+    # Broadcast updated worldline status (no experiment to include since it was deleted)
+    await broadcast_worldline_status(sender=None)
+    
     return {"message": f"Experiment with ID {experiment_id} successfully deleted"}
 
 # WebSocket endpoint for experiments only
@@ -209,3 +225,174 @@ async def experiment_websocket_endpoint(websocket: WebSocket):
         if websocket in experiment_connection_manager.active_connections:
             experiment_connection_manager.disconnect(websocket)
 
+# New WebSocket endpoint for worldline status
+@future_gadget_api_router.websocket("/ws/worldline-status")
+async def worldline_status_websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for worldline status updates. 
+    Any authenticated user can receive updates, but only Admins can send them."""
+    try:
+        await worldline_connection_manager.auth_connect(websocket)
+        
+        try:
+            while True:
+                # Wait for messages (mostly for ping/pong to keep connection alive)
+                data = await websocket.receive_text()
+                # Only respond with current worldline status to non-admin users
+                # (they can't send actual updates)
+                if "Admin" not in getattr(websocket.state.user, "roles", []):
+                    # Get current worldline status
+                    experiments = fgl_service.get_all_experiments()
+                    readings = fgl_service.get_all_divergence_readings()
+                    status = calculate_worldline_status(experiments, readings)
+                    
+                    # Add current timestamp
+                    import datetime
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    status["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                    
+                    # Send current status as response
+                    await worldline_connection_manager.send_personal_message(status, websocket)
+        except WebSocketDisconnect:
+            worldline_connection_manager.disconnect(websocket)
+            logger.info(f"Client disconnected from worldline WebSocket: {websocket.state.user.get('name', 'Unknown')}")
+    except Exception as e:
+        logger.error(f"Worldline WebSocket error: {str(e)}")
+        if websocket in worldline_connection_manager.active_connections:
+            worldline_connection_manager.disconnect(websocket, log_error=False)
+
+# Add a new function to broadcast worldline status to all connected clients
+async def broadcast_worldline_status(experiment: Dict = None, sender: WebSocket = None):
+    """
+    Broadcast current worldline status to all connected clients.
+    
+    Args:
+        experiment: Optional experiment to include in the calculation
+                  (useful for previewing impact before saving)
+        sender: WebSocket of the client that initiated the broadcast
+                (needed for proper authorization in ConnectionManager)
+    
+    This function can be called whenever the worldline status changes.
+    """
+    # Get all experiments from the database
+    experiments = fgl_service.get_all_experiments()
+    
+    # If an additional experiment is provided, include it in the calculation
+    if experiment is not None and experiment.get("world_line_change") is not None:
+        # Create a copy of experiments to avoid modifying the original list
+        calculation_experiments = experiments.copy()
+        # Add the provided experiment to the temporary calculation list
+        calculation_experiments.append(experiment)
+    else:
+        calculation_experiments = experiments
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Calculate worldline status with the combined experiment list
+    status = calculate_worldline_status(calculation_experiments, readings)
+    
+    # Add current timestamp
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    status["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    # If preview experiment was included, add a flag to indicate this
+    if experiment is not None:
+        status["includes_preview"] = True
+        status["preview_experiment"] = {
+            "name": experiment.get("name", "Unnamed experiment"),
+            "world_line_change": experiment.get("world_line_change", 0.0)
+        }
+    
+    # Broadcast to all connected clients - FIXED: Removed sender parameter
+    await worldline_connection_manager.broadcast(
+        data=status, 
+        type="worldline_update"
+        # Removed sender parameter which was causing the error
+    )
+    
+    # Return the status (useful when calling this function directly)
+    return status
+
+@future_gadget_api_router.get("/worldline-status", response_model=Dict)
+async def get_current_worldline_status(
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Calculate the current worldline status by summing all experiment divergences.
+    Returns the calculated worldline value and the closest known reading.
+    """
+    logger.info("Future Gadget Lab API - Getting current worldline status")
+    
+    # Get all experiments
+    experiments = fgl_service.get_all_experiments()
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Calculate worldline status
+    response = calculate_worldline_status(experiments, readings)
+    
+    # Add current timestamp in JavaScript ISO format: YYYY-MM-DDTHH:mm:ss.sssZ
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    response["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    return response
+
+@future_gadget_api_router.get("/worldline-history", response_model=List[Dict])
+async def get_worldline_history(
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Calculate worldline states after each experiment.
+    Returns an array of worldline states showing how the worldline changed over time.
+    """
+    logger.info("Future Gadget Lab API - Getting worldline history")
+    
+    # Get all experiments
+    all_experiments = fgl_service.get_all_experiments()
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Sort experiments by timestamp
+    sorted_experiments = sorted(
+        [exp for exp in all_experiments if exp.get('timestamp')],
+        key=lambda x: x.get('timestamp', ''),
+    )
+    
+    # Calculate worldline states progressively
+    history = []
+    accumulated_experiments = []
+    
+    # Add base worldline (1.0) as starting point with no experiments
+    base_state = calculate_worldline_status([], readings)
+    base_state["added_experiment"] = None
+    history.append(base_state)
+    
+    # Calculate worldline after each experiment
+    for experiment in sorted_experiments:
+        accumulated_experiments.append(experiment)
+        
+        # Calculate new state with all experiments up to this point
+        state = calculate_worldline_status(accumulated_experiments.copy(), readings)
+        
+        # Add experiment details to the state
+        # state["added_experiment"] = {
+        #     "id": experiment.get("id"),
+        #     "name": experiment.get("name"),
+        #     "world_line_change": experiment.get("world_line_change", 0),
+        #     "timestamp": experiment.get("timestamp")
+        # }
+        
+        history.append(state)
+    
+    # Add current timestamp to each state for consistency
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    iso_now = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    for state in history:
+        state["timestamp"] = iso_now
+    
+    return history

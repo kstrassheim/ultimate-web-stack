@@ -87,7 +87,52 @@ def setup_fgl_service():
             "timestamp": current_time
         }
         mock_service.delete_experiment.return_value = True
+        
+        # Mock divergence reading data for worldline calculations
+        mock_service.get_all_divergence_readings.return_value = [
+            {
+                "id": "DR-001",
+                "reading": 1.048596,
+                "status": "steins_gate",
+                "recorded_by": "Rintaro Okabe",
+                "notes": "Steins;Gate worldline"
+            }
+        ]
+        
         yield mock_service
+
+# Add this fixture at the module level, outside of any class
+
+@pytest.fixture
+def mock_websocket():
+    """Create a mock WebSocket object with all necessary attributes"""
+    mock_ws = MagicMock()
+    
+    # Set up the state with user info
+    mock_ws.state = MagicMock()
+    mock_ws.state.user = MagicMock()
+    mock_ws.state.user.name = "Test User"
+    mock_ws.state.user.sub = "test-id"
+    mock_ws.state.user.roles = ["Admin"]
+    
+    # Set up receive_text that can be overridden in tests
+    mock_ws.receive_text = AsyncMock(return_value="Hello, WebSocket!")
+    
+    # Set up send_text method
+    async def mock_send_text(message):
+        mock_ws.sent_messages = getattr(mock_ws, 'sent_messages', [])
+        mock_ws.sent_messages.append(message)
+    
+    mock_ws.send_text = mock_send_text
+    
+    # Set up send_json method
+    async def mock_send_json(data):
+        mock_ws.sent_json = getattr(mock_ws, 'sent_json', [])
+        mock_ws.sent_json.append(data)
+    
+    mock_ws.send_json = mock_send_json
+    
+    return mock_ws
 
 
 class TestExperimentEndpoints:
@@ -142,17 +187,20 @@ class TestExperimentEndpoints:
 
     def test_create_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
         current_time = datetime.datetime.now().isoformat()
-        with patch("api.future_gadget_api.fgl_service.create_experiment", return_value={
-            "id": "EXP-002",
-            "name": "Time Leap Machine",
-            "description": "Transfer memories to the past",
-            "status": "planned",
-            "creator_id": "001",
-            "collaborators": ["002"],
-            "results": None,
-            "world_line_change": 0.000337,
-            "timestamp": current_time
-        }):
+        # Mock both broadcast methods
+        with patch("api.future_gadget_api.experiment_connection_manager.broadcast", AsyncMock()), \
+             patch("api.future_gadget_api.broadcast_worldline_status", AsyncMock()), \
+             patch("api.future_gadget_api.fgl_service.create_experiment", return_value={
+                "id": "EXP-002",
+                "name": "Time Leap Machine",
+                "description": "Transfer memories to the past",
+                "status": "planned",
+                "creator_id": "001",
+                "collaborators": ["002"],
+                "results": None,
+                "world_line_change": 0.000337,
+                "timestamp": current_time
+            }):
             test_client, _ = client_with_overridden_dependencies
             new_experiment = {
                 "name": "Time Leap Machine",
@@ -170,20 +218,26 @@ class TestExperimentEndpoints:
             assert data["id"] == "EXP-002"
             assert data["world_line_change"] == 0.000337
             assert "timestamp" in data
+            
+            # Verify broadcast_worldline_status was called
+            from api.future_gadget_api import broadcast_worldline_status
+            assert broadcast_worldline_status.called
 
     def test_create_experiment_with_string_world_line_change(self, client_with_overridden_dependencies, setup_fgl_service):
         current_time = datetime.datetime.now().isoformat()
-        with patch("api.future_gadget_api.fgl_service.create_experiment", return_value={
-            "id": "EXP-002",
-            "name": "Time Leap Machine",
-            "description": "Transfer memories to the past",
-            "status": "planned",
-            "creator_id": "001",
-            "collaborators": ["002"],
-            "results": None,
-            "world_line_change": 0.000337,
-            "timestamp": current_time
-        }):
+        with patch("api.future_gadget_api.experiment_connection_manager.broadcast", AsyncMock()), \
+             patch("api.future_gadget_api.broadcast_worldline_status", AsyncMock()), \
+             patch("api.future_gadget_api.fgl_service.create_experiment", return_value={
+                "id": "EXP-002",
+                "name": "Time Leap Machine",
+                "description": "Transfer memories to the past",
+                "status": "planned",
+                "creator_id": "001",
+                "collaborators": ["002"],
+                "results": None,
+                "world_line_change": 0.000337,
+                "timestamp": current_time
+            }):
             test_client, _ = client_with_overridden_dependencies
             new_experiment = {
                 "name": "Time Leap Machine",
@@ -201,17 +255,19 @@ class TestExperimentEndpoints:
 
     def test_update_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
         current_time = datetime.datetime.now().isoformat()
-        with patch("api.future_gadget_api.fgl_service.update_experiment", return_value={
-            "id": "EXP-001",
-            "name": "Phone Microwave (Name subject to change)",
-            "description": "Send messages to the past",
-            "status": "completed",
-            "creator_id": "001",
-            "collaborators": ["002", "003"],
-            "results": "Successful test with banana",
-            "world_line_change": 0.571024,
-            "timestamp": current_time
-        }):
+        with patch("api.future_gadget_api.experiment_connection_manager.broadcast", AsyncMock()), \
+             patch("api.future_gadget_api.broadcast_worldline_status", AsyncMock()), \
+             patch("api.future_gadget_api.fgl_service.update_experiment", return_value={
+                "id": "EXP-001",
+                "name": "Phone Microwave (Name subject to change)",
+                "description": "Send messages to the past",
+                "status": "completed",
+                "creator_id": "001",
+                "collaborators": ["002", "003"],
+                "results": "Successful test with banana",
+                "world_line_change": 0.571024,
+                "timestamp": current_time
+            }):
             test_client, _ = client_with_overridden_dependencies
             update_data = {
                 "name": "Phone Microwave (Name subject to change)",
@@ -226,15 +282,25 @@ class TestExperimentEndpoints:
             assert data["name"] == "Phone Microwave (Name subject to change)"
             assert data["status"] == "completed"
             assert data["world_line_change"] == 0.571024
+            
+            # Verify broadcast_worldline_status was called
+            from api.future_gadget_api import broadcast_worldline_status
+            assert broadcast_worldline_status.called
 
     def test_delete_experiment(self, client_with_overridden_dependencies, setup_fgl_service):
-        with patch("api.future_gadget_api.fgl_service.delete_experiment", return_value=True):
+        with patch("api.future_gadget_api.experiment_connection_manager.broadcast", AsyncMock()), \
+             patch("api.future_gadget_api.broadcast_worldline_status", AsyncMock()), \
+             patch("api.future_gadget_api.fgl_service.delete_experiment", return_value=True):
             test_client, _ = client_with_overridden_dependencies
             # Updated from /experiments to /lab-experiments
             response = test_client.delete(f"{API_PREFIX}/lab-experiments/EXP-001")
             assert response.status_code == 200
             data = response.json()
             assert "successfully deleted" in data["message"].lower()
+            
+            # Verify broadcast_worldline_status was called
+            from api.future_gadget_api import broadcast_worldline_status
+            assert broadcast_worldline_status.called
 
 
 class TestExperimentWebSocketEndpoints:
@@ -408,6 +474,7 @@ class TestExperimentWebSocketEndpoints:
         
         # Patch the experiment connection manager
         monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
+        monkeypatch.setattr("api.future_gadget_api.broadcast_worldline_status", AsyncMock())
         
         # Bypass security by mocking the required_roles decorator
         monkeypatch.setattr("api.future_gadget_api.required_roles", lambda roles: lambda f: f)
@@ -446,3 +513,214 @@ class TestExperimentWebSocketEndpoints:
             # Check broadcast data matches expected structure
             assert broadcast_args[0][0] == expected_broadcast_data  # data
             assert broadcast_args[0][1] == "create"  # type
+            
+            # Also verify worldline status broadcast was called
+            from api.future_gadget_api import broadcast_worldline_status
+            assert broadcast_worldline_status.called
+
+
+class TestWorldlineEndpoints:
+    """Test the new worldline status endpoints and features"""
+    
+    def test_get_worldline_status(self, client_with_overridden_dependencies, setup_fgl_service):
+        """Test the worldline-status endpoint returns correct data"""
+        # Mock the calculate_worldline_status function response
+        mock_status = {
+            "current_worldline": 1.337192,
+            "base_worldline": 1.0,
+            "total_divergence": 0.337192,
+            "experiment_count": 5,
+            "last_experiment_timestamp": "2025-04-07T12:00:00.000Z",
+            "closest_reading": {
+                "value": 1.382733,
+                "status": "beta",
+                "recorded_by": "Suzuha Amane",
+                "notes": "Beta worldline variant",
+                "distance": 0.045541
+            }
+        }
+        
+        with patch("api.future_gadget_api.calculate_worldline_status", return_value=mock_status):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/worldline-status")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify core worldline data
+            assert data["current_worldline"] == 1.337192
+            assert data["base_worldline"] == 1.0
+            assert data["total_divergence"] == 0.337192
+            assert data["experiment_count"] == 5
+            
+            # Verify closest reading
+            assert "closest_reading" in data
+            assert data["closest_reading"]["value"] == 1.382733
+            assert data["closest_reading"]["status"] == "beta"
+            
+            # Verify timestamp was added
+            assert "timestamp" in data
+    
+    def test_get_worldline_history(self, client_with_overridden_dependencies, setup_fgl_service):
+        """Test the worldline-history endpoint returns the correct historical progression"""
+        # Mock the sorted experiments and history response
+        sorted_experiments = []
+        mock_history = [
+            {
+                "current_worldline": 1.0,
+                "base_worldline": 1.0,
+                "total_divergence": 0.0,
+                "experiment_count": 0,
+                "timestamp": "2025-04-07T12:00:00.000Z"
+            },
+            {
+                "current_worldline": 1.337192,
+                "base_worldline": 1.0,
+                "total_divergence": 0.337192,
+                "experiment_count": 1,
+                "timestamp": "2025-04-07T12:00:00.000Z"
+            }
+        ]
+        
+        with patch("api.future_gadget_api.fgl_service.get_all_experiments", return_value=sorted_experiments), \
+             patch("api.future_gadget_api.calculate_worldline_status", side_effect=[mock_history[0], mock_history[1]]):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/worldline-history")
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify it returns an array with expected entries
+            assert isinstance(data, list)
+            assert "current_worldline" in data[0]
+            assert "base_worldline" in data[0]
+            assert "timestamp" in data[0]
+    
+    @pytest.mark.asyncio
+    async def test_broadcast_worldline_status(self, monkeypatch, mock_websocket):
+        """Test the broadcast_worldline_status function correctly calculates and broadcasts worldline status"""
+        # Create mocks
+        mock_worldline_manager = MagicMock()
+        broadcast_args = []
+        
+        # Define mock async broadcast method
+        async def mock_broadcast(data, type, sender=None):
+            broadcast_args.append((data, type, sender))
+            return None
+        
+        # Define mock calculate method
+        def mock_calculate(experiments, readings=None):
+            return {
+                "current_worldline": 1.337192,
+                "base_worldline": 1.0,
+                "total_divergence": 0.337192,
+                "experiment_count": len(experiments),
+                "last_experiment_timestamp": None
+            }
+        
+        # Set up test experiment
+        test_experiment = {
+            "id": "EXP-001",
+            "name": "Test Experiment",
+            "world_line_change": 0.337192
+        }
+        
+        # Apply patches
+        mock_worldline_manager.broadcast = mock_broadcast
+        monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_worldline_manager)
+        monkeypatch.setattr("api.future_gadget_api.calculate_worldline_status", mock_calculate)
+        monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_experiments", MagicMock(return_value=[]))
+        monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_divergence_readings", MagicMock(return_value=[]))
+        
+        # Import the function after patching
+        from api.future_gadget_api import broadcast_worldline_status
+        
+        # Test with experiment included
+        result = await broadcast_worldline_status(experiment=test_experiment)
+        
+        # Verify the broadcast was called with correct parameters
+        assert len(broadcast_args) == 1
+        assert broadcast_args[0][1] == "worldline_update"  # type
+        
+        # Verify result contains preview flag when experiment is provided
+        assert "includes_preview" in result
+        assert result["includes_preview"] == True
+        assert "preview_experiment" in result
+        assert result["preview_experiment"]["name"] == test_experiment["name"]
+        
+        # Test without experiment (normal post-save broadcast)
+        broadcast_args.clear()
+        result = await broadcast_worldline_status()
+        
+        # Verify broadcast was still called
+        assert len(broadcast_args) == 1
+        
+        # Verify no preview flag when no experiment provided
+        assert "includes_preview" not in result
+    
+    @pytest.mark.asyncio
+    async def test_worldline_websocket_endpoint(self, monkeypatch, mock_websocket):
+        """Test the worldline status WebSocket endpoint handles different user roles correctly"""
+        # Set up mock connection manager
+        mock_manager = MagicMock()
+        sent_messages = []
+        
+        # Define async methods
+        async def mock_auth_connect(websocket):
+            return None
+        
+        async def mock_send_personal_message(message, websocket):
+            sent_messages.append(message)
+        
+        # Assign async methods
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.send_personal_message = mock_send_personal_message
+        
+        # Apply patches
+        monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_manager)
+        monkeypatch.setattr("api.future_gadget_api.calculate_worldline_status", MagicMock(return_value={
+            "current_worldline": 1.337192,
+            "base_worldline": 1.0,
+            "total_divergence": 0.337192,
+            "experiment_count": 3
+        }))
+        monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_experiments", MagicMock(return_value=[]))
+        monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_divergence_readings", MagicMock(return_value=[]))
+        monkeypatch.setattr("api.future_gadget_api.logger", MagicMock())
+        
+        # Import the WebSocket endpoint
+        from api.future_gadget_api import worldline_status_websocket_endpoint
+        
+        # Test with regular user - should send status automatically on message
+        # Set up user roles
+        mock_websocket.state = MagicMock()
+        mock_websocket.state.user = MagicMock()
+        mock_websocket.state.user.roles = ["User"]
+        
+        # Set up to receive one message then disconnect
+        mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
+        
+        # Call the endpoint
+        try:
+            await worldline_status_websocket_endpoint(mock_websocket)
+        except WebSocketDisconnect:
+            pass
+        
+        # Verify response was sent
+        assert len(sent_messages) == 1
+        assert "current_worldline" in sent_messages[0]
+        assert "timestamp" in sent_messages[0]
+        
+        # Test with Admin user - should not send automatic status
+        mock_websocket.state.user.roles = ["Admin"]
+        sent_messages.clear()
+        
+        # Reset receive_text
+        mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
+        
+        # Call the endpoint again
+        try:
+            await worldline_status_websocket_endpoint(mock_websocket)
+        except WebSocketDisconnect:
+            pass
+        
+        # Verify no automatic response to Admin
+        assert len(sent_messages) == 0

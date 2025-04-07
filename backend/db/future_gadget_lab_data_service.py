@@ -352,6 +352,98 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
 # In production code, you would inject this service where needed
 default_fgl_db = FutureGadgetLabDataService(use_memory_storage=True)
 
+
+def calculate_worldline_status(experiments, readings=None):
+    """
+    Calculate the current worldline by summing all experiment divergences.
+    
+    Args:
+        experiments: List of experiment objects with world_line_change values
+        readings: Optional list of divergence readings to find closest match
+                 If None, only worldline value is calculated without closest reading
+    
+    Returns:
+        Dict containing calculated worldline value and related information
+    """
+    # Calculate current worldline (start at 1.0 and add all divergences)
+    base_worldline = 1.0
+    current_worldline = base_worldline
+    
+    for exp in experiments:
+        if exp.get("world_line_change") is not None:
+            current_worldline += exp.get("world_line_change", 0.0)
+    
+    # Get the most recent experiment timestamp
+    last_experiment_timestamp = None
+    
+    if experiments:
+        # Sort experiments by timestamp (descending)
+        sorted_experiments = sorted(
+            [exp for exp in experiments if exp.get('timestamp')], 
+            key=lambda x: x.get('timestamp', ''), 
+            reverse=True
+        )
+        
+        if sorted_experiments:
+            last_experiment_timestamp = sorted_experiments[0].get('timestamp')
+    
+    # Initialize response with calculated values
+    response = {
+        "current_worldline": round(current_worldline, 6),
+        "base_worldline": base_worldline,
+        "total_divergence": round(current_worldline - base_worldline, 6),
+        "experiment_count": len(experiments),
+        "last_experiment_timestamp": last_experiment_timestamp
+    }
+    
+    # Rest of the function remains unchanged
+    if readings:
+        closest_reading = None
+        min_distance = float('inf')
+        
+        for reading in readings:
+            # Get reading value, checking both "reading" and "value" fields
+            reading_value = reading.get("reading")
+            if reading_value is None:
+                reading_value = reading.get("value")
+            
+            # Default to 0.0 if neither field exists
+            if reading_value is None:
+                reading_value = 0.0
+            
+            # Convert to float if it's a string
+            if isinstance(reading_value, str):
+                try:
+                    reading_value = float(reading_value)
+                except ValueError:
+                    reading_value = 0.0
+            
+            distance = abs(reading_value - current_worldline)
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_reading = reading
+        
+        # If no readings found, create a placeholder
+        if not closest_reading:
+            closest_reading = {
+                "reading": current_worldline,
+                "status": "unknown",
+                "recorded_by": "System",
+                "notes": "No divergence readings available for comparison"
+            }
+        
+        # Add closest reading to response
+        response["closest_reading"] = {
+            "value": closest_reading.get("reading"),
+            "status": closest_reading.get("status"),
+            "recorded_by": closest_reading.get("recorded_by", "Unknown"),
+            "notes": closest_reading.get("notes", ""),
+            "distance": round(min_distance, 6)
+        }
+    
+    return response
+
 # Example usage
 if __name__ == "__main__":
     # Create a new experiment with world_line_change
