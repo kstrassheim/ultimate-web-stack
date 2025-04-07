@@ -11,19 +11,24 @@ describe('User Flow Test', () => {
     
     // Verify login was successful
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    
+    // Navigate to Dashboard (what was previously Home)
+    cy.get('[data-testid="nav-dashboard"]').click();
+    
+    // Verify we're on the Dashboard page
+    cy.url().should('include', '/dashboard');
   });
 
-  // Keeping the home page tests unchanged as they don't involve navigation
-
-  it('should display and interact with the home page - basic checks', () => {
+  // Updated to test the Dashboard page instead of Home
+  it('should display and interact with the dashboard page - basic checks', () => {
     // First, intercept the API calls to add delay
     cy.intercept('GET', '**/api/user-data', {
       body: { message: 'Hello from API' },
       delay: 1000 // Add a delay to ensure we can see the loading state
     }).as('userData');
     
-    // Check we're on the home page
-    cy.get('h1').should('contain', 'Home Page');
+    // Check we're on the dashboard page
+    cy.get('[data-testid="dashboard-page"]').should('be.visible');
     
     // Check for success toast notification - with sufficient timeout
     cy.get('.notyf', { timeout: 5000 }).should('exist');
@@ -57,7 +62,7 @@ describe('User Flow Test', () => {
     cy.get('.notyf__toast--success', { timeout: 5000 }).should('be.visible');
   });
   
-  it('should display and interact with the home page - intercept short delay', () => {
+  it('should display and interact with the dashboard page - intercept short delay', () => {
     // Intercept with a delay so we can see loading state
     cy.intercept('GET', '**/api/user-data', {
       body: { message: 'Hello from API' },
@@ -78,7 +83,7 @@ describe('User Flow Test', () => {
       .should('not.be.disabled');
   });
   
-  it('should display and interact with the home page - intercept long delay', () => {
+  it('should display and interact with the dashboard page - intercept long delay', () => {
     // Intercept the user-data request and delay it
     cy.intercept('GET', '**/api/user-data', {
       body: { message: 'Hello from API' },
@@ -111,27 +116,48 @@ describe('User Flow Test', () => {
     // Experiments page content should not be visible
     cy.get('[data-testid="experiments-heading"]').should('not.exist');
   });
-
-  // Removing tests for admin page and dmails which no longer exist
   
+  it('should be able to access public home page without authentication', () => {
+    // Log out first
+    cy.get('[data-testid="profile-image"]').click();
+    cy.get('[data-testid="sign-out-button"]').click();
+    
+    // Verify we're logged out
+    cy.get('[data-testid="sign-in-button"]').should('be.visible');
+    
+    // Navigate to home page
+    cy.get('[data-testid="nav-home"]').click();
+    
+    // Should be able to access home page without authentication
+    cy.url().should('not.include', '/access-denied');
+    cy.get('[data-testid="home-page"]').should('be.visible');
+    cy.contains('Welcome to Ultimate Web Stack').should('be.visible');
+  });
+
   it('should interact with the Bootstrap navbar correctly', () => {
     // Test the Bootstrap navigation
     cy.get('[data-testid="main-navigation"]').should('be.visible');
     
     // Check that navigation links exist
     cy.get('[data-testid="nav-home"]').should('be.visible');
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible');
     cy.get('[data-testid="nav-chat"]').should('be.visible');
     cy.get('[data-testid="nav-experiments"]').should('be.visible');
     
     // Navigate to chat page
     cy.get('[data-testid="nav-chat"]').click();
     cy.url().should('include', '/chat');
-    cy.get('[data-testid="websocket-demo"]').should('be.visible');
+    cy.get('[data-testid="chat-page"]').should('be.visible');
     
-    // Navigate back to home page
+    // Navigate back to dashboard page
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="dashboard-page"]').should('be.visible');
+    
+    // Navigate to the public home page
     cy.get('[data-testid="nav-home"]').click();
-    cy.url().should('not.include', '/chat');
-    cy.get('[data-testid="home-container"]').should('be.visible');
+    cy.url().should('not.include', '/dashboard');
+    cy.get('[data-testid="home-page"]').should('be.visible');
   });
   
   it('should handle API errors with toast notifications', () => {
@@ -165,9 +191,6 @@ describe('User Flow Test', () => {
       if ($body.find('[data-testid="error-message"]').length > 0) {
         cy.get('[data-testid="error-message"]').should('be.visible');
         cy.get('[data-testid="error-message"]').should('contain.text', 'Error');
-      } else {
-        // If the specific element isn't found, at least verify an error is shown somewhere
-        //cy.get('.error').should('be.visible');
       }
     });
   });
@@ -184,6 +207,9 @@ describe('User Flow Test', () => {
     cy.get('[data-testid="profile-dropdown"] .dropdown-menu').should('be.visible');
     cy.get('[data-testid="change-account-button"]').should('be.visible');
     cy.get('[data-testid="sign-out-button"]').should('be.visible');
+    
+    // Check for role badge
+    cy.get('[data-testid="role-badge-none"]').should('be.visible');
   });
   
   it('should test responsive behavior', () => {
@@ -201,6 +227,7 @@ describe('User Flow Test', () => {
     
     // Check main nav links are visible in mobile view
     cy.get('[data-testid="nav-home"]').should('be.visible');
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible');
     cy.get('[data-testid="nav-chat"]').should('be.visible');
     cy.get('[data-testid="nav-experiments"]').should('be.visible');
     
@@ -227,5 +254,19 @@ describe('User Flow Test', () => {
     
     // But should still be authenticated
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    
+    // Navigate to Dashboard
+    cy.get('[data-testid="nav-dashboard"]').click();
+    
+    // Should be authenticated and on dashboard
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    cy.get('[data-testid="dashboard-page"]').should('be.visible');
+    
+    // Navigate to Home (which is public)
+    cy.get('[data-testid="nav-home"]').click();
+    
+    // Should still be authenticated on public home page
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
+    cy.get('[data-testid="home-page"]').should('be.visible');
   });
 });

@@ -1,98 +1,91 @@
-import { useState, useEffect, useRef } from 'react'
-import './Home.css'
-import { getUserData } from '@/api/api'
-import { getAllGroups } from '@/api/graphApi'
-import { useMsal } from '@azure/msal-react';
-import appInsights from '@/log/appInsights';
-import GroupsList from '@/pages/components/GroupsList';
-import Loading, {sleep} from '@/components/Loading';
-import notyfService from '@/log/notyfService';
+import React from 'react';
+import { Container, Row, Col, Card } from 'react-bootstrap';
+import './Home.css';
 
+/**
+ * Home component - Responsive homepage with feature cards
+ */
 const Home = () => {
-  const { instance } = useMsal();
-  const [data, setData] = useState(null);
-  const [groupData, setGroupData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const initFetchCompleted = useRef(false);
-  const currentUserRef = useRef(instance.getActiveAccount()?.username);
-
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [userData, groupsData] = await Promise.all([
-        getUserData(instance),
-        getAllGroups(instance)
-      ]);
-   
-      setData(userData);
-      setGroupData(groupsData);
-      // Show success notification
-      notyfService.success('Data loaded successfully!');
-    } catch (err) {
-      setError(err.message);
-      // Show error notification
-      notyfService.error('Failed to load data: ' + err.message);
-      appInsights.trackException({ exception: err });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { 
-    // Get current user
-    const currentUser = instance.getActiveAccount()?.username;
-    
-    // Force a reload of data when the user changes
-    if (currentUserRef.current !== currentUser) {
-      console.log('User changed, reloading data...');
-      currentUserRef.current = currentUser;
-      initFetchCompleted.current = false; // Reset to force reload
-    }
-    
-    if (!initFetchCompleted.current) {
-      appInsights.trackEvent({ name: 'Home - Fetch data started' });
-      fetchData();
-      appInsights.trackEvent({ name: 'Home - Fetch data completed' });
-      initFetchCompleted.current = true;
-    }
-  }, [instance, instance.getActiveAccount()?.username, instance.getActiveAccount()?.name]);
-
   return (
-    <>
-      <Loading visible={loading} message="Fetching data from APIs..." />
-      
-      <div data-testid="home-container">
-        <h1>Home Page</h1>
+    <div data-testid="home-page">
+      <Container fluid>
+        <Row className="mb-4 justify-content-center">
+          <Col lg={8} md={10} xs={12} className="text-center">
+            <h1 className="display-4 mb-3">Welcome to Ultimate Web Stack</h1>
+            <p className="lead">A modern full-stack application built with React, FastAPI, and Azure integration.</p>
+          </Col>
+        </Row>
         
-        {error && <div data-testid="error-message" className="error">Error: {error}</div>}
-        
-        <div data-testid="api-response-card" className="card">
-          <h2>API Response</h2>
-          {data ? (
-            <p data-testid="api-message-data">{data.message}</p>
-          ) : (
-            <p data-testid="api-message-empty">No data available</p>
-          )}
-        </div>
-        
-        <div data-testid="groups-container" className="card">
-          <h2>Groups from Microsoft Graph API</h2>
-          <GroupsList groups={groupData} loading={loading} />
-        </div>
-        
-        <button 
-          data-testid="reload-button"
-          onClick={fetchData} 
-          disabled={loading} 
-          className="reload-button"
-        >
-          {loading ? 'Loading...' : 'Reload Data'}
-        </button>
-      </div>
-    </>
-  )
-}
+        <Row className="mb-5 g-4">
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>React Frontend</Card.Title>
+                <Card.Text>
+                  Modern UI built with React 18, React Router, Bootstrap, and Microsoft Authentication Library.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>FastAPI Backend</Card.Title>
+                <Card.Text>
+                  High-performance Python API with async support, automatic documentation, and role-based security.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Real-time Features</Card.Title>
+                <Card.Text>
+                  WebSocket connections for live updates and notifications between clients.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Comprehensive Testing</Card.Title>
+                <Card.Text>
+                  Jest for unit tests, React Testing Library for component tests, and Cypress for end-to-end testing.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Azure Integration</Card.Title>
+                <Card.Text>
+                  Microsoft Entra ID (formerly Azure AD) authentication, Application Insights telemetry.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Developer Experience</Card.Title>
+                <Card.Text>
+                  Hot module replacement, code splitting, and optimized build process.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      </Container>
+    </div>
+  );
+};
 
 export default Home;

@@ -92,7 +92,7 @@ const Chat = () => {
   };
 
   return (
-    <div className="chat-container" data-testid="websocket-demo">
+    <div className="chat-container" data-testid="chat-page">
       <h2>Live Chat</h2>
       
       <div className="status-indicator">

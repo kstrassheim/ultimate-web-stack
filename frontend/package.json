@@ -26,7 +26,7 @@
     "cypress": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress open --e2e --browser chrome",
     "cypress:chrome": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress run --headed --browser chrome --e2e",
     "cypress:edge": "cross-env CYPRESS_REMOTE_DEBUGGING_PORT=9222 cypress run --headed --browser edge --e2e",
-    "test:backend": "cross-env MOCK=true node start-backend.js --host 0.0.0.0",
+    "test:backend": "cross-env MOCK=true LOG_LEVEL=ERROR node start-backend.js --host 0.0.0.0",
     "test:frontend": "cross-env npm_config_mock=true vite --port 5173 --host",
     "coverage:e2e-only": "npm run test:e2e:coverage && npm run coverage:report:e2e",
     "coverage:report:e2e": "nyc report --reporter=lcov --reporter=html --reporter=text-summary",

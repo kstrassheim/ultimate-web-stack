@@ -17,7 +17,7 @@ describe('Chat Page Functionality', () => {
     
     // Verify we're on the chat page
     cy.url().should('include', '/chat');
-    cy.get('[data-testid="websocket-demo"]').should('be.visible');
+    cy.get('[data-testid="chat-page"]').should('be.visible');
   });
   
   it('should display the chat interface with correct initial state', () => {

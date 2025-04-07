@@ -11,7 +11,7 @@ jest.mock('@/components/ProtectedRoute', () => ({ children, requiredRoles }) => 
     {children}
   </div>
 ));
-jest.mock('@/pages/Home', () => () => <div data-testid="mocked-home-page">Home Page</div>);
+jest.mock('@/pages/Dashboard', () => () => <div data-testid="mocked-dashboard-page">Dashboard Page</div>);
 jest.mock('@/pages/Chat', () => () => <div data-testid="mocked-chat-page">Chat Page</div>);
 jest.mock('@/pages/404', () => () => <div data-testid="mocked-404-page">404 Page</div>);
 jest.mock('@/pages/AccessDenied', () => () => <div data-testid="mocked-access-denied-page">Access Denied Page</div>);
@@ -43,7 +43,7 @@ describe('App Component', () => {
     
     // Check page navigation links
     expect(screen.getByTestId('page-navigation')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-home')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('nav-chat')).toBeInTheDocument(); // Test chat link
     expect(screen.getByTestId('nav-experiments')).toBeInTheDocument(); // Test chat link
     // Check dropdown exists
@@ -53,10 +53,23 @@ describe('App Component', () => {
     expect(screen.getByTestId('mocked-entra-profile')).toBeInTheDocument();
   });
 
-  test('renders home route with correct protection', () => {
+  test('renders home route with no protection', () => {
     render(
       <MemoryRouter 
         initialEntries={['/']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <App />
+      </MemoryRouter>
+    );
+     // No required roles
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
+  });
+
+  test('renders dashboard route with correct protection', () => {
+    render(
+      <MemoryRouter 
+        initialEntries={['/dashboard']}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <App />
@@ -66,7 +79,7 @@ describe('App Component', () => {
     const protectedRoute = screen.getByTestId('mocked-protected-route');
     expect(protectedRoute).toBeInTheDocument();
     expect(protectedRoute).toHaveAttribute('data-roles', ''); // No required roles
-    expect(screen.getByTestId('mocked-home-page')).toBeInTheDocument();
+    expect(screen.getByTestId('mocked-dashboard-page')).toBeInTheDocument();
   });
   
   test('renders chat route with correct protection', () => {

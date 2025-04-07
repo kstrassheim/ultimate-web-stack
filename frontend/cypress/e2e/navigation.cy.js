@@ -21,16 +21,20 @@ describe('Navigation Tests', () => {
     cy.get('[data-testid="logo-link"]').should('have.attr', 'href', 'https://github.com/kstrassheim/ultimate-web-stack');
     cy.get('[data-testid="logo-image"]').should('be.visible');
     
-    // Home navigation test
+    // Home navigation test - Home is now publicly accessible welcome page
     cy.get('[data-testid="nav-home"]').should('be.visible').click();
     cy.wait(500);
     cy.url().should('include', '/');
+    cy.get('[data-testid="home-page"]').should('be.visible');
     
-    // Experiments navigation test - now a direct link
+    // Dashboard navigation test - requires authentication
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible').click();
+    cy.wait(500);
+    cy.url().should('include', '/access-denied');
+    
+    // Experiments navigation test - requires authentication + Admin role
     cy.get('[data-testid="nav-experiments"]').should('be.visible').click();
     cy.wait(500);
-    
-    // If you're not authenticated, we expect access denied
     cy.url().should('include', '/access-denied');
   });
   
@@ -79,9 +83,25 @@ describe('Unauthenticated Flow Tests', () => {
     cy.get('[data-testid="profile-container"]').should('not.exist');
   });
 
-  it('should redirect to access-denied for home page when not authenticated', () => {
+  it('should allow access to home page when not authenticated', () => {
     // Click the Home link
     cy.get('[data-testid="nav-home"]').click();
+    
+    // Should remain on the home page
+    cy.url().should('not.include', '/access-denied');
+    
+    // Verify home page content
+    cy.get('[data-testid="home-page"]').should('be.visible');
+    cy.contains('h1', 'Welcome to Ultimate Web Stack').should('be.visible');
+    
+    // Check for feature cards
+    cy.contains('React Frontend').should('be.visible');
+    cy.contains('FastAPI Backend').should('be.visible');
+  });
+
+  it('should redirect to access-denied for dashboard page when not authenticated', () => {
+    // Click the Dashboard link
+    cy.get('[data-testid="nav-dashboard"]').click();
     
     // Should redirect to access-denied
     cy.url().should('include', '/access-denied');
@@ -91,9 +111,6 @@ describe('Unauthenticated Flow Tests', () => {
     cy.get('[data-testid="access-denied-heading"]').should('contain', 'Access Denied');
     cy.get('[data-testid="access-denied-login-message"]').should('be.visible');
     cy.get('[data-testid="access-denied-signin-prompt"]').should('be.visible');
-    
-    // Verify we don't see the role-specific message
-    cy.get('[data-testid="access-denied-role-message"]').should('not.exist');
   });
 
   it('should redirect to access-denied for experiments page when not authenticated', () => {
@@ -148,7 +165,10 @@ describe('Navigation Tests with Admin Role', () => {
   beforeEach(() => {
     // Set up a mock role with Admin permissions so we can access the admin page
     cy.setMockRole('Admin');
+    // Visit the home page
     cy.visit('/');
+    // Sign in
+    cy.get('[data-testid="sign-in-button"]').click();
     
     // Wait for the main navigation to appear
     cy.get('[data-testid="main-navigation"]', { timeout: 10000 }).should('be.visible');
@@ -173,13 +193,42 @@ describe('Navigation Tests with Admin Role', () => {
     cy.viewport(1000, 660);
   });
 
-  it('should properly display main navigation links', () => {
+  it('should properly display main navigation links and allow access to protected pages', () => {
     // Check main navigation links exist
     cy.get('[data-testid="nav-home"]').should('be.visible');
+    cy.get('[data-testid="nav-dashboard"]').should('be.visible');
     cy.get('[data-testid="nav-chat"]').should('be.visible');
     cy.get('[data-testid="nav-experiments"]').should('be.visible');
     
-    // Verify we can click the Experiments link directly
+    // Verify Home is accessible
+    cy.get('[data-testid="nav-home"]').click();
+    cy.url().should('include', '/');
+    cy.get('[data-testid="home-page"]').should('be.visible');
+    
+    // Verify Dashboard is accessible when authenticated
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="dashboard-page"]').should('be.visible');
+    
+    // Verify Chat is accessible when authenticated
+    cy.get('[data-testid="nav-chat"]').click();
+    cy.url().should('include', '/chat');
+    cy.get('[data-testid="chat-page"]').should('be.visible');
+    
+    // Verify Experiments is accessible with Admin role
     cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-page"]').should('be.visible');
+  });
+
+  it('should show proper role badge in profile dropdown', () => {
+    // Click profile to open dropdown
+    cy.get('[data-testid="profile-image"]').click();
+    
+    // Verify Admin role badge is displayed
+    cy.get('[data-testid="role-badge-Admin"]').should('be.visible');
+    
+    // Close dropdown
+    cy.get('[data-testid="profile-image"]').click();
   });
 });
