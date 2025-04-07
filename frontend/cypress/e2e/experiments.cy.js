@@ -501,27 +501,62 @@ describe('Future Gadget Lab - Real-time WebSocket Notifications', () => {
   beforeEach(() => {
     // Set up admin role before each test
     cy.setMockRole('Admin');
+    // Visit the home page
+    cy.visit('/');
+    // Sign in
+    cy.get('[data-testid="sign-in-button"]').click();
+    // Navigate to Experiments page directly (no longer in a dropdown)
+    cy.get('[data-testid="nav-experiments"]').click();
+    // Verify we're on the experiments page
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+    cy.get('[data-testid="experiments-heading"]').should('contain.text', 'Future Gadget Lab Experiments');
     
-    // Visit the experiments page directly with no navigation
-    cy.visit('/experiments', { timeout: 20000 });
+    // Now verify we're on the experiments page, not access denied
+    cy.url().should('not.include', 'access-denied');
     
-    // Force authentication first
-    cy.window().then(win => {
-      // Ensure we're authenticated
-      if (win.document.querySelector('[data-testid="sign-in-button"]')) {
-        cy.get('[data-testid="sign-in-button"]').click();
-      }
-    });
+    // Wait for the experiments page to load
+    cy.contains('h1', 'Future Gadget Lab Experiments', { timeout: 20000 }).should('be.visible');
     
-    // Wait for the page to be fully loaded
-    cy.contains('h1', 'Future Gadget Lab Experiments', { timeout: 15000 }).should('be.visible');
-    
-    // Wait for loading overlay to disappear to ensure data is loaded
+    // Wait for loading overlay to disappear
     cy.get('[data-testid="loading-overlay"]').should('not.exist', { timeout: 15000 });
     
-    // Explicitly wait for the WebSocket connection to establish
+    // Wait for experiments table to be visible
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('be.visible');
+    
+    // Ensure WebSocket is connected
     cy.get('[data-testid="status-badge"]', { timeout: 15000 })
+      .should('be.visible')
       .should('contain.text', 'Connected');
+      
+    // Expose the WebSocket handler for our tests to use
+    cy.window().then((win) => {
+      // If we need to expose the handler to the window
+      if (!win.experimentsSocketMessageHandler) {
+        // Create a helper to ensure our tests can access the WebSocket handler
+        const origWebSocketSend = win.WebSocket.prototype.send;
+        win.WebSocket.prototype.send = function(data) {
+          // Save the WebSocket instance for later use
+          win.activeWebSocket = this;
+          return origWebSocketSend.call(this, data);
+        };
+        
+        // Expose the handler directly on the window for easy access in tests
+        win.experimentsSocket = win.experimentsSocket || {};
+        win.experimentsSocket.sendTestMessage = function(message) {
+          // Create a MessageEvent-like object our handler will understand
+          const event = new win.MessageEvent('message', {
+            data: JSON.stringify(message)
+          });
+          
+          // Find the handler and call it
+          if (win.activeWebSocket && win.activeWebSocket.onmessage) {
+            win.activeWebSocket.onmessage(event);
+          } else {
+            cy.log('WebSocket or handler not found');
+          }
+        };
+      }
+    });
   });
   
   it('should display WebSocket connection status', () => {
