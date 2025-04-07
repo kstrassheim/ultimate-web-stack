@@ -72,8 +72,13 @@ const Dashboard = () => {
       <Loading visible={loading} message="Fetching data from APIs..." />
       
       <div data-testid="home-container">
-        <h1>Home Page</h1>
+
+       
         
+        <div data-testid="groups-container" className="card">
+          <h2>Groups from Microsoft Graph API</h2>
+          <GroupsList groups={groupData} loading={loading} />
+        </div>
         {error && <div data-testid="error-message" className="error">Error: {error}</div>}
         
         <div data-testid="api-response-card" className="card">
@@ -84,12 +89,6 @@ const Dashboard = () => {
             <p data-testid="api-message-empty">No data available</p>
           )}
         </div>
-        
-        <div data-testid="groups-container" className="card">
-          <h2>Groups from Microsoft Graph API</h2>
-          <GroupsList groups={groupData} loading={loading} />
-        </div>
-        
         <button 
           data-testid="reload-button"
           onClick={fetchData} 
