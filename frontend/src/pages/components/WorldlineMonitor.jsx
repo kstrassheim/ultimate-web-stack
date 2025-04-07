@@ -180,10 +180,17 @@ const WorldlineMonitor = () => {
         setWorldlineStatus(worldlineData);
         
         // When worldline status changes, refresh the history data for the chart
-        fetchWorldlineHistory();
-        
-        // Force chart to re-render with new data
-        setChartKey(prevKey => prevKey + 1);
+        fetchWorldlineHistory()
+          .then(() => {
+            // After history is loaded, ensure readings are also loaded
+            if (!readings.length) {
+              return fetchDivergenceReadings();
+            }
+          })
+          .finally(() => {
+            // Force chart to re-render with new data
+            setChartKey(prevKey => prevKey + 1);
+          });
         
         if (worldlineData.includes_preview) {
           notyfService.info(`Previewing worldline change from: ${worldlineData.preview_experiment?.name}`);
