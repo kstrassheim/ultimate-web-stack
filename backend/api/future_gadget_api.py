@@ -396,3 +396,47 @@ async def get_worldline_history(
         state["timestamp"] = iso_now
     
     return history
+
+@future_gadget_api_router.get("/divergence-readings", response_model=List[Dict])
+async def get_divergence_readings(
+    status: Optional[str] = Query(None, description="Filter by worldline status"),
+    recorded_by: Optional[str] = Query(None, description="Filter by who recorded the reading"),
+    min_value: Optional[float] = Query(None, description="Filter by minimum reading value"),
+    max_value: Optional[float] = Query(None, description="Filter by maximum reading value"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Get all divergence meter readings.
+    This endpoint is accessible to all authenticated users.
+    """
+    logger.info("Future Gadget Lab API - Getting all divergence readings")
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Apply filters if specified
+    filtered_readings = readings
+    if status:
+        filtered_readings = [r for r in filtered_readings if r.get('status') == status]
+    if recorded_by:
+        filtered_readings = [r for r in filtered_readings if r.get('recorded_by') == recorded_by]
+    if min_value is not None:
+        filtered_readings = [r for r in filtered_readings if get_reading_value(r) >= min_value]
+    if max_value is not None:
+        filtered_readings = [r for r in filtered_readings if get_reading_value(r) <= max_value]
+    
+    return filtered_readings
+
+# Helper function to extract reading value safely
+def get_reading_value(reading: Dict) -> float:
+    """Extract the reading value, handling different field names and types"""
+    value = reading.get("reading")
+    if value is None:
+        value = reading.get("value")
+    
+    # Convert to float if it's a string
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    
+    return value or 0.0

@@ -302,6 +302,117 @@ class TestExperimentEndpoints:
             from api.future_gadget_api import broadcast_worldline_status
             assert broadcast_worldline_status.called
 
+    def test_get_divergence_readings(self, client_with_overridden_dependencies, setup_fgl_service):
+        """Test the divergence-readings endpoint available to all authenticated users"""
+        # Mock sample readings data
+        sample_readings = [
+            {
+                "id": "DR-001",
+                "reading": 1.048596,
+                "status": "steins_gate",
+                "recorded_by": "Rintaro Okabe",
+                "notes": "Steins;Gate worldline"
+            },
+            {
+                "id": "DR-002",
+                "reading": 0.571024,
+                "status": "alpha",
+                "recorded_by": "Rintaro Okabe",
+                "notes": "Alpha worldline"
+            },
+            {
+                "id": "DR-003",
+                "reading": 1.382733,
+                "status": "beta",
+                "recorded_by": "Suzuha Amane",
+                "notes": "Beta worldline variant"
+            }
+        ]
+        
+        with patch("api.future_gadget_api.fgl_service.get_all_divergence_readings", return_value=sample_readings):
+            test_client, _ = client_with_overridden_dependencies
+            
+            # Test 1: Get all readings (no filters)
+            response = test_client.get(f"{API_PREFIX}/divergence-readings")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 3
+            assert data[0]["id"] == "DR-001"
+            assert data[0]["reading"] == 1.048596
+            assert data[0]["status"] == "steins_gate"
+            
+            # Test 2: Filter by status
+            response = test_client.get(f"{API_PREFIX}/divergence-readings?status=alpha")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["status"] == "alpha"
+            assert data[0]["reading"] == 0.571024
+            
+            # Test 3: Filter by recorded_by
+            response = test_client.get(f"{API_PREFIX}/divergence-readings?recorded_by=Suzuha%20Amane")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["recorded_by"] == "Suzuha Amane"
+            assert data[0]["id"] == "DR-003"
+            
+            # Test 4: Filter by minimum value
+            response = test_client.get(f"{API_PREFIX}/divergence-readings?min_value=1.0")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 2
+            assert all(reading["reading"] >= 1.0 for reading in data)
+            
+            # Test 5: Filter by maximum value
+            response = test_client.get(f"{API_PREFIX}/divergence-readings?max_value=1.0")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["reading"] < 1.0
+            assert data[0]["status"] == "alpha"
+            
+            # Test 6: Combine multiple filters
+            response = test_client.get(f"{API_PREFIX}/divergence-readings?min_value=1.0&recorded_by=Rintaro%20Okabe")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["id"] == "DR-001"
+            assert data[0]["reading"] >= 1.0
+            assert data[0]["recorded_by"] == "Rintaro Okabe"
+
+    def test_non_admin_access_to_divergence_readings(self, setup_fgl_service):
+        """Test non-admin users can access the divergence readings endpoint"""
+        # Create special test app with normal user token
+        test_app = FastAPI()
+        mock_token = SimpleNamespace(roles=["User"])  # Non-admin token
+
+        async def override_security_dependency():
+            return mock_token
+
+        # Set up overrides
+        test_app.dependency_overrides[azure_scheme] = override_security_dependency
+        test_app.include_router(future_gadget_api_router)
+        test_client = TestClient(test_app)
+        
+        # Mock readings data
+        sample_readings = [
+            {
+                "id": "DR-001",
+                "reading": 1.048596,
+                "status": "steins_gate",
+                "recorded_by": "Rintaro Okabe"
+            }
+        ]
+        
+        with patch("api.future_gadget_api.fgl_service.get_all_divergence_readings", return_value=sample_readings):
+            # Normal user should be able to access this endpoint
+            response = test_client.get(f"{API_PREFIX}/divergence-readings")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["id"] == "DR-001"
+
 
 class TestExperimentWebSocketEndpoints:
     """Test the Experiment WebSocket endpoints for real-time updates"""
