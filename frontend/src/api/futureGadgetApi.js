@@ -47,7 +47,27 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
   }
 };
 
-// ----- EXPERIMENTS API -----
+// Format timestamp for display
+export const formatExperimentTimestamp = (experiment) => {
+  if (experiment.timestamp) {
+    const date = new Date(experiment.timestamp);
+    return date.toLocaleString();
+  }
+  return 'Unknown';
+};
+
+// Format world line change to a nice readable format
+export const formatWorldLineChange = (change) => {
+  if (change === null || change === undefined) return 'N/A';
+  
+  // Convert to positive number
+  const absChange = Math.abs(parseFloat(change));
+  
+  // Format with 6 decimal places (standard format for divergence values)
+  return absChange.toFixed(6);
+};
+
+// ----- EXPERIMENTS API ONLY -----
 
 export const getAllExperiments = async (instance) => {
   return makeAuthenticatedRequest(instance, '/lab-experiments');
@@ -58,7 +78,14 @@ export const getExperimentById = async (instance, experimentId) => {
 };
 
 export const createExperiment = async (instance, experimentData) => {
-  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', experimentData);
+  // Only add timestamp if not provided by user
+  const dataWithTimestamp = {
+    ...experimentData,
+    // Add timestamp if not provided or empty
+    timestamp: experimentData.timestamp || new Date().toISOString()
+  };
+  
+  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', dataWithTimestamp);
 };
 
 export const updateExperiment = async (instance, experimentId, experimentData) => {
@@ -69,112 +96,17 @@ export const deleteExperiment = async (instance, experimentId) => {
   return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE');
 };
 
-// ----- D-MAIL API -----
-
-export const getAllDMails = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/d-mails');
-};
-
-export const getDMailById = async (instance, dMailId) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`);
-};
-
-export const createDMail = async (instance, dMailData) => {
-  return makeAuthenticatedRequest(instance, '/d-mails', 'POST', dMailData);
-};
-
-export const updateDMail = async (instance, dMailId, dMailData) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`, 'PUT', dMailData);
-};
-
-export const deleteDMail = async (instance, dMailId) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`, 'DELETE');
-};
-
-// ----- DIVERGENCE READINGS API -----
-
-export const getAllDivergenceReadings = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/divergence-readings');
-};
-
-export const getDivergenceReadingById = async (instance, readingId) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`);
-};
-
-export const createDivergenceReading = async (instance, readingData) => {
-  return makeAuthenticatedRequest(instance, '/divergence-readings', 'POST', readingData);
-};
-
-export const updateDivergenceReading = async (instance, readingId, readingData) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`, 'PUT', readingData);
-};
-
-export const deleteDivergenceReading = async (instance, readingId) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`, 'DELETE');
-};
-
-// ----- LAB MEMBERS API -----
-
-export const getAllLabMembers = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/lab-members');
-};
-
-export const getLabMemberById = async (instance, memberId) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`);
-};
-
-export const createLabMember = async (instance, memberData) => {
-  return makeAuthenticatedRequest(instance, '/lab-members', 'POST', memberData);
-};
-
-export const updateLabMember = async (instance, memberId, memberData) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`, 'PUT', memberData);
-};
-
-export const deleteLabMember = async (instance, memberId) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`, 'DELETE');
-};
-
 // ----- WEBSOCKET CLIENTS -----
 
-// WebSocket client for experiments
+// WebSocket client for experiments only
 export class ExperimentsSocketClient extends WebSocketClient {
   constructor() {
-    super('future-gadget-lab/ws/experiments');
+    super('future-gadget-lab/ws/lab-experiments');
   }
 }
 
-// WebSocket client for D-Mails
-export class DMailsSocketClient extends WebSocketClient {
-  constructor() {
-    super('future-gadget-lab/ws/d-mails');
-  }
-}
-
-// WebSocket client for divergence readings
-export class DivergenceReadingsSocketClient extends WebSocketClient {
-  constructor() {
-    super('future-gadget-lab/ws/divergence-readings');
-  }
-}
-
-// WebSocket client for lab members
-export class LabMembersSocketClient extends WebSocketClient {
-  constructor() {
-    super('future-gadget-lab/ws/lab-members');
-  }
-}
-
-// Create singleton instances for easy access
+// Create singleton instance for easy access
 const experimentsSocket = new ExperimentsSocketClient();
-const dMailsSocket = new DMailsSocketClient();
-const divergenceReadingsSocket = new DivergenceReadingsSocketClient();
-const labMembersSocket = new LabMembersSocketClient();
 
-// Export the socket clients
-export { 
-  experimentsSocket,
-  dMailsSocket, 
-  divergenceReadingsSocket, 
-  labMembersSocket 
-};
+// Export the socket client
+export { experimentsSocket };

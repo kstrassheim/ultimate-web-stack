@@ -58,9 +58,6 @@ describe('Profile Functionality', () => {
         // Test still passes since this is flaky behavior in test environment
       }
     });
-    
-    // Skip tooltip disappearance test as it's also flaky
-    // The important thing is we verified the user is logged in and the profile image works
   });
 
   it('should change user account successfully', () => {
@@ -75,7 +72,6 @@ describe('Profile Functionality', () => {
     cy.get('[data-testid="change-account-button"]').click();
     
     // The mockup will automatically switch to Admin in the mock implementation
-    //cy.setMockRole('Admin');
     
     // Verify we're still authenticated after changing accounts
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
@@ -87,7 +83,6 @@ describe('Profile Functionality', () => {
 
   it('should change user account successfully with updated name and image', () => {
     // Set initial role and log in
-    //cy.setMockRole('User');
     cy.get('[data-testid="sign-in-button"]').click();
     
     // Verify initial authentication state
@@ -109,9 +104,6 @@ describe('Profile Functionality', () => {
           // Now change the account
           cy.get('[data-testid="profile-image"]').click();
           cy.get('[data-testid="change-account-button"]').click();
-          
-          // The mockup will automatically switch to Admin in the mock implementation
-          //cy.setMockRole('Admin');
           
           // Verify we're still authenticated after changing accounts
           cy.get('[data-testid="authenticated-container"]').should('be.visible');
@@ -166,5 +158,23 @@ describe('Profile Functionality', () => {
     
     // Still authenticated
     cy.get('[data-testid="authenticated-container"]').should('be.visible');
+  });
+  
+  // Test for access-denied when non-Admin attempts to access Experiments
+  it('should redirect to access-denied when non-Admin accesses Experiments', () => {
+    // Set User role (not Admin) for this test
+    cy.setMockRole('User');
+    cy.get('[data-testid="sign-in-button"]').click();
+    
+    // Click on Experiments link
+    cy.get('[data-testid="nav-experiments"]').click();
+    
+    // Should be redirected to access-denied
+    cy.url().should('include', '/access-denied');
+    cy.get('[data-testid="access-denied-page"]').should('be.visible');
+    cy.get('[data-testid="access-denied-heading"]').should('be.visible');
+    
+    // Verify experiments elements are not displayed
+    cy.get('[data-testid="experiments-page"]').should('not.exist');
   });
 });

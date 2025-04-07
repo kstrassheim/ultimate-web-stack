@@ -7,7 +7,9 @@ import {
   createExperiment, 
   updateExperiment, 
   deleteExperiment,
-  experimentsSocket 
+  experimentsSocket,
+  formatExperimentTimestamp,
+  formatWorldLineChange
 } from '@/api/futureGadgetApi';
 import appInsights from '@/log/appInsights';
 import Loading from '@/components/Loading';
@@ -113,7 +115,7 @@ const Experiments = () => {
     }
   };
 
-  // Open create form
+  // Update the openCreateForm function to not set a timestamp initially
   const openCreateForm = () => {
     setCurrentExperiment({
       name: '',
@@ -121,7 +123,9 @@ const Experiments = () => {
       status: 'planned',
       creator_id: instance.getActiveAccount()?.username || '',
       collaborators: [],
-      results: ''
+      results: '',
+      world_line_change: 0.0, // Default value for new experiments
+      timestamp: '' // Explicitly set to empty string
     });
     setFormMode('create');
     setShowForm(true);
@@ -193,7 +197,6 @@ const Experiments = () => {
     <div data-testid="experiments-page">
       <h1 data-testid="experiments-heading">Future Gadget Lab Experiments</h1>
       
-      {/* Loading overlay already provides data-testid="loading-overlay" */}
       <Loading visible={loading} message="Processing experiment data..." />
       
       <div className="mb-3" data-testid="connection-status">
@@ -245,6 +248,8 @@ const Experiments = () => {
                   <th>Name</th>
                   <th>Status</th>
                   <th>Creator</th>
+                  <th>World Line Change</th>
+                  <th>Timestamp</th>
                   <th>Description</th>
                   <th>Actions</th>
                 </tr>
@@ -259,6 +264,12 @@ const Experiments = () => {
                       </Badge>
                     </td>
                     <td>{exp.creator_id}</td>
+                    <td data-testid="experiment-worldline">
+                      {formatWorldLineChange(exp.world_line_change)}
+                    </td>
+                    <td data-testid="experiment-timestamp">
+                      {formatExperimentTimestamp(exp)}
+                    </td>
                     <td>{exp.description}</td>
                     <td className="d-flex justify-content-around" data-testid="experiment-actions">
                       <Button
@@ -337,6 +348,7 @@ const Experiments = () => {
 const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
   const [formData, setFormData] = useState(experiment || {});
   const [validated, setValidated] = useState(false);
+  const [timestampError, setTimestampError] = useState('');
   
   useEffect(() => {
     if (experiment) {
@@ -346,7 +358,32 @@ const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
   
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Special handling for timestamp to validate ISO format
+    if (name === 'timestamp') {
+      setTimestampError('');
+      if (value && !isValidISODate(value)) {
+        setTimestampError('Please enter a valid ISO date (e.g., YYYY-MM-DDTHH:MM:SS.sssZ)');
+      }
+    }
+    
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+  
+  // Validate if a string is a valid ISO date
+  const isValidISODate = (dateString) => {
+    if (!dateString) return true; // Empty is valid (will be auto-generated)
+    
+    // Basic ISO format regex: YYYY-MM-DDTHH:MM:SS.sssZ
+    const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$/;
+    
+    if (!isoDatePattern.test(dateString)) {
+      return false;
+    }
+    
+    // Additional validation: Check if it's a valid date by trying to parse it
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
   };
   
   const handleCollaboratorsChange = (e) => {
@@ -357,12 +394,32 @@ const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     const form = e.currentTarget;
+    
+    // Custom validation for timestamp
+    if (formData.timestamp && !isValidISODate(formData.timestamp)) {
+      setTimestampError('Please enter a valid ISO date format');
+      e.stopPropagation();
+      return;
+    }
+    
     if (form.checkValidity() === false) {
       e.stopPropagation();
       setValidated(true);
       return;
     }
+    
     onSubmit(formData);
+  };
+  
+  // Helper function to get current time in ISO format
+  const getCurrentISOTime = () => {
+    return new Date().toISOString();
+  };
+  
+  // Add a function to set current timestamp
+  const setCurrentTimestamp = () => {
+    setFormData(prev => ({ ...prev, timestamp: getCurrentISOTime() }));
+    setTimestampError('');
   };
   
   return (
@@ -432,6 +489,63 @@ const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
               required
               placeholder="Enter creator ID"
             />
+          </Form.Group>
+        </Col>
+      </Row>
+      
+      <Row>
+        <Col md={6}>
+          <Form.Group className="mb-3" data-testid="field-experiment-world-line-change">
+            <Form.Label htmlFor="experiment-world-line-change">World Line Change</Form.Label>
+            <Form.Control
+              id="experiment-world-line-change"
+              type="number"
+              step="0.000001"
+              name="world_line_change"
+              value={formData.world_line_change || 0}
+              onChange={handleChange}
+              placeholder="Enter world line change value (e.g., 0.337192)"
+            />
+            <Form.Text className="text-muted">
+              Enter the divergence value caused by this experiment (e.g., 0.337192)
+            </Form.Text>
+          </Form.Group>
+        </Col>
+        
+        <Col md={6}>
+          <Form.Group className="mb-3" data-testid="field-experiment-timestamp">
+            <Form.Label htmlFor="experiment-timestamp">Timestamp</Form.Label>
+            <div className="input-group">
+              <Form.Control
+                id="experiment-timestamp"
+                type="text"
+                name="timestamp"
+                value={formData.timestamp || ''}
+                onChange={handleChange}
+                disabled={mode === 'edit'} // Only allow setting timestamp on creation
+                placeholder="Auto-generated on creation"
+                isInvalid={!!timestampError}
+                pattern="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?"
+                title="ISO date format: YYYY-MM-DDTHH:MM:SS.sssZ"
+              />
+              {mode === 'create' && (
+                <Button 
+                  variant="outline-secondary" 
+                  onClick={setCurrentTimestamp}
+                  title="Set current time"
+                >
+                  Now
+                </Button>
+              )}
+              <Form.Control.Feedback type="invalid">
+                {timestampError}
+              </Form.Control.Feedback>
+            </div>
+            <Form.Text className="text-muted">
+              {mode === 'edit' 
+                ? 'Timestamp cannot be modified after creation' 
+                : 'Format: YYYY-MM-DDTHH:MM:SS.sssZ (will be auto-generated if left empty)'}
+            </Form.Text>
           </Form.Group>
         </Col>
       </Row>

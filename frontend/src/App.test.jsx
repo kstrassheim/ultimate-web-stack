@@ -13,12 +13,10 @@ jest.mock('@/components/ProtectedRoute', () => ({ children, requiredRoles }) => 
 ));
 jest.mock('@/pages/Home', () => () => <div data-testid="mocked-home-page">Home Page</div>);
 jest.mock('@/pages/Chat', () => () => <div data-testid="mocked-chat-page">Chat Page</div>);
-jest.mock('@/pages/Admin', () => () => <div data-testid="mocked-admin-page">Admin Page</div>);
 jest.mock('@/pages/404', () => () => <div data-testid="mocked-404-page">404 Page</div>);
 jest.mock('@/pages/AccessDenied', () => () => <div data-testid="mocked-access-denied-page">Access Denied Page</div>);
 // Mock the new pages
-jest.mock('@/pages/futureGadget/Experiments', () => () => <div data-testid="mocked-experiments-page">Experiments Page</div>);
-jest.mock('@/pages/futureGadget/DMails', () => () => <div data-testid="mocked-dmails-page">DMails Page</div>);
+jest.mock('@/pages/Experiments', () => () => <div data-testid="mocked-experiments-page">Experiments Page</div>);
 
 describe('App Component', () => {
   // Set document.title for testing
@@ -47,30 +45,12 @@ describe('App Component', () => {
     expect(screen.getByTestId('page-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('nav-home')).toBeInTheDocument();
     expect(screen.getByTestId('nav-chat')).toBeInTheDocument(); // Test chat link
-    
+    expect(screen.getByTestId('nav-experiments')).toBeInTheDocument(); // Test chat link
     // Check dropdown exists
-    expect(screen.getByTestId('nav-future-gadget')).toBeInTheDocument();
     
     // Check auth navigation components
     expect(screen.getByTestId('auth-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('mocked-entra-profile')).toBeInTheDocument();
-  });
-
-  test('checks dropdown items are in the DOM', () => {
-    render(
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <App />
-      </BrowserRouter>
-    );
-    
-    // First, click the dropdown toggle to open the menu
-    const dropdownToggle = screen.getByText('Future Gadget Lab');
-    fireEvent.click(dropdownToggle);
-    
-    // Now the dropdown items should be visible in the DOM
-    expect(screen.getByTestId('nav-admin')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-experiments')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-dmails')).toBeInTheDocument();
   });
 
   test('renders home route with correct protection', () => {
@@ -105,10 +85,10 @@ describe('App Component', () => {
     expect(screen.getByTestId('mocked-chat-page')).toBeInTheDocument();
   });
 
-  test('renders admin route with Admin role protection', () => {
+  test('renders experiments route with Admin role protection', () => {
     render(
       <MemoryRouter 
-        initialEntries={['/admin']}
+        initialEntries={['/experiments']}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <App />
@@ -118,7 +98,7 @@ describe('App Component', () => {
     const protectedRoute = screen.getByTestId('mocked-protected-route');
     expect(protectedRoute).toBeInTheDocument();
     expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
-    expect(screen.getByTestId('mocked-admin-page')).toBeInTheDocument();
+    expect(screen.getByTestId('mocked-experiments-page')).toBeInTheDocument();
   });
   
   test('renders experiments route with Admin role protection', () => {
@@ -137,21 +117,6 @@ describe('App Component', () => {
     expect(screen.getByTestId('mocked-experiments-page')).toBeInTheDocument();
   });
   
-  test('renders dmails route with Admin role protection', () => {
-    render(
-      <MemoryRouter 
-        initialEntries={['/dmails']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <App />
-      </MemoryRouter>
-    );
-    
-    const protectedRoute = screen.getByTestId('mocked-protected-route');
-    expect(protectedRoute).toBeInTheDocument();
-    expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
-    expect(screen.getByTestId('mocked-dmails-page')).toBeInTheDocument();
-  });
 
   test('renders 404 page for unknown routes', () => {
     render(

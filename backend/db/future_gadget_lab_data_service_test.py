@@ -4,7 +4,7 @@ from db.future_gadget_lab_data_service import (
     FutureGadgetLabDataService, 
     WorldLineStatus, 
     ExperimentStatus,
-    generate_test_data  # Add this import for the new test
+    generate_test_data
 )
 from common.log import logger
 
@@ -37,9 +37,15 @@ def test_initialization(db_service):
     """Test that the database is initialized with sample data"""
     # Check if tables were created and populated
     assert len(db_service.experiments_table) >= 0
-    assert len(db_service.d_mails_table) >= 0
     assert len(db_service.divergence_readings_table) >= 0
-    assert len(db_service.lab_members_table) >= 0
+    
+    # Verify tables exist
+    assert hasattr(db_service, 'experiments_table')
+    assert hasattr(db_service, 'divergence_readings_table')
+    
+    # Verify removed tables don't exist
+    assert not hasattr(db_service, 'd_mails_table')
+    assert not hasattr(db_service, 'lab_members_table')
 
 # Test Experiment CRUD
 def test_experiment_crud(db_service):
@@ -47,19 +53,23 @@ def test_experiment_crud(db_service):
     # Get initial count
     initial_count = len(db_service.get_all_experiments())
     
-    # Create a new experiment
+    # Create a new experiment with world_line_change and timestamp
     new_experiment = {
         'name': 'Time Machine Prototype',
         'description': 'Early prototype of a time machine',
         'status': ExperimentStatus.IN_PROGRESS.value,
         'creator_id': '001',
         'collaborators': ['003', '004'],
-        'results': 'Ongoing testing phase'
+        'results': 'Ongoing testing phase',
+        'world_line_change': 0.156732,
+        'timestamp': datetime.datetime.now().isoformat()
     }
     
     created_exp = db_service.create_experiment(new_experiment)
     assert created_exp['id'] is not None
     assert created_exp['name'] == 'Time Machine Prototype'
+    assert created_exp['world_line_change'] == 0.156732
+    assert 'timestamp' in created_exp
     
     # Verify the count increased
     assert len(db_service.get_all_experiments()) == initial_count + 1
@@ -68,61 +78,23 @@ def test_experiment_crud(db_service):
     retrieved_exp = db_service.get_experiment_by_id(created_exp['id'])
     assert retrieved_exp is not None
     assert retrieved_exp['name'] == created_exp['name']
+    assert retrieved_exp['world_line_change'] == created_exp['world_line_change']
     
-    # Update experiment
+    # Update experiment with a new world_line_change
     update_data = {
         'status': ExperimentStatus.COMPLETED.value,
-        'results': 'Successfully created a working prototype'
+        'results': 'Successfully created a working prototype',
+        'world_line_change': 0.223456
     }
     updated_exp = db_service.update_experiment(created_exp['id'], update_data)
     assert updated_exp['status'] == ExperimentStatus.COMPLETED.value
     assert updated_exp['results'] == 'Successfully created a working prototype'
+    assert updated_exp['world_line_change'] == 0.223456
     
     # Delete experiment
     assert db_service.delete_experiment(created_exp['id']) is True
     assert db_service.get_experiment_by_id(created_exp['id']) is None
     assert len(db_service.get_all_experiments()) == initial_count
-
-# Test D-Mail CRUD
-def test_d_mail_crud(db_service):
-    """Test CRUD operations for D-Mails"""
-    # Get initial count
-    initial_count = len(db_service.get_all_d_mails())
-    
-    # Create a new D-Mail
-    new_d_mail = {
-        'sender_id': '004',
-        'recipient': 'past-self',
-        'content': 'Do not open the microwave door.',
-        'target_timestamp': (datetime.datetime.now() - datetime.timedelta(days=3)).isoformat(),
-        'world_line_before': '0.571024',
-        'world_line_after': '0.523299',
-        'observed_changes': 'Experiment failed, but everyone survived'
-    }
-    
-    created_mail = db_service.create_d_mail(new_d_mail)
-    assert created_mail['id'] is not None
-    assert created_mail['content'] == 'Do not open the microwave door.'
-    
-    # Verify the count increased
-    assert len(db_service.get_all_d_mails()) == initial_count + 1
-    
-    # Get by ID
-    retrieved_mail = db_service.get_d_mail_by_id(created_mail['id'])
-    assert retrieved_mail is not None
-    assert retrieved_mail['content'] == created_mail['content']
-    
-    # Update D-Mail
-    update_data = {
-        'observed_changes': 'Timeline successfully altered, experiment succeeded'
-    }
-    updated_mail = db_service.update_d_mail(created_mail['id'], update_data)
-    assert updated_mail['observed_changes'] == 'Timeline successfully altered, experiment succeeded'
-    
-    # Delete D-Mail
-    assert db_service.delete_d_mail(created_mail['id']) is True
-    assert db_service.get_d_mail_by_id(created_mail['id']) is None
-    assert len(db_service.get_all_d_mails()) == initial_count
 
 # Test Divergence Reading CRUD
 def test_divergence_reading_crud(db_service):
@@ -166,87 +138,75 @@ def test_divergence_reading_crud(db_service):
     assert db_service.get_divergence_reading_by_id(created_reading['id']) is None
     assert len(db_service.get_all_divergence_readings()) == initial_count
 
-# Test Lab Member CRUD
-def test_lab_member_crud(db_service):
-    """Test CRUD operations for Lab Members"""
-    # Get initial count
-    initial_count = len(db_service.get_all_lab_members())
-    
-    # Create a new lab member
-    new_lab_member = {
-        'name': 'Maho Hiyajo',
-        'codename': 'Professor Hiyajosephina',
-        'role': 'AI Researcher'
-    }
-    
-    created_member = db_service.create_lab_member(new_lab_member)
-    assert created_member['id'] is not None
-    assert created_member['name'] == 'Maho Hiyajo'
-    
-    # Verify the count increased
-    assert len(db_service.get_all_lab_members()) == initial_count + 1
-    
-    # Get by ID - now we can use get_lab_member_by_id directly
-    retrieved_member = db_service.get_lab_member_by_id(created_member['id'])
-    assert retrieved_member is not None
-    assert retrieved_member['name'] == created_member['name']
-    
-    # Update lab member - now we can test update functionality
-    update_data = {
-        'codename': 'Hiyajo-san',
-        'role': 'Lead AI Researcher'
-    }
-    updated_member = db_service.update_lab_member(created_member['id'], update_data)
-    assert updated_member['codename'] == 'Hiyajo-san'
-    assert updated_member['role'] == 'Lead AI Researcher'
-    assert updated_member['name'] == 'Maho Hiyajo'  # Original name should be preserved
-    assert 'updated_at' in updated_member  # Should have added an updated_at timestamp
-    
-    # Delete lab member - now we can test delete functionality
-    assert db_service.delete_lab_member(created_member['id']) is True
-    assert db_service.get_lab_member_by_id(created_member['id']) is None
-    assert len(db_service.get_all_lab_members()) == initial_count
-
-# Test the new data generation function
+# Test the updated data generation function
 def test_generate_test_data(db_service):
     """Test that generate_test_data correctly populates the database with sample data"""
     # Make sure we start with empty tables
     db_service.experiments_table.truncate()
-    db_service.d_mails_table.truncate() 
     db_service.divergence_readings_table.truncate()
-    db_service.lab_members_table.truncate()
     
     # Verify tables are empty
     assert len(db_service.get_all_experiments()) == 0
-    assert len(db_service.get_all_d_mails()) == 0
     assert len(db_service.get_all_divergence_readings()) == 0
-    assert len(db_service.get_all_lab_members()) == 0
     
     # Generate test data
     test_data = generate_test_data(db_service)
     
     # Verify data was created in all tables
     assert len(test_data['experiments']) > 0
-    assert len(test_data['d_mails']) > 0
     assert len(test_data['divergence_readings']) > 0
-    assert len(test_data['lab_members']) > 0
     
     # Verify the database was populated
     assert len(db_service.get_all_experiments()) == len(test_data['experiments'])
-    assert len(db_service.get_all_d_mails()) == len(test_data['d_mails'])
     assert len(db_service.get_all_divergence_readings()) == len(test_data['divergence_readings'])
-    assert len(db_service.get_all_lab_members()) == len(test_data['lab_members'])
     
     # Check some specific data to ensure it was correctly inserted
-    lab_members = db_service.get_all_lab_members()
-    assert any(member['name'] == 'Rintaro Okabe' for member in lab_members)
-    assert any(member['codename'] == 'Christina' for member in lab_members)
-    
     experiments = db_service.get_all_experiments()
     assert any(exp['name'] == 'Phone Microwave (Name subject to change)' for exp in experiments)
     
-    d_mails = db_service.get_all_d_mails()
-    assert any('Lottery numbers' in mail['content'] for mail in d_mails)
+    # Check that world_line_change was added to experiments
+    assert all('world_line_change' in exp for exp in experiments)
+    
+    # Check that timestamp was added to experiments
+    assert all('timestamp' in exp for exp in experiments)
+    
+    # Check that experiments are ordered by timestamp (most recent first)
+    timestamps = [exp['timestamp'] for exp in experiments]
+    sorted_timestamps = sorted(timestamps, reverse=True)
+    assert timestamps[0] == sorted_timestamps[0]
+    
+    # Verify 5-minute intervals between experiments
+    for i in range(1, len(experiments)):
+        prev_time = datetime.datetime.fromisoformat(timestamps[i-1])
+        curr_time = datetime.datetime.fromisoformat(timestamps[i])
+        time_diff = prev_time - curr_time
+        # Should be approximately 5 minutes (allowing for millisecond differences)
+        assert abs(time_diff.total_seconds() - 300) < 1  # Within 1 second of 5 minutes
     
     readings = db_service.get_all_divergence_readings()
     assert any(reading['reading'] == 1.048596 for reading in readings)
+
+# Test string-to-float conversion for world_line_change
+def test_world_line_change_conversion(db_service):
+    """Test that string values for world_line_change are converted to float"""
+    # Create experiment with string value for world_line_change
+    experiment = {
+        'name': 'World Line Convergence Test',
+        'description': 'Testing world line convergence points',
+        'status': ExperimentStatus.IN_PROGRESS.value,
+        'creator_id': 'Rintaro Okabe',
+        'world_line_change': '0.337192'  # String value
+    }
+    
+    created_exp = db_service.create_experiment(experiment)
+    assert isinstance(created_exp['world_line_change'], float)
+    assert created_exp['world_line_change'] == 0.337192
+    
+    # Test update with string value
+    update_data = {
+        'world_line_change': '1.048596'  # String value
+    }
+    
+    updated_exp = db_service.update_experiment(created_exp['id'], update_data)
+    assert isinstance(updated_exp['world_line_change'], float)
+    assert updated_exp['world_line_change'] == 1.048596
