@@ -8,6 +8,7 @@ from db.future_gadget_lab_data_service import (
     generate_test_data
 )
 from common.log import logger
+from unittest.mock import patch, MagicMock
 
 class SafeLogHandler:
     """A minimal handler implementation with all the necessary attributes."""
@@ -419,3 +420,92 @@ def test_calculate_worldline_status():
     # Expected: 1.0 (base) - 0.2 - 0.3 = 0.5
     assert negative_result["current_worldline"] == 0.5
     assert negative_result["total_divergence"] == -0.5
+
+def test_worldline_history_with_experiment_details():
+    """Test that worldline history includes experiment details in each point"""
+    # Import the necessary functions
+    from api.future_gadget_api import get_worldline_history
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    
+    # Create test app
+    app = FastAPI()
+    
+    # Mock API dependencies - get_worldline_history uses these functions
+    with patch("api.future_gadget_api.fgl_service") as mock_service:
+        # Setup mock experiments with details we expect to see
+        experiments = [
+            {
+                "id": "EXP-001", 
+                "name": "Test Experiment 1",
+                "description": "First test experiment",
+                "status": "completed",
+                "world_line_change": 0.337192,
+                "creator_id": "Okabe Rintaro",
+                "collaborators": ["Makise Kurisu"],
+                "results": "Success",
+                "timestamp": "2025-04-07T12:00:00.000Z"
+            },
+            {
+                "id": "EXP-002", 
+                "name": "Test Experiment 2",
+                "description": "Second test experiment",
+                "status": "in_progress",
+                "world_line_change": -0.048256,
+                "creator_id": "Makise Kurisu",
+                "collaborators": ["Hashida Itaru"],
+                "results": None,
+                "timestamp": "2025-04-07T12:30:00.000Z"
+            }
+        ]
+        
+        # Setup mock readings
+        readings = [{"id": "DR-001", "reading": 1.048596, "status": "steins_gate"}]
+        
+        # Configure mocks
+        mock_service.get_all_experiments.return_value = experiments
+        mock_service.get_all_divergence_readings.return_value = readings
+        
+        # Create a function to mock calculate_worldline_status
+        def mock_calculate_status(exps, readings=None):
+            # Return different statuses based on the number of experiments
+            exp_count = len(exps)
+            base = {"current_worldline": 1.0 + exp_count * 0.1, "base_worldline": 1.0}
+            if exp_count == 0:
+                return base
+            base["experiment_count"] = exp_count
+            return base
+        
+        # Apply the mock
+        with patch("api.future_gadget_api.calculate_worldline_status", side_effect=mock_calculate_status):
+            # Create a mock token object directly instead of using an async function
+            mock_token = type('obj', (object,), {'roles': ["Admin"]})
+            
+            # Patch the Security dependency in the function
+            with patch("api.future_gadget_api.azure_scheme") as mock_scheme:
+                # Configure the mock to return our token
+                mock_scheme.return_value = mock_token
+                
+                # Call the function directly with our mock token
+                import asyncio
+                loop = asyncio.get_event_loop()
+                result = loop.run_until_complete(get_worldline_history(token=mock_token))
+                
+                # Now validate the results
+                assert len(result) == 3  # Base state + 2 experiments
+                
+                # Check base state has no experiment
+                assert result[0]["added_experiment"] is None
+                
+                # Check experiment 1 details are included
+                assert result[1]["added_experiment"]["id"] == "EXP-001"
+                assert result[1]["added_experiment"]["name"] == "Test Experiment 1"
+                assert result[1]["added_experiment"]["description"] == "First test experiment"
+                assert result[1]["added_experiment"]["creator_id"] == "Okabe Rintaro"
+                assert "Makise Kurisu" in result[1]["added_experiment"]["collaborators"]
+                
+                # Check experiment 2 details are included
+                assert result[2]["added_experiment"]["id"] == "EXP-002"
+                assert result[2]["added_experiment"]["name"] == "Test Experiment 2"
+                assert result[2]["added_experiment"]["status"] == "in_progress"
+                assert result[2]["added_experiment"]["world_line_change"] == -0.048256
