@@ -250,30 +250,36 @@ const Experiments = () => {
                 <tr>
                   <th>Name</th>
                   <th>Status</th>
-                  <th>Creator</th>
-                  <th>World Line Change</th>
-                  <th>Timestamp</th>
-                  <th>Description</th>
-                  <th>Actions</th>
+                  <th className="d-none d-lg-table-cell">Creator</th>
+                  <th className="d-none d-lg-table-cell">World Line Change</th>
+                  <th className="d-none d-sm-table-cell">Timestamp</th>
+                  <th className="d-none d-md-table-cell">Description</th>
+                  <th style={{ width: '120px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {experiments.map(exp => (
                   <tr key={exp.id} data-testid={`experiment-row-${exp.id}`}>
-                    <td>{exp.name}</td>
+                    <td className="text-break">{exp.name}</td>
+                    
                     <td>
                       <Badge bg={getStatusBadgeColor(exp.status)} data-testid="experiment-status">
                         {exp.status}
                       </Badge>
                     </td>
-                    <td>{exp.creator_id}</td>
-                    <td data-testid="experiment-worldline">
+                    
+                    <td className="d-none d-lg-table-cell">{exp.creator_id}</td>
+                    
+                    <td className="d-none d-lg-table-cell" data-testid="experiment-worldline">
                       {formatWorldLineChange(exp.world_line_change)}
                     </td>
-                    <td data-testid="experiment-timestamp">
+                    
+                    <td className="d-none d-sm-table-cell" data-testid="experiment-timestamp">
                       {formatExperimentTimestamp(exp)}
                     </td>
-                    <td>{exp.description}</td>
+                    
+                    <td className="d-none d-md-table-cell text-break">{exp.description}</td>
+                    
                     <td className="p-0" data-testid="experiment-actions">
                       <div className="d-flex flex-column h-100">
                         <Button
