@@ -179,6 +179,12 @@ const WorldlineMonitor = () => {
       if (worldlineData.current_worldline) {
         setWorldlineStatus(worldlineData);
         
+        // When worldline status changes, refresh the history data for the chart
+        fetchWorldlineHistory();
+        
+        // Force chart to re-render with new data
+        setChartKey(prevKey => prevKey + 1);
+        
         if (worldlineData.includes_preview) {
           notyfService.info(`Previewing worldline change from: ${worldlineData.preview_experiment?.name}`);
         } else {
@@ -222,25 +228,57 @@ const WorldlineMonitor = () => {
       parseFloat(point.current_worldline.toFixed(6))
     );
     
+    // Helper function to get actual hex color from Bootstrap color name
+    const getBootstrapColor = (status) => {
+      const colorMap = {
+        'alpha': '#dc3545', // danger
+        'beta': '#ffc107', // warning
+        'steins_gate': '#198754', // success
+        'delta': '#0dcaf0', // info
+        'gamma': '#0d6efd', // primary
+        'omega': '#212529' // dark
+      };
+      return colorMap[status] || '#6c757d'; // secondary as default
+    };
+    
     // Prepare divergence annotations - horizontal lines for known readings
     const annotations = {
       yaxis: readings.map(reading => {
         const value = parseFloat(formatDivergenceReading(reading));
+        // Get the proper color based on status
+        const color = getBootstrapColor(reading.status);
+        
         return {
           y: value,
-          borderColor: getStatusColor(reading.status),
+          borderColor: color,
+          strokeDashArray: 5,     // Dotted line style
+          borderWidth: 2,         // Make lines more visible
+          opacity: 0.9,           // Increase opacity for visibility
+          width: '100%',          // Ensure line spans full chart width
           label: {
-            borderColor: getStatusColor(reading.status),
+            borderColor: color,
             style: {
               color: '#fff',
-              background: getStatusColor(reading.status),
+              background: `${color}80`, // 50% transparent using hex alpha
+              padding: {
+                left: 5,
+                right: 5,
+                top: 0,
+                bottom: 0
+              },
+              fontSize: '11px',
+              fontWeight: 'bold',
+              opacity: 0.7       // Make label more visible but still transparent
             },
-            text: `${reading.status} (${value})`,
+            text: reading.status,  // Just show the status name
+            position: 'left',
+            offsetX: 10,
+            offsetY: 0
           }
         };
       })
     };
-    
+
     // Chart options
     const options = {
       chart: {
@@ -317,9 +355,20 @@ const WorldlineMonitor = () => {
       grid: {
         borderColor: "#e7e7e7",
         row: {
-          colors: ['#f3f3f3', 'transparent'],
-          opacity: 0.5
+          colors: ['#f9f9f9', 'transparent'],
+          opacity: 0.2
         },
+        xaxis: {
+          lines: {
+            show: false // Hide vertical grid lines
+          }
+        },
+        yaxis: {
+          lines: {
+            show: true,
+            opacity: 0.1
+          }
+        }
       }
     };
 
