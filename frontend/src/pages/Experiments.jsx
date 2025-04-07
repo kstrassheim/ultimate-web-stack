@@ -29,7 +29,7 @@ const Experiments = () => {
   const initFetchCompleted = useRef(false);
 
   // Load experiments data
-  const fetchExperiments = async () => {
+  const fetchExperiments = async (showMessage = false) => {
     setLoading(true);
     setError(null);
     
@@ -37,11 +37,14 @@ const Experiments = () => {
       appInsights.trackEvent({ name: 'Experiments - Fetching all experiments' });
       const data = await getAllExperiments(instance);
       setExperiments(data);
-      notyfService.success('Experiments loaded successfully');
+      
+      // Only show success message when explicitly requested (e.g., when Reload button is clicked)
+      if (showMessage) {
+        notyfService.success('Experiments loaded successfully');
+      }
     } catch (err) {
       setError(`Failed to load experiments: ${err.message}`);
       notyfService.error(`Failed to load experiments: ${err.message}`);
-      // Add this line to track the exception in Application Insights
       appInsights.trackException({ error: err, severityLevel: 'Error' });
     } finally {
       setLoading(false);
@@ -66,7 +69,7 @@ const Experiments = () => {
       await createExperiment(instance, experimentData);
       notyfService.success('Experiment created successfully');
       setShowForm(false);
-      await fetchExperiments();
+      await fetchExperiments(false); // Don't show "loaded" message after create
     } catch (err) {
       notyfService.error(`Failed to create experiment: ${err.message}`);
     } finally {
@@ -81,7 +84,7 @@ const Experiments = () => {
       await updateExperiment(instance, id, experimentData);
       notyfService.success('Experiment updated successfully');
       setShowForm(false);
-      await fetchExperiments();
+      await fetchExperiments(false); // Don't show "loaded" message after update
     } catch (err) {
       notyfService.error(`Failed to update experiment: ${err.message}`);
     } finally {
@@ -98,7 +101,7 @@ const Experiments = () => {
       notyfService.success('Experiment deleted successfully');
       setShowDeleteModal(false);
       setExperimentToDelete(null);
-      await fetchExperiments();
+      await fetchExperiments(false); // Don't show "loaded" message after delete
     } catch (err) {
       notyfService.error(`Failed to delete experiment: ${err.message}`);
     } finally {
@@ -183,7 +186,7 @@ const Experiments = () => {
       }
     });
     if (!initFetchCompleted.current) {
-      fetchExperiments();
+      fetchExperiments(false); // Don't show "loaded" message on initial load
       initFetchCompleted.current = true;
     }
     return () => {
@@ -232,7 +235,7 @@ const Experiments = () => {
             <Button
               variant="outline-primary"
               size="sm"
-              onClick={fetchExperiments}
+              onClick={() => fetchExperiments(true)} // Show message when explicitly reloading
               disabled={loading}
               data-testid="reload-experiments-btn"
             >
