@@ -38,7 +38,8 @@ jest.mock('@/api/futureGadgetApi', () => ({
 jest.mock('@/log/notyfService', () => ({
   success: jest.fn(),
   error: jest.fn(),
-  info: jest.fn()
+  info: jest.fn(),
+  warning: jest.fn() // Add this line
 }));
 
 jest.mock('@/log/appInsights', () => ({
@@ -46,29 +47,29 @@ jest.mock('@/log/appInsights', () => ({
   trackException: jest.fn()
 }));
 
-describe('Experiments Component', () => {
-  // Setup mock data
-  const mockExperiments = [
-    {
-      id: 'exp-1',
-      name: 'Phone Microwave',
-      description: 'Send messages to the past',
-      status: 'completed',
-      creator_id: 'okabe',
-      world_line_change: 0.337192,
-      timestamp: '2025-04-07T14:00:00Z'
-    },
-    {
-      id: 'exp-2',
-      name: 'Divergence Meter',
-      description: 'Measures world line divergence',
-      status: 'in_progress',
-      creator_id: 'kurisu',
-      world_line_change: 0.571024,
-      timestamp: '2025-04-06T12:30:00Z'
-    }
-  ];
+// Global mock data
+const mockExperiments = [
+  {
+    id: 'exp-1',
+    name: 'Phone Microwave',
+    description: 'Send messages to the past',
+    status: 'completed',
+    creator_id: 'okabe',
+    world_line_change: 0.337192,
+    timestamp: '2025-04-07T14:00:00Z'
+  },
+  {
+    id: 'exp-2',
+    name: 'Divergence Meter',
+    description: 'Measures world line divergence',
+    status: 'in_progress',
+    creator_id: 'kurisu',
+    world_line_change: 0.571024,
+    timestamp: '2025-04-06T12:30:00Z'
+  }
+];
 
+describe('Experiments Component', () => {
   // Common setup before each test
   beforeEach(() => {
     // Reset all mocks
@@ -303,27 +304,30 @@ describe('Experiments Component', () => {
       expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
     });
     
-    // Simulate WebSocket message with updated experiment
+    // Simulate WebSocket message with updated experiment - match the exact format used in component
     act(() => {
       messageHandler({
-        rawData: {
-          type: 'update',
-          data: {
-            id: 'exp-1',
-            name: 'Phone Microwave (Modified)',
-            description: 'Send messages to the past - updated',
-            status: 'completed',
-            creator_id: 'okabe',
-            world_line_change: 0.422761,
-            timestamp: '2025-04-07T14:00:00Z'
-          }
-        }
+        type: 'update', // Direct format, no rawData wrapper
+        id: 'exp-1',
+        name: 'Phone Microwave (Modified)',
+        description: 'Send messages to the past - updated',
+        status: 'completed',
+        creator_id: 'okabe',
+        world_line_change: 0.422761,
+        timestamp: '2025-04-07T14:00:00Z',
+        actor: 'different.user@futuregadgetlab.org' // Different user to trigger notification
       });
     });
     
     // Verify UI updates
-    expect(screen.getByText('Phone Microwave (Modified)')).toBeInTheDocument();
-    expect(notyfService.info).toHaveBeenCalledWith('An experiment was updated by another user');
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave (Modified)')).toBeInTheDocument();
+    });
+    
+    // Update the expected notification message to match the actual format
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'Experiment "Phone Microwave (Modified)" updated by different user'
+    );
   });
 
   it('displays error message when API fails', async () => {
@@ -355,27 +359,30 @@ describe('Experiments Component', () => {
       expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
     });
     
-    // Simulate WebSocket message with new experiment
+    // Simulate WebSocket message with new experiment - using direct format
     act(() => {
       messageHandler({
-        rawData: {
-          type: 'create',
-          data: {
-            id: 'exp-3',
-            name: 'Time Leap Machine',
-            description: 'Send memories to the past',
-            status: 'planned',
-            creator_id: 'kurisu',
-            world_line_change: 0.523299,
-            timestamp: '2025-04-08T09:30:00Z'
-          }
-        }
+        type: 'create', // Direct format without rawData wrapper
+        id: 'exp-3',
+        name: 'Time Leap Machine',
+        description: 'Send memories to the past',
+        status: 'planned',
+        creator_id: 'kurisu',
+        world_line_change: 0.523299,
+        timestamp: '2025-04-08T09:30:00Z',
+        actor: 'different.user@futuregadgetlab.org' // Add actor to trigger notification
       });
     });
     
-    // Verify UI updates
-    expect(screen.getByText('Time Leap Machine')).toBeInTheDocument();
-    expect(notyfService.info).toHaveBeenCalledWith('New experiment created by another user');
+    // Use waitFor to handle async state updates
+    await waitFor(() => {
+      expect(screen.getByText('Time Leap Machine')).toBeInTheDocument();
+    });
+    
+    // Update expected notification message to match the current format
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'New experiment "Time Leap Machine" created by different user'
+    );
   });
 
   it('opens delete confirmation and deletes an experiment', async () => {
@@ -561,5 +568,308 @@ describe('Experiments Component', () => {
     
     // Verify Now button is not shown in edit mode
     expect(screen.queryByTitle('Set current time')).not.toBeInTheDocument();
+  });
+});
+
+// Add these tests to your existing test file
+
+describe('WebSocket Experiment Notifications', () => {
+  
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Mock useMsal for Kurisu (to test cross-user notifications)
+    useMsal.mockImplementation(() => ({
+      instance: {
+        getActiveAccount: () => ({ 
+          username: 'makise.kurisu@futuregadgetlab.org',
+        }),
+        setActiveAccount: jest.fn(),
+      }
+    }));
+    
+    getAllExperiments.mockResolvedValue(mockExperiments);
+    
+    // Set up WebSocket message handler with direct capture
+    experimentsSocket.subscribe.mockImplementation(handler => {
+      window.testMessageHandler = handler; // Store handler globally for tests
+      return jest.fn();
+    });
+  });
+  
+  it('shows notifications when another user creates an experiment', async () => {
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Simulate receiving a WebSocket message for experiment created by Okabe
+    act(() => {
+      window.testMessageHandler({
+        type: 'create',
+        id: 'exp-new-1',
+        name: 'Time Leap Machine',
+        description: 'Send memories to the past',
+        status: 'in_progress',
+        creator_id: 'Rintaro Okabe',
+        world_line_change: 0.523299,
+        timestamp: '2025-04-08T09:30:00Z',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify UI updates with the new experiment
+    expect(screen.getByText('Time Leap Machine')).toBeInTheDocument();
+    
+    // Verify notification shows with formatted username
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'New experiment "Time Leap Machine" created by okabe rintaro'
+    );
+  });
+  
+  it('shows notifications when another user updates an experiment', async () => {
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Simulate receiving a WebSocket message for experiment updated by Okabe
+    act(() => {
+      window.testMessageHandler({
+        type: 'update',
+        id: 'exp-1',
+        name: 'Phone Microwave Mark II',
+        description: 'Updated version with better controls',
+        status: 'completed',
+        creator_id: 'Rintaro Okabe',
+        world_line_change: 0.409431,
+        timestamp: '2025-04-07T14:00:00Z',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify UI updates with the updated experiment name
+    expect(screen.getByText('Phone Microwave Mark II')).toBeInTheDocument();
+    
+    // Verify notification shows with formatted username
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'Experiment "Phone Microwave Mark II" updated by okabe rintaro'
+    );
+  });
+  
+  it('shows special warning when experiment being edited is updated by another user', async () => {
+    // Mock the getExperimentById to simulate opening edit form
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockResolvedValue(mockExperiments[0]);
+    
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Open the edit form for the first experiment
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-title')).toHaveTextContent('Edit Experiment');
+    });
+    
+    // Simulate receiving a WebSocket message for the same experiment being updated by Okabe
+    act(() => {
+      window.testMessageHandler({
+        type: 'update',
+        id: 'exp-1',
+        name: 'Phone Microwave Mark II',
+        description: 'Updated version with better controls',
+        status: 'completed',
+        creator_id: 'Rintaro Okabe',
+        world_line_change: 0.409431,
+        timestamp: '2025-04-07T14:00:00Z',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify the warning notification was shown
+    expect(notyfService.warning).toHaveBeenCalledWith(
+      'This experiment has been updated by okabe rintaro. Your form has been refreshed with the latest data.'
+    );
+    
+    // Verify the form was updated with new data
+    const nameInput = screen.getByLabelText(/experiment name/i);
+    expect(nameInput.value).toBe('Phone Microwave Mark II');
+  });
+  
+  it('shows notifications when another user deletes an experiment', async () => {
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getAllByText('Phone Microwave')[0]).toBeInTheDocument();
+    });
+    
+    // Simulate receiving a WebSocket message for experiment deleted by Okabe
+    act(() => {
+      window.testMessageHandler({
+        type: 'delete',
+        id: 'exp-1',
+        name: 'Phone Microwave',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify the experiment is removed from the UI
+    expect(screen.queryByText('Phone Microwave')).not.toBeInTheDocument();
+    
+    // Verify notification shows
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'Experiment "Phone Microwave" deleted by okabe rintaro'
+    );
+  });
+
+  it('shows warning when experiment being edited is deleted by another user', async () => {
+    // Mock the getExperimentById to simulate opening edit form
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockResolvedValue({
+      ...mockExperiments[0],
+      id: 'exp-1' // Ensure ID matches exactly what will be in delete message
+    });
+    
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Open the edit form for the first experiment
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-title')).toHaveTextContent('Edit Experiment');
+    });
+    
+    // Simulate receiving a WebSocket message for the same experiment being deleted by Okabe
+    act(() => {
+      window.testMessageHandler({
+        type: 'delete',
+        id: 'exp-1',
+        name: 'Phone Microwave',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Wait for the form to close - the key fix is using waitFor
+    await waitFor(() => {
+      expect(screen.queryByTestId('experiment-form-title')).not.toBeInTheDocument();
+    });
+    
+    // Verify warning notification
+    expect(notyfService.warning).toHaveBeenCalledWith(
+      'The experiment you were editing has been deleted by okabe rintaro'
+    );
+  });
+  
+  it('does not show notifications for own actions', async () => {
+    // Mock useMsal to simulate being Okabe
+    useMsal.mockImplementation(() => ({
+      instance: {
+        getActiveAccount: () => ({ 
+          username: 'okabe.rintaro@futuregadgetlab.org',
+        }),
+        setActiveAccount: jest.fn(),
+      }
+    }));
+    
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Clear any notification calls from initial load
+    notyfService.info.mockClear();
+    
+    // Simulate receiving a WebSocket message for experiment created by Okabe (current user)
+    act(() => {
+      window.testMessageHandler({
+        type: 'create',
+        id: 'exp-new-1',
+        name: 'Time Leap Machine',
+        description: 'Send memories to the past',
+        status: 'in_progress',
+        creator_id: 'Rintaro Okabe',
+        world_line_change: 0.523299,
+        timestamp: '2025-04-08T09:30:00Z',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify the new experiment is added
+    expect(screen.getByText('Time Leap Machine')).toBeInTheDocument();
+    
+    // But no notification is shown for your own actions
+    expect(notyfService.info).not.toHaveBeenCalled();
+  });
+
+  it('handles both WebSocket message formats (rawData and direct)', async () => {
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Format 1: rawData wrapper (original format)
+    act(() => {
+      window.testMessageHandler({
+        rawData: {
+          type: 'create',
+          id: 'exp-new-1',
+          name: 'Time Leap Machine',
+          description: 'Send memories to the past',
+          actor: 'okabe.rintaro@futuregadgetlab.org'
+        }
+      });
+    });
+    
+    // Verify the experiment is added
+    expect(screen.getByText('Time Leap Machine')).toBeInTheDocument();
+    
+    // Format 2: Direct format from server
+    act(() => {
+      window.testMessageHandler({
+        type: 'create',
+        id: 'exp-new-2',
+        name: 'Divergence Meter V2',
+        description: 'More accurate divergence measurements',
+        actor: 'okabe.rintaro@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify the second experiment is also added
+    expect(screen.getByText('Divergence Meter V2')).toBeInTheDocument();
+  });
+
+  it('formats usernames correctly from email addresses', async () => {
+    render(<Experiments />);
+    
+    await waitFor(() => {
+      expect(screen.getByText('Future Gadget Lab Experiments')).toBeInTheDocument();
+    });
+    
+    // Test with Future Gadget Lab email format
+    act(() => {
+      window.testMessageHandler({
+        type: 'create',
+        id: 'exp-new-1',
+        name: 'D-Mail System',
+        actor: 'hashida.itaru@futuregadgetlab.org'
+      });
+    });
+    
+    // Verify notification formats username correctly
+    expect(notyfService.info).toHaveBeenCalledWith(
+      expect.stringContaining('hashida itaru')
+    );
   });
 });
