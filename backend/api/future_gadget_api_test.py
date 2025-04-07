@@ -749,7 +749,12 @@ class TestWorldlineEndpoints:
         
         # Verify the broadcast was called with correct parameters
         assert len(broadcast_args) == 1
-        assert broadcast_args[0][1] == "worldline_update"  # type
+        
+        # Fix: Check for "message" type instead of "worldline_update"
+        assert broadcast_args[0][1] == "message"  # type
+        
+        # Check that message_type field is correctly set in the data
+        assert broadcast_args[0][0]["message_type"] == "worldline_update"
         
         # Verify result contains preview flag when experiment is provided
         assert "includes_preview" in result

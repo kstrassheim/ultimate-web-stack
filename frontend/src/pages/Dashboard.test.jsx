@@ -2,11 +2,24 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
-import Home from './Dashboard';
+import Dashboard from './Dashboard';
 import { getUserData } from '@/api/api';
 import { getAllGroups } from '@/api/graphApi';
+import { 
+  getWorldlineStatus,
+  getWorldlineHistory,
+  getDivergenceReadings,
+  worldlineSocket
+} from '@/api/futureGadgetApi';
 import appInsights from '@/log/appInsights';
 import notyfService from '@/log/notyfService';
+
+// Mock WorldlineMonitor component to simplify testing
+jest.mock('@/pages/components/WorldlineMonitor', () => {
+  return function DummyWorldlineMonitor() {
+    return <div data-testid="worldline-monitor-mock">WorldlineMonitor Component</div>;
+  };
+});
 
 // Mock the notyfService
 jest.mock('@/log/notyfService', () => ({
@@ -16,27 +29,51 @@ jest.mock('@/log/notyfService', () => ({
   info: jest.fn()
 }));
 
+// Mock the Future Gadget Lab API calls
+jest.mock('@/api/futureGadgetApi', () => ({
+  getWorldlineStatus: jest.fn(),
+  getWorldlineHistory: jest.fn(),
+  getDivergenceReadings: jest.fn(),
+  worldlineSocket: {
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+    subscribe: jest.fn().mockReturnValue(jest.fn()),
+    subscribeToStatus: jest.fn().mockReturnValue(jest.fn())
+  },
+  formatDivergenceReading: jest.fn(reading => String(reading.reading)),
+  formatWorldLineChange: jest.fn(change => String(change))
+}));
+
 // Use the mockMsalInstance that's already defined in your setup
 const { instance: mockMsalInstance } = useMsal();
 
-describe('Home Component', () => {
+describe('Dashboard Component', () => {
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
   });
 
-  const renderHomeWithMocks = () => {
-    return render(<Home />);
+  const renderDashboardWithMocks = () => {
+    return render(<Dashboard />);
   };
 
-  test('renders and loads data successfully', async () => {
+  test('renders and loads data successfully including WorldlineMonitor', async () => {
     // Make sure our mock returns something
     getAllGroups.mockResolvedValue([{ id: '1', displayName: 'Test Group' }]);
     
-    renderHomeWithMocks();
+    renderDashboardWithMocks();
+    
+    // Verify WorldlineMonitor component is present
+    expect(screen.getByTestId('worldline-monitor-mock')).toBeInTheDocument();
+    expect(screen.getByTestId('worldline-container')).toBeInTheDocument();
+    
+    // Verify the separator is present between WorldlineMonitor and other content
+    const separator = screen.getByRole('separator');
+    expect(separator).toBeInTheDocument();
+    expect(separator).toHaveClass('my-5');
     
     // Verify basic structure is present
-    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Home Page/i })).toBeInTheDocument();
     
     // Wait for ALL data to load with a longer timeout
     await waitFor(() => {
@@ -78,7 +115,10 @@ describe('Home Component', () => {
       throw new Error(errorMessage);
     });
     
-    renderHomeWithMocks();
+    renderDashboardWithMocks();
+    
+    // Verify WorldlineMonitor component is still present even with API error
+    expect(screen.getByTestId('worldline-monitor-mock')).toBeInTheDocument();
     
     // Wait for error to appear
     await waitFor(() => {
@@ -99,7 +139,7 @@ describe('Home Component', () => {
       return { message: "Hello from API" };
     });
     
-    renderHomeWithMocks();
+    renderDashboardWithMocks();
     
     // Wait for initial data load
     await waitFor(() => {
@@ -127,5 +167,8 @@ describe('Home Component', () => {
       // Now check the notification was called
       expect(notyfService.success).toHaveBeenCalledWith('Data loaded successfully!');
     }, { timeout: 3000 });
+    
+    // WorldlineMonitor component should stay rendered throughout
+    expect(screen.getByTestId('worldline-monitor-mock')).toBeInTheDocument();
   });
 });

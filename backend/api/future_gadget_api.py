@@ -304,11 +304,13 @@ async def broadcast_worldline_status(experiment: Dict = None, sender: WebSocket 
             "world_line_change": experiment.get("world_line_change", 0.0)
         }
     
-    # Broadcast to all connected clients - FIXED: Removed sender parameter
+    # Add a message type field to the data so clients can distinguish the message type
+    status["message_type"] = "worldline_update"
+    
+    # Broadcast to all connected clients using a valid type ("message" is always valid)
     await worldline_connection_manager.broadcast(
         data=status, 
-        type="worldline_update"
-        # Removed sender parameter which was causing the error
+        type="message"  # Use "message" instead of "worldline_update"
     )
     
     # Return the status (useful when calling this function directly)

@@ -5,6 +5,7 @@ import { getAllGroups } from '@/api/graphApi'
 import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
 import GroupsList from '@/pages/components/GroupsList';
+import WorldlineMonitor from '@/pages/components/WorldlineMonitor';
 import Loading, {sleep} from '@/components/Loading';
 import notyfService from '@/log/notyfService';
 
@@ -61,6 +62,13 @@ const Dashboard = () => {
 
   return (
     <div data-testid="dashboard-page">
+      {/* Add WorldlineMonitor at the top of the dashboard */}
+      <div className="mb-5" data-testid="worldline-container">
+        <WorldlineMonitor />
+      </div>
+      
+      <hr className="my-5" />
+      
       <Loading visible={loading} message="Fetching data from APIs..." />
       
       <div data-testid="home-container">
