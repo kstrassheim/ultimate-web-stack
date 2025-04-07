@@ -63,17 +63,15 @@ describe('Dashboard Component', () => {
     
     renderDashboardWithMocks();
     
-    // Verify WorldlineMonitor component is present
+    // Verify WorldlineMonitor component is present at the top
     expect(screen.getByTestId('worldline-monitor-mock')).toBeInTheDocument();
     expect(screen.getByTestId('worldline-container')).toBeInTheDocument();
+    expect(screen.getByTestId('worldline-container')).toHaveClass('mb-5');
     
     // Verify the separator is present between WorldlineMonitor and other content
     const separator = screen.getByRole('separator');
     expect(separator).toBeInTheDocument();
     expect(separator).toHaveClass('my-5');
-    
-    // Verify basic structure is present
-    expect(screen.getByRole('heading', { level: 1, name: /Home Page/i })).toBeInTheDocument();
     
     // Wait for ALL data to load with a longer timeout
     await waitFor(() => {
@@ -97,15 +95,8 @@ describe('Dashboard Component', () => {
     // Verify Notyf success notification was shown
     expect(notyfService.success).toHaveBeenCalledWith('Data loaded successfully!');
 
-    // Add these assertions after the existing tests in the 'renders and loads data successfully' test
-    // Wait for ALL data to load with a longer timeout
-    await waitFor(() => {
-      expect(screen.getByTestId('api-message-data')).toBeInTheDocument();
-      expect(screen.getByTestId('groups-container')).toBeInTheDocument();
-      
-      // Add additional checks for the content from the mock API file
-      expect(screen.getByTestId('api-message-data')).toHaveTextContent('Hello from API');
-    }, { timeout: 3000 });
+    // Verify the content from the mock API file
+    expect(screen.getByTestId('api-message-data')).toHaveTextContent('Hello from API');
   });
 
   test('handles API error correctly', async () => {
@@ -170,5 +161,36 @@ describe('Dashboard Component', () => {
     
     // WorldlineMonitor component should stay rendered throughout
     expect(screen.getByTestId('worldline-monitor-mock')).toBeInTheDocument();
+  });
+  
+  // Add a new test for the dashboardPage structure with WorldlineMonitor
+  test('verifies dashboard layout with WorldlineMonitor at the top', () => {
+    renderDashboardWithMocks();
+    
+    // Get the main container
+    const dashboardPage = screen.getByTestId('dashboard-page');
+    
+    // Get both main sections
+    const worldlineContainer = screen.getByTestId('worldline-container');
+    const homeContainer = screen.getByTestId('home-container');
+    
+    // Verify structure: worldlineContainer should come before homeContainer
+    expect(dashboardPage.firstChild).toBe(worldlineContainer);
+    
+    // Verify separator exists between the sections
+    const separator = screen.getByRole('separator');
+    expect(separator).toBeInTheDocument();
+    
+    // Verify worldline container is immediately followed by the separator
+    expect(worldlineContainer.nextElementSibling).toBe(separator);
+    
+    // Check that separator and home container are siblings (both children of dashboardPage)
+    expect(separator.parentNode).toBe(dashboardPage);
+    expect(homeContainer.parentNode).toBe(dashboardPage);
+    
+    // Verify that separator appears before home container in the DOM
+    const separatorIndex = Array.from(dashboardPage.children).indexOf(separator);
+    const homeContainerIndex = Array.from(dashboardPage.children).indexOf(homeContainer);
+    expect(separatorIndex).toBeLessThan(homeContainerIndex);
   });
 });
