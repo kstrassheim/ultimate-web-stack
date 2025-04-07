@@ -411,9 +411,10 @@ describe('EntraProfile Component', () => {
     // Check that roles section is present
     expect(screen.getByText('Roles:')).toBeInTheDocument();
     
-    // Check that "None" badge is displayed
-    expect(screen.getByText('None')).toBeInTheDocument();
-    expect(screen.getByText('None')).toHaveClass('badge bg-secondary badge-sm');
+    // Use the data-testid attribute to find the "None" badge
+    expect(screen.getByTestId('role-badge-none')).toBeInTheDocument();
+    expect(screen.getByTestId('role-badge-none')).toHaveTextContent('None');
+    expect(screen.getByTestId('role-badge-none')).toHaveClass('badge bg-secondary badge-sm');
   });
   
   test('handles empty roles array in user account', async () => {
@@ -441,8 +442,9 @@ describe('EntraProfile Component', () => {
     // Check that roles section is present
     expect(screen.getByText('Roles:')).toBeInTheDocument();
     
-    // Check that "None" badge is displayed for empty roles array
-    expect(screen.getByText('None')).toBeInTheDocument();
+    // Check that "None" badge is displayed for empty roles array using data-testid
+    expect(screen.getByTestId('role-badge-none')).toBeInTheDocument();
+    expect(screen.getByTestId('role-badge-none')).toHaveTextContent('None');
   });
   
   test('updates roles display when active account changes', async () => {

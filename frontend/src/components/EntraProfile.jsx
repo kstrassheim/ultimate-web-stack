@@ -136,7 +136,7 @@ const EntraProfile = () => {
                             </span>
                           ))
                         ) : (
-                          <span className="badge bg-secondary badge-sm">None</span>
+                          <span className="badge bg-secondary badge-sm" data-testid={`role-badge-none`}>None</span>
                         )}
                       </div>
                     </div>

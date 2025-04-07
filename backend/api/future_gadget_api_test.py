@@ -421,6 +421,10 @@ class TestExperimentWebSocketEndpoints:
         mock_token = MagicMock()
         mock_token.roles = ["Admin"]  # Add roles to token
         
+        # Mock the username property that's accessed in the create_experiment function
+        mock_username = "test.user@example.com"
+        mock_token.preferred_username = mock_username
+        
         # Patch the database service
         with patch("api.future_gadget_api.fgl_service.create_experiment", return_value=test_experiment):
             # Call the function with explicit token parameter 
@@ -429,7 +433,16 @@ class TestExperimentWebSocketEndpoints:
             # Verify result
             assert result == test_experiment
             
-            # Verify broadcast was called with correct data and type
+            # Verify broadcast was called
             assert len(broadcast_args) == 1
-            assert broadcast_args[0][0] == test_experiment  # data
-            assert broadcast_args[0][1] == "create"        # type
+            
+            # Create expected broadcast data object (with the added fields)
+            expected_broadcast_data = {
+                **test_experiment,  # All the original experiment data
+                "actor": mock_username,  # Username from token
+                "type": "create"     # Type field added in broadcast
+            }
+            
+            # Check broadcast data matches expected structure
+            assert broadcast_args[0][0] == expected_broadcast_data  # data
+            assert broadcast_args[0][1] == "create"  # type
