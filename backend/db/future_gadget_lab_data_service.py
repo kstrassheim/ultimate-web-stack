@@ -213,14 +213,7 @@ class FutureGadgetLabDataService:
         return sorted(readings, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
 
 def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Dict]]:
-    """Generate test data for experiments and divergence readings
-    
-    Args:
-        service: The FutureGadgetLabDataService instance to populate
-        
-    Returns:
-        A dictionary containing the generated data for each table
-    """
+    """Generate test data for experiments and divergence readings"""
     # Dictionary to store all created items
     created_items = {
         "experiments": [],
@@ -228,9 +221,14 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
     }
     
     # Create base timestamp (current time)
-    current_time = datetime.datetime.now()
+    current_time = datetime.datetime.now(datetime.timezone.utc)
     
-    # Create experiments with world_line_change and timestamps 5 minutes apart
+    # Function to format timestamp in JavaScript ISO format
+    def js_iso_format(dt: datetime.datetime) -> str:
+        # Format to match JavaScript's toISOString() exactly: YYYY-MM-DDTHH:mm:ss.sssZ
+        return dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    # Create experiments with both positive and negative world_line_change values
     experiments = [
         {
             "name": "Phone Microwave (Name subject to change)",
@@ -240,7 +238,7 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "collaborators": ["Kurisu Makise", "Itaru Hashida"],
             "results": "Successfully sent messages to the past, causing world line shifts",
             "world_line_change": 0.409431,
-            "timestamp": (current_time - datetime.timedelta(minutes=0)).isoformat()  # Current time
+            "timestamp": js_iso_format(current_time)  # Current time
         },
         {
             "name": "Divergence Meter",
@@ -250,7 +248,7 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "collaborators": ["Rintaro Okabe"],
             "results": "Accurately displays the current world line divergence value",
             "world_line_change": 0.000124,
-            "timestamp": (current_time - datetime.timedelta(minutes=5)).isoformat()  # 5 minutes ago
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=5))  # 5 minutes ago
         },
         {
             "name": "Time Leap Machine",
@@ -259,8 +257,8 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "creator_id": "Kurisu Makise",
             "collaborators": ["Rintaro Okabe", "Itaru Hashida"],
             "results": "Successfully allows transferring consciousness to past self within 48-hour limit",
-            "world_line_change": 0.000337,
-            "timestamp": (current_time - datetime.timedelta(minutes=10)).isoformat()  # 10 minutes ago
+            "world_line_change": -0.000337, # Negative change - moving closer to Alpha attractor field
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=10))  # 10 minutes ago
         },
         {
             "name": "IBN 5100 Decoder",
@@ -269,8 +267,8 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "creator_id": "Itaru Hashida",
             "collaborators": ["Suzuha Amane"],
             "results": "IBN 5100 was lost before project could be completed",
-            "world_line_change": 0.048256,
-            "timestamp": (current_time - datetime.timedelta(minutes=15)).isoformat()  # 15 minutes ago
+            "world_line_change": -0.048256, # Negative change - experiment failure pushed timeline backwards
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=15))  # 15 minutes ago
         },
         {
             "name": "Operation Skuld",
@@ -280,7 +278,28 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "collaborators": ["Suzuha Amane"],
             "results": "Successfully reached Steins;Gate worldline while saving Kurisu",
             "world_line_change": 0.334137,
-            "timestamp": (current_time - datetime.timedelta(minutes=20)).isoformat()  # 20 minutes ago
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=20))  # 20 minutes ago
+        },
+        # Add more experiments with negative world line changes
+        {
+            "name": "Jelly Person Experiment",
+            "description": "Experiment attempting to transform a person into jelly-like state",
+            "status": ExperimentStatus.FAILED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Itaru Hashida"],
+            "results": "Resulted in unstable human teleportation with catastrophic failure",
+            "world_line_change": -0.275349, # Significant negative change due to failure
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=25))  # 25 minutes ago
+        },
+        {
+            "name": "D-Mail Recovery Operation",
+            "description": "Operation to undo previous D-Mail effects",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Kurisu Makise", "Moeka Kiryu"],
+            "results": "Successfully undid effects of previous D-Mails, returning closer to Beta attractor field",
+            "world_line_change": -0.412591, # Large negative change - deliberately moving backwards
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=30))  # 30 minutes ago
         }
     ]
     

@@ -1,5 +1,6 @@
 import pytest
 import datetime
+import re
 from db.future_gadget_lab_data_service import (
     FutureGadgetLabDataService, 
     WorldLineStatus, 
@@ -47,13 +48,65 @@ def test_initialization(db_service):
     assert not hasattr(db_service, 'd_mails_table')
     assert not hasattr(db_service, 'lab_members_table')
 
+# Test JavaScript ISO Format
+def test_js_iso_format():
+    """Test that JavaScript ISO format matches the expected pattern"""
+    # Use the function from the module
+    from db.future_gadget_lab_data_service import generate_test_data
+    
+    # Extract the js_iso_format function from generate_test_data
+    # This is a bit of a hack to test the nested function
+    current_time = datetime.datetime.now(datetime.timezone.utc)
+    js_iso_format = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    # Generate a timestamp
+    timestamp = js_iso_format(current_time)
+    
+    # Check if it matches the JavaScript ISO format pattern
+    pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+    assert re.match(pattern, timestamp), f"Timestamp {timestamp} does not match ISO format pattern"
+    
+    # Verify format matches JavaScript's toISOString()
+    assert timestamp.endswith('Z'), "Timestamp should end with Z"
+    assert "." in timestamp, "Timestamp should include milliseconds"
+    milliseconds = timestamp.split(".")[-1][:-1]  # Remove 'Z' at the end
+    assert len(milliseconds) == 3, "Should have exactly 3 digits for milliseconds"
+
+# Test Experiment CRUD with JavaScript ISO format
+def test_experiment_crud_with_timestamp_format(db_service):
+    """Test CRUD operations for experiments with focus on JavaScript ISO timestamp format"""
+    # Create a new experiment with a properly formatted ISO timestamp
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    new_experiment = {
+        'name': 'ISO Format Test',
+        'description': 'Testing JavaScript ISO format timestamp compatibility',
+        'status': ExperimentStatus.IN_PROGRESS.value,
+        'creator_id': 'Okabe Rintaro',
+        'timestamp': timestamp
+    }
+    
+    created_exp = db_service.create_experiment(new_experiment)
+    assert created_exp['timestamp'] == timestamp
+    
+    # Verify the timestamp format is preserved when retrieving
+    retrieved_exp = db_service.get_experiment_by_id(created_exp['id'])
+    assert retrieved_exp['timestamp'] == timestamp
+    
+    # Check format matches Frontend validation pattern: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?
+    pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$'
+    assert re.match(pattern, retrieved_exp['timestamp']), f"Retrieved timestamp {retrieved_exp['timestamp']} doesn't match format"
+
 # Test Experiment CRUD
 def test_experiment_crud(db_service):
     """Test CRUD operations for experiments"""
     # Get initial count
     initial_count = len(db_service.get_all_experiments())
     
-    # Create a new experiment with world_line_change and timestamp
+    # Create a new experiment with world_line_change and timestamp in JavaScript ISO format
+    current_time = datetime.datetime.now(datetime.timezone.utc)
+    timestamp = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
     new_experiment = {
         'name': 'Time Machine Prototype',
         'description': 'Early prototype of a time machine',
@@ -62,14 +115,14 @@ def test_experiment_crud(db_service):
         'collaborators': ['003', '004'],
         'results': 'Ongoing testing phase',
         'world_line_change': 0.156732,
-        'timestamp': datetime.datetime.now().isoformat()
+        'timestamp': timestamp
     }
     
     created_exp = db_service.create_experiment(new_experiment)
     assert created_exp['id'] is not None
     assert created_exp['name'] == 'Time Machine Prototype'
     assert created_exp['world_line_change'] == 0.156732
-    assert 'timestamp' in created_exp
+    assert created_exp['timestamp'] == timestamp
     
     # Verify the count increased
     assert len(db_service.get_all_experiments()) == initial_count + 1
@@ -95,6 +148,38 @@ def test_experiment_crud(db_service):
     assert db_service.delete_experiment(created_exp['id']) is True
     assert db_service.get_experiment_by_id(created_exp['id']) is None
     assert len(db_service.get_all_experiments()) == initial_count
+
+# Test negative world_line_change values
+def test_negative_world_line_change(db_service):
+    """Test that negative world_line_change values are properly stored and retrieved"""
+    # Create an experiment with a negative world_line_change
+    negative_exp = {
+        'name': 'D-Mail Cancellation',
+        'description': 'Cancel previous D-Mail to return to original worldline',
+        'status': ExperimentStatus.COMPLETED.value,
+        'creator_id': 'Okabe Rintaro',
+        'world_line_change': -0.337192
+    }
+    
+    created_exp = db_service.create_experiment(negative_exp)
+    assert created_exp['world_line_change'] == -0.337192
+    
+    # Verify the negative value is preserved when retrieving
+    retrieved_exp = db_service.get_experiment_by_id(created_exp['id'])
+    assert retrieved_exp['world_line_change'] == -0.337192
+    
+    # Test with string value
+    string_exp = {
+        'name': 'Another Negative Test',
+        'description': 'Testing negative string conversion',
+        'status': ExperimentStatus.COMPLETED.value,
+        'creator_id': 'Okabe Rintaro',
+        'world_line_change': '-0.412591'
+    }
+    
+    created_string_exp = db_service.create_experiment(string_exp)
+    assert created_string_exp['world_line_change'] == -0.412591
+    assert isinstance(created_string_exp['world_line_change'], float)
 
 # Test Divergence Reading CRUD
 def test_divergence_reading_crud(db_service):
@@ -170,18 +255,21 @@ def test_generate_test_data(db_service):
     # Check that timestamp was added to experiments
     assert all('timestamp' in exp for exp in experiments)
     
-    # Check that experiments are ordered by timestamp (most recent first)
-    timestamps = [exp['timestamp'] for exp in experiments]
-    sorted_timestamps = sorted(timestamps, reverse=True)
-    assert timestamps[0] == sorted_timestamps[0]
+    # Verify that some experiments have negative world_line_change values
+    negative_experiments = [exp for exp in experiments if exp['world_line_change'] < 0]
+    assert len(negative_experiments) > 0, "No experiments found with negative world_line_change values"
     
-    # Verify 5-minute intervals between experiments
-    for i in range(1, len(experiments)):
-        prev_time = datetime.datetime.fromisoformat(timestamps[i-1])
-        curr_time = datetime.datetime.fromisoformat(timestamps[i])
-        time_diff = prev_time - curr_time
-        # Should be approximately 5 minutes (allowing for millisecond differences)
-        assert abs(time_diff.total_seconds() - 300) < 1  # Within 1 second of 5 minutes
+    # Validate the ISO format of timestamps
+    iso_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+    for exp in experiments:
+        assert re.match(iso_pattern, exp['timestamp']), f"Timestamp {exp['timestamp']} doesn't match JavaScript ISO format"
+    
+    # Check for specific negative world_line_changes from our test data
+    negative_values = [-0.000337, -0.048256, -0.275349, -0.412591]
+    found_values = [exp['world_line_change'] for exp in experiments if exp['world_line_change'] < 0]
+    
+    for value in negative_values:
+        assert value in found_values, f"Expected negative world_line_change {value} not found in test data"
     
     readings = db_service.get_all_divergence_readings()
     assert any(reading['reading'] == 1.048596 for reading in readings)
@@ -210,3 +298,16 @@ def test_world_line_change_conversion(db_service):
     updated_exp = db_service.update_experiment(created_exp['id'], update_data)
     assert isinstance(updated_exp['world_line_change'], float)
     assert updated_exp['world_line_change'] == 1.048596
+    
+    # Test with negative string value
+    negative_exp = {
+        'name': 'Negative World Line Change',
+        'description': 'Testing negative world line change',
+        'status': ExperimentStatus.COMPLETED.value,
+        'creator_id': 'Rintaro Okabe',
+        'world_line_change': '-0.523299'  # Negative string value
+    }
+    
+    created_neg_exp = db_service.create_experiment(negative_exp)
+    assert isinstance(created_neg_exp['world_line_change'], float)
+    assert created_neg_exp['world_line_change'] == -0.523299

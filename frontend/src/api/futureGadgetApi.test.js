@@ -86,12 +86,12 @@ describe('Future Gadget Lab API', () => {
   
   describe('formatWorldLineChange', () => {
     it('should format a world line change value with 6 decimal places', () => {
-      expect(formatWorldLineChange(1.048596)).toBe('1.048596');
-      expect(formatWorldLineChange('0.337192')).toBe('0.337192');
+      expect(formatWorldLineChange(1.048596)).toBe('+1.048596');
+      expect(formatWorldLineChange('0.337192')).toBe('+0.337192');
     });
     
     it('should handle zero values', () => {
-      expect(formatWorldLineChange(0)).toBe('0.000000');
+      expect(formatWorldLineChange(0)).toBe('+0.000000');
     });
     
     it('should return "N/A" for null or undefined values', () => {
@@ -99,8 +99,14 @@ describe('Future Gadget Lab API', () => {
       expect(formatWorldLineChange(undefined)).toBe('N/A');
     });
     
-    it('should convert negative values to positive', () => {
-      expect(formatWorldLineChange(-1.048596)).toBe('1.048596');
+    it('should preserve and show negative values with their sign', () => {
+      expect(formatWorldLineChange(-1.048596)).toBe('-1.048596');
+      expect(formatWorldLineChange('-0.337192')).toBe('-0.337192');
+    });
+
+    it('should add plus sign to positive values', () => {
+      expect(formatWorldLineChange(1.048596)).toBe('+1.048596');
+      expect(formatWorldLineChange('0.337192')).toBe('+0.337192');
     });
   });
   
@@ -187,6 +193,26 @@ describe('Future Gadget Lab API', () => {
       expect(actualBody.name).toBe(experimentData.name);
       expect(actualBody.description).toBe(experimentData.description);
     });
+
+    it('should handle negative world line change values', async () => {
+      const experimentData = {
+        name: 'Negative World Line Change',
+        description: 'Testing negative divergence',
+        status: 'completed',
+        creator_id: '001',
+        world_line_change: -0.412591,
+        timestamp: '2025-04-07T12:00:00Z'
+      };
+      
+      await createExperiment(mockInstance, experimentData);
+      
+      // Get the actual data that was passed to fetch
+      const actualCall = global.fetch.mock.calls[0];
+      const actualBody = JSON.parse(actualCall[1].body);
+      
+      // Verify negative value is preserved
+      expect(actualBody.world_line_change).toBe(-0.412591);
+    });
   });
   
   describe('updateExperiment', () => {
@@ -206,6 +232,23 @@ describe('Future Gadget Lab API', () => {
           body: JSON.stringify(updateData)
         })
       );
+    });
+
+    it('should handle updating to a negative world line change value', async () => {
+      const updateData = {
+        name: 'Undoing Previous Experiment',
+        status: 'completed',
+        world_line_change: -0.275349
+      };
+      
+      await updateExperiment(mockInstance, '123', updateData);
+      
+      // Get the actual data that was passed to fetch
+      const actualCall = global.fetch.mock.calls[0];
+      const actualBody = JSON.parse(actualCall[1].body);
+      
+      // Verify negative value is preserved
+      expect(actualBody.world_line_change).toBe(-0.275349);
     });
   });
   

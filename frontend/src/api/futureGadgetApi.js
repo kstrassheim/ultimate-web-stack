@@ -56,15 +56,16 @@ export const formatExperimentTimestamp = (experiment) => {
   return 'Unknown';
 };
 
-// Format world line change to a nice readable format
+// Format world line change to a nice readable format with +/- sign
 export const formatWorldLineChange = (change) => {
   if (change === null || change === undefined) return 'N/A';
   
-  // Convert to positive number
-  const absChange = Math.abs(parseFloat(change));
+  // Convert to number if it's a string
+  const numChange = parseFloat(change);
   
   // Format with 6 decimal places (standard format for divergence values)
-  return absChange.toFixed(6);
+  // Include sign for both positive and negative values
+  return (numChange >= 0 ? '+' : '') + numChange.toFixed(6);
 };
 
 // ----- EXPERIMENTS API ONLY -----

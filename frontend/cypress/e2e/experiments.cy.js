@@ -327,4 +327,116 @@ describe('Future Gadget Lab - Experiments CRUD Operations', () => {
   });
   
   // Removed the navigation test between Future Gadget Lab pages since they no longer exist
+
+  // Add this test after the other experiments tests
+
+  it('should properly display and handle negative world line changes', () => {
+    // Open the create experiment form
+    cy.get('[data-testid="new-experiment-btn"]').click();
+    
+    // Fill out the form with a negative world line change
+    const experimentName = `Negative World Line ${Date.now()}`;
+    cy.get('#experiment-name').type(experimentName);
+    cy.get('#experiment-description').type('Testing negative world line divergence values');
+    cy.get('#experiment-status').select('completed');
+    cy.get('#experiment-creator').clear().type('Okabe Rintaro');
+    cy.get('#experiment-results').type('Successfully undid effects of previous D-Mails');
+    
+    // Add negative world line change value
+    cy.get('#experiment-world-line-change').clear().type('-0.412591');
+    
+    // Use the "Now" button to set the timestamp
+    cy.contains('button', 'Now').click();
+    
+    // Submit the form
+    cy.get('[data-testid="experiment-form-submit"]').click();
+    
+    // Verify success message
+    cy.get('.notyf__toast--success').should('be.visible');
+    cy.get('.notyf__toast--success').should('contain.text', 'Experiment created successfully');
+    
+    // Verify the new experiment appears in the table with the negative value
+    cy.get('[data-testid="experiments-table"]').should('contain.text', experimentName);
+    
+    // Verify the negative world line change appears correctly with minus sign
+    cy.contains('tr', experimentName).within(() => {
+      cy.get('[data-testid="experiment-worldline"]').should('contain.text', '-0.412591');
+    });
+    
+    // Edit the experiment to test updating negative values
+    cy.contains('tr', experimentName).within(() => {
+      cy.get('button').contains('Edit').click();
+    });
+    
+    // Update to another negative value
+    cy.get('#experiment-world-line-change').clear().type('-0.275349');
+    
+    // Submit the update
+    cy.get('[data-testid="experiment-form-submit"]').click();
+    
+    // Verify update success
+    cy.get('.notyf__toast--success').should('contain.text', 'Experiment updated successfully');
+    
+    // Verify the updated negative value appears correctly
+    cy.contains('tr', experimentName).within(() => {
+      cy.get('[data-testid="experiment-worldline"]').should('contain.text', '-0.275349');
+    });
+  });
+
+  // Add a test to verify that positive values show a + sign
+  it('should display positive world line changes with a plus sign', () => {
+    // Use an intercept to ensure control over the exact data shown
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      body: [
+        {
+          "id": "EXP-POSITIVE",
+          "name": "Positive World Line Change",
+          "description": "Testing positive formatting",
+          "status": "completed",
+          "creator_id": "Kurisu",
+          "world_line_change": 0.337192,
+          "timestamp": new Date().toISOString()
+        },
+        {
+          "id": "EXP-NEGATIVE",
+          "name": "Negative World Line Change",
+          "description": "Testing negative formatting",
+          "status": "completed",
+          "creator_id": "Okabe",
+          "world_line_change": -0.412591,
+          "timestamp": new Date().toISOString()
+        },
+        {
+          "id": "EXP-ZERO",
+          "name": "Zero World Line Change",
+          "description": "Testing zero formatting",
+          "status": "completed",
+          "creator_id": "Daru",
+          "world_line_change": 0,
+          "timestamp": new Date().toISOString()
+        }
+      ]
+    }).as('formattedExperiments');
+    
+    // Click reload button
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    
+    // Wait for the intercepted request
+    cy.wait('@formattedExperiments');
+    
+    // Verify positive value has + prefix
+    cy.contains('tr', 'Positive World Line Change').within(() => {
+      cy.get('[data-testid="experiment-worldline"]').should('contain.text', '+0.337192');
+    });
+    
+    // Verify negative value has - prefix
+    cy.contains('tr', 'Negative World Line Change').within(() => {
+      cy.get('[data-testid="experiment-worldline"]').should('contain.text', '-0.412591');
+    });
+    
+    // Verify zero is shown with + sign
+    cy.contains('tr', 'Zero World Line Change').within(() => {
+      cy.get('[data-testid="experiment-worldline"]').should('contain.text', '+0.000000');
+    });
+  });
 });
