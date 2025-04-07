@@ -28,7 +28,7 @@ describe('User Flow Test', () => {
     // Check for success toast notification - with sufficient timeout
     cy.get('.notyf', { timeout: 5000 }).should('exist');
     cy.get('.notyf__toast--success').should('be.visible');
-    cy.get('.notyf__toast--success').should('contain.text', 'Data reloaded successfully');
+    cy.get('.notyf__toast--success').should('contain.text', 'Data loaded successfully');
     
     // Check API data loaded
     cy.get('[data-testid="api-response-card"]').should('be.visible');
