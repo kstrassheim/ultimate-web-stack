@@ -154,47 +154,114 @@ const Experiments = () => {
   useEffect(() => {
     experimentsSocket.connect(instance);
     const unsubscribe = experimentsSocket.subscribe((message) => {
-      if (!message?.rawData?.type || !message?.rawData?.data) return;
+      console.log("WebSocket message received:", message);
       
-      if (message.rawData.type === 'create' && message.rawData.data) {
-        // Make sure the data has an id before adding
-        if (message.rawData.data.id) {
-          setExperiments(prev => [...prev, message.rawData.data]);
-          notyfService.info('New experiment created by another user');
+      // First, determine the structure of the message and extract relevant parts
+      let type, data;
+      if (message.rawData) {
+        // Original expected format with rawData wrapper
+        type = message.rawData.type;
+        data = message.rawData;
+      } else if (message.type) {
+        // Direct format from the server
+        type = message.type;
+        data = message; // The whole message is the data
+      } else {
+        // Unknown format
+        console.error("Unknown WebSocket message format:", message);
+        return;
+      }
+      
+      if (!type || !data || !data.id) return;
+      
+      // Get current user's email, not just username
+      const currentUserEmail = instance.getActiveAccount()?.username;
+      
+      // Check if the action was performed by the current user - compare emails
+      const isOwnAction = data.actor === currentUserEmail;
+      
+      console.log("User comparison:", {
+        currentUserEmail,
+        actor: data.actor,
+        isOwnAction
+      });
+
+      // Create new experiment
+      if (type === 'create') {
+        // Always update the data in the grid
+        setExperiments(prev => {
+          // Check if the experiment already exists to avoid duplicates
+          if (prev.some(exp => exp.id === data.id)) {
+            return prev;
+          }
+          return [...prev, data];
+        });
+        
+        // Only show notification if it was another user's action
+        if (!isOwnAction) {
+          notyfService.info(`New experiment "${data.name}" created by ${formatUsername(data.actor)}`);
         }
-      } else if (message.rawData.type === 'update' && message.rawData.data) {
-        // Make sure the data has an id before updating
-        if (message.rawData.data.id) {
-          setExperiments(prev => 
-            prev.map(exp => exp.id === message.rawData.data.id ? message.rawData.data : exp)
-          );
-          notyfService.info('An experiment was updated by another user');
+      } 
+      // Update existing experiment
+      else if (type === 'update') {
+        // Always update the grid data
+        setExperiments(prev => 
+          prev.map(exp => exp.id === data.id ? data : exp)
+        );
+        
+        // Update the current experiment in the form if it's being edited
+        if (showForm && currentExperiment && currentExperiment.id === data.id) {
+          setCurrentExperiment(data);
+          
+          // Alert the user if they're currently editing this experiment
+          if (!isOwnAction && formMode === 'edit') {
+            notyfService.warning(`This experiment has been updated by ${formatUsername(data.actor)}. Your form has been refreshed with the latest data.`);
+          }
+        } 
+        // Only show notification for other users' actions if not currently editing that item
+        else if (!isOwnAction) {
+          notyfService.info(`Experiment "${data.name}" updated by ${formatUsername(data.actor)}`);
         }
-      } else if (message.rawData.type === 'delete' && message.rawData.data) {
-        // Make sure the data has an id before deleting
-        if (message.rawData.data.id) {
-          setExperiments(prev => 
-            prev.filter(exp => exp.id !== message.rawData.data.id)
-          );
-          notyfService.info('An experiment was deleted by another user');
+      } 
+      // Delete experiment
+      else if (type === 'delete') {
+        // Always update the grid
+        setExperiments(prev => 
+          prev.filter(exp => exp.id !== data.id)
+        );
+        
+        // Close the form if the experiment being edited was deleted
+        if (showForm && currentExperiment && currentExperiment.id === data.id) {
+          setShowForm(false);
+          if (!isOwnAction) {
+            notyfService.warning(`The experiment you were editing has been deleted by ${formatUsername(data.actor)}`);
+          }
+        } 
+        // Only show notification for other users' actions
+        else if (!isOwnAction) {
+          notyfService.info(`Experiment "${data.name}" deleted by ${formatUsername(data.actor)}`);
         }
       }
     });
+    
+    // Rest of the code remains the same
     const unsubscribeStatus = experimentsSocket.subscribeToStatus((status) => {
       if (status) {
         setConnectionStatus(status);
       }
     });
+    
     if (!initFetchCompleted.current) {
-      fetchExperiments(false); // Don't show "loaded" message on initial load
+      fetchExperiments(false);
       initFetchCompleted.current = true;
     }
+    
     return () => {
       unsubscribe();
       unsubscribeStatus();
       experimentsSocket.disconnect();
     };
-  }, [instance]);
+  }, [instance, showForm, currentExperiment, formMode]);
 
   return (
     <div data-testid="experiments-page">
@@ -612,6 +679,17 @@ const getStatusBadgeColor = (status) => {
     default:
       return 'light';
   }
+};
+
+// Helper function to format usernames for display
+const formatUsername = (username) => {
+  if (!username) return 'Unknown user';
+  // Extract name from email if it's an email address
+  const emailMatch = username.match(/^([^@]+)@/);
+  if (emailMatch) {
+    return emailMatch[1].replace('.', ' ');
+  }
+  return username;
 };
 
 export default Experiments;

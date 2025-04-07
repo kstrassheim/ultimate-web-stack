@@ -110,11 +110,20 @@ async def create_experiment(
     token=Security(azure_scheme, scopes=scopes)
 ):
     logger.info(f"Future Gadget Lab API - Creating new experiment: {experiment.name}")
+    
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
+    
+    # Add creator information to track who performed this action
     created_experiment = fgl_service.create_experiment(experiment.model_dump())
     
-    # Use the new broadcast method for simplified notification
+    # Fix the broadcast call in create_experiment function
     await experiment_connection_manager.broadcast(
-        data=created_experiment,
+        data={
+            **created_experiment,
+            "actor": username,  # Username of who performed this action
+            "type": "create"    # Include type at the top level
+        },
         type="create"
     )
     
@@ -132,11 +141,18 @@ async def update_experiment(
     if not existing_experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
     
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
+    
     updated_experiment = fgl_service.update_experiment(experiment_id, experiment.model_dump(exclude_unset=True))
     
-    # Use broadcast method
+    # Fix the broadcast call in update_experiment function
     await experiment_connection_manager.broadcast(
-        data=updated_experiment,
+        data={
+            **updated_experiment,
+            "actor": username,  # Username of who performed this action
+            "type": "update"    # Include type at the top level
+        },
         type="update"
     )
     
@@ -150,18 +166,25 @@ async def delete_experiment(
 ):
     logger.info(f"Future Gadget Lab API - Deleting experiment with ID: {experiment_id}")
     
-    # Get the experiment before deletion to include in the notification
     experiment = fgl_service.get_experiment_by_id(experiment_id)
     if not experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
+    
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
     
     success = fgl_service.delete_experiment(experiment_id)
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to delete experiment with ID {experiment_id}")
     
-    # Use broadcast with minimal data for delete operation
+    # Fix the broadcast call in delete_experiment function
     await experiment_connection_manager.broadcast(
-        data={"id": experiment_id, "name": experiment.get("name", "Unknown")},
+        data={
+            "id": experiment_id, 
+            "name": experiment.get("name", "Unknown"),
+            "actor": username,  # Username of who performed this action
+            "type": "delete"    # Include type at the top level
+        },
         type="delete"
     )
     
