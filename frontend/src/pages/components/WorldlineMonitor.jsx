@@ -357,13 +357,10 @@ const WorldlineMonitor = () => {
               </div>
             `;
           }
-    
-          // For other points, get the associated experiment (index-1 because the first point is base)
-          // The worldlineHistory includes base at index 0, but experiments start from index 1
+      
+          // For other points, get the associated experiment
           const point = worldlineHistory[dataPointIndex];
-          const experiment = dataPointIndex > 0 && dataPointIndex < worldlineHistory.length 
-            ? point.added_experiment // Use added_experiment if available in the API response
-            : null;
+          const experiment = point?.added_experiment;
           
           // For backward compatibility - if API doesn't include experiment details
           const experimentNumber = dataPointIndex;
@@ -371,17 +368,20 @@ const WorldlineMonitor = () => {
           const currentValue = series[seriesIndex][dataPointIndex];
           const change = currentValue - previousValue;
           const changeDisplay = (change >= 0 ? '+' : '') + change.toFixed(6);
-    
+      
           return `
             <div class="custom-tooltip">
-              <div class="tooltip-title">Experiment ${experimentNumber}</div>
+              <div class="tooltip-title">
+                ${experiment?.name || `Experiment ${experimentNumber}`}
+              </div>
               <div class="tooltip-value">Value: ${currentValue.toFixed(6)}</div>
               <div class="tooltip-change">Change: ${changeDisplay}</div>
               ${experiment ? `
                 <div class="tooltip-divider"></div>
-                <div class="tooltip-name">${experiment.name || 'Unnamed Experiment'}</div>
                 <div class="tooltip-creator">By: ${experiment.creator_id || 'Unknown'}</div>
+                ${experiment.status ? `<div class="tooltip-status">Status: ${experiment.status}</div>` : ''}
                 ${experiment.description ? `<div class="tooltip-description">${experiment.description}</div>` : ''}
+                ${experiment.results ? `<div class="tooltip-results"><strong>Results:</strong> ${experiment.results}</div>` : ''}
               ` : ''}
             </div>
           `;
@@ -607,9 +607,22 @@ const WorldlineMonitor = () => {
             variant="outline-primary"
             size="sm"
             onClick={() => {
-              fetchWorldlineHistory();
-              fetchDivergenceReadings();
-              setChartKey(prevKey => prevKey + 1);
+              // Start loading indicators before any async operations
+              setLoading(prev => ({ ...prev, history: true, readings: true }));
+              
+              // Create a sequence of promises
+              Promise.all([
+                fetchWorldlineHistory(),
+                fetchDivergenceReadings()
+              ])
+              .then(() => {
+                // Only update chart key after both data sources are loaded
+                setChartKey(prevKey => prevKey + 1);
+              })
+              .finally(() => {
+                // Ensure loading states are cleaned up even if there's an error
+                setLoading(prev => ({ ...prev, history: false, readings: false }));
+              });
             }}
             disabled={loading.history || loading.readings}
             data-testid="refresh-chart-btn"

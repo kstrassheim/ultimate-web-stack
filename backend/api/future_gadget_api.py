@@ -380,13 +380,18 @@ async def get_worldline_history(
         # Calculate new state with all experiments up to this point
         state = calculate_worldline_status(accumulated_experiments.copy(), readings)
         
-        # Add experiment details to the state
-        # state["added_experiment"] = {
-        #     "id": experiment.get("id"),
-        #     "name": experiment.get("name"),
-        #     "world_line_change": experiment.get("world_line_change", 0),
-        #     "timestamp": experiment.get("timestamp")
-        # }
+        # Add experiment details to the state - uncomment and use this code
+        state["added_experiment"] = {
+            "id": experiment.get("id"),
+            "name": experiment.get("name"),
+            "description": experiment.get("description", ""),
+            "status": experiment.get("status"),
+            "world_line_change": experiment.get("world_line_change", 0),
+            "creator_id": experiment.get("creator_id", "Unknown"),
+            "collaborators": experiment.get("collaborators", []),
+            "results": experiment.get("results", ""),
+            "timestamp": experiment.get("timestamp")
+        }
         
         history.append(state)
     
@@ -395,7 +400,8 @@ async def get_worldline_history(
     now = datetime.datetime.now(datetime.timezone.utc)
     iso_now = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
     for state in history:
-        state["timestamp"] = iso_now
+        if "timestamp" not in state:
+            state["timestamp"] = iso_now
     
     return history
 
