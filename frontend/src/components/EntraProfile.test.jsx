@@ -346,4 +346,165 @@ describe('EntraProfile Component', () => {
     window.sessionStorage.getItem = originalGetItem;
     window.sessionStorage.removeItem = originalRemoveItem;
   });
+
+  // Add these tests to verify the roles display functionality
+
+  test('displays user roles in dropdown when authenticated user has roles', async () => {
+    // Set up active account with roles
+    const mockAccountWithRoles = {
+      ...mockAccount,
+      idTokenClaims: {
+        roles: ['Admin', 'User']
+      }
+    };
+    
+    msalInstance.getActiveAccount.mockReturnValue(mockAccountWithRoles);
+    
+    renderWithRouter(<EntraProfile />);
+    
+    // Wait for photo fetch to complete
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    
+    // Click profile image to open dropdown
+    const profileImage = screen.getByTestId('profile-image');
+    fireEvent.click(profileImage);
+    
+    // Check that roles section is present
+    expect(screen.getByText('Roles:')).toBeInTheDocument();
+    
+    // Check that both roles are displayed as badges
+    expect(screen.getByTestId('role-badge-Admin')).toBeInTheDocument();
+    expect(screen.getByTestId('role-badge-User')).toBeInTheDocument();
+    
+    // Verify the role badge content
+    expect(screen.getByTestId('role-badge-Admin')).toHaveTextContent('Admin');
+    expect(screen.getByTestId('role-badge-User')).toHaveTextContent('User');
+    
+    // Verify badge styling
+    expect(screen.getByTestId('role-badge-Admin')).toHaveClass('badge bg-primary badge-sm');
+  });
+  
+  test('displays "None" badge when authenticated user has no roles', async () => {
+    // Set up active account with no roles
+    const mockAccountNoRoles = {
+      ...mockAccount,
+      idTokenClaims: {
+        // No roles array
+      }
+    };
+    
+    msalInstance.getActiveAccount.mockReturnValue(mockAccountNoRoles);
+    
+    renderWithRouter(<EntraProfile />);
+    
+    // Wait for photo fetch to complete
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    
+    // Click profile image to open dropdown
+    const profileImage = screen.getByTestId('profile-image');
+    fireEvent.click(profileImage);
+    
+    // Check that roles section is present
+    expect(screen.getByText('Roles:')).toBeInTheDocument();
+    
+    // Check that "None" badge is displayed
+    expect(screen.getByText('None')).toBeInTheDocument();
+    expect(screen.getByText('None')).toHaveClass('badge bg-secondary badge-sm');
+  });
+  
+  test('handles empty roles array in user account', async () => {
+    // Set up active account with empty roles array
+    const mockAccountEmptyRoles = {
+      ...mockAccount,
+      idTokenClaims: {
+        roles: []
+      }
+    };
+    
+    msalInstance.getActiveAccount.mockReturnValue(mockAccountEmptyRoles);
+    
+    renderWithRouter(<EntraProfile />);
+    
+    // Wait for photo fetch to complete
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    
+    // Click profile image to open dropdown
+    const profileImage = screen.getByTestId('profile-image');
+    fireEvent.click(profileImage);
+    
+    // Check that roles section is present
+    expect(screen.getByText('Roles:')).toBeInTheDocument();
+    
+    // Check that "None" badge is displayed for empty roles array
+    expect(screen.getByText('None')).toBeInTheDocument();
+  });
+  
+  test('updates roles display when active account changes', async () => {
+    // Start with account that has one role
+    const accountWithOneRole = {
+      ...mockAccount,
+      idTokenClaims: {
+        roles: ['User']
+      }
+    };
+    
+    msalInstance.getActiveAccount.mockReturnValue(accountWithOneRole);
+    
+    const { rerender } = renderWithRouter(<EntraProfile />);
+    
+    // Wait for photo fetch to complete
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    
+    // Click to open dropdown
+    fireEvent.click(screen.getByTestId('profile-image'));
+    
+    // Verify initial role
+    expect(screen.getByTestId('role-badge-User')).toBeInTheDocument();
+    expect(screen.queryByTestId('role-badge-Admin')).not.toBeInTheDocument();
+    
+    // Now simulate account change to one with different roles
+    const accountWithDifferentRoles = {
+      ...mockAccount,
+      name: 'Admin User',
+      username: 'admin@example.com',
+      localAccountId: '789',
+      idTokenClaims: {
+        roles: ['Admin', 'PowerUser']
+      }
+    };
+    
+    // Update the mock to return the new account
+    msalInstance.getActiveAccount.mockReturnValue(accountWithDifferentRoles);
+    
+    // Force re-render
+    rerender(
+      <MemoryRouter 
+        initialEntries={['/test']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <EntraProfile />
+      </MemoryRouter>
+    );
+    
+    // Wait for photo fetch with new account
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, accountWithDifferentRoles);
+    });
+    
+    // Click to open dropdown again
+    fireEvent.click(screen.getByTestId('profile-image'));
+    
+    // Verify new roles are displayed
+    expect(screen.getByTestId('role-badge-Admin')).toBeInTheDocument();
+    expect(screen.getByTestId('role-badge-PowerUser')).toBeInTheDocument();
+    expect(screen.queryByTestId('role-badge-User')).not.toBeInTheDocument();
+  });
 });

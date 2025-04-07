@@ -116,8 +116,33 @@ const EntraProfile = () => {
               
               <Dropdown.Menu variant="dark" data-testid="profile-dropdown-menu">
                 <Dropdown.Item as="div" className="text-light" disabled>
-                  Signed in as: <strong>{account.name}</strong>
+                  <strong>{account.name}</strong>
                 </Dropdown.Item>
+                
+                {/* Add roles section */}
+                <Dropdown.Item as="div" className="text-light" disabled>
+                  <div className="mt-1">
+                    <div className="d-flex align-items-center">
+                      <small className="me-2">Roles:</small>
+                      <div className="d-flex flex-wrap gap-1">
+                        {account?.idTokenClaims?.roles?.length > 0 ? (
+                          account.idTokenClaims.roles.map((role, index) => (
+                            <span 
+                              key={index} 
+                              className="badge bg-primary badge-sm" 
+                              data-testid={`role-badge-${role}`}
+                            >
+                              {role}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="badge bg-secondary badge-sm">None</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Dropdown.Item>
+                
                 <Dropdown.Divider />
                 <Dropdown.Item 
                   onClick={() => logonFunc(true)} 
