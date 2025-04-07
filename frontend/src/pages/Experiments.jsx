@@ -275,7 +275,7 @@ const Experiments = () => {
                     </td>
                     <td>{exp.description}</td>
                     <td className="p-0" data-testid="experiment-actions">
-                      <div className="d-flex flex-column flex-md-row gap-1 h-100">
+                      <div className="d-flex flex-column h-100">
                         <Button
                           variant="outline-info"
                           size="sm"
