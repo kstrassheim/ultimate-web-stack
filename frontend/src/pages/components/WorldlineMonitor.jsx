@@ -631,7 +631,11 @@ const WorldlineMonitor = () => {
           </Button>
         </Card.Header>
         <Card.Body>
-          {worldlineHistory.length > 0 && readings.length > 0 ? (
+          {loading.history || loading.readings ? (
+            <div className="text-center p-4" data-testid="loading-chart">
+              <p className="text-muted">Loading chart data...</p>
+            </div>
+          ) : worldlineHistory.length > 0 && readings.length > 0 ? (
             <div className="chart-container" data-testid="worldline-chart">
               <ReactApexChart
                 key={chartKey} // Force re-render when data changes
@@ -656,13 +660,9 @@ const WorldlineMonitor = () => {
                 </div>
               </div>
             </div>
-          ) : !loading.history && !loading.readings ? (
+          ) : (
             <div className="text-center p-4" data-testid="no-chart-data">
               <p className="text-muted">No data available to generate chart.</p>
-            </div>
-          ) : (
-            <div className="text-center p-4" data-testid="loading-chart">
-              <p className="text-muted">Loading chart data...</p>
             </div>
           )}
         </Card.Body>

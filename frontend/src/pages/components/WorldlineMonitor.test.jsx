@@ -19,13 +19,19 @@ jest.mock('@azure/msal-react');
 jest.mock('@/api/futureGadgetApi');
 jest.mock('@/log/appInsights');
 jest.mock('@/log/notyfService');
+
+// Improved mock for react-apexcharts to test annotations (horizontal lines)
 jest.mock('react-apexcharts', () => {
   return function DummyChart({ options, series, height }) {
+    // Extract annotations count for testing
+    const annotationsCount = options?.annotations?.yaxis?.length || 0;
+    
     return (
       <div data-testid="mock-apex-chart">
         <div>Chart height: {height}</div>
         <div>Series count: {series.length}</div>
         <div>Data points: {series[0]?.data?.length || 0}</div>
+        <div data-testid="chart-annotations-count">Annotations: {annotationsCount}</div>
       </div>
     );
   };
@@ -80,21 +86,38 @@ describe('WorldlineMonitor', () => {
       base_worldline: 1.0,
       total_divergence: 0.0,
       experiment_count: 0,
-      timestamp: '2025-04-07T12:00:00.000Z'
+      timestamp: '2025-04-07T12:00:00.000Z',
+      added_experiment: null
     },
     {
       current_worldline: 1.337192,
       base_worldline: 1.0,
       total_divergence: 0.337192,
       experiment_count: 1,
-      timestamp: '2025-04-07T12:30:00.000Z'
+      timestamp: '2025-04-07T12:30:00.000Z',
+      added_experiment: {
+        id: "EXP-001",
+        name: "Phone Microwave",
+        description: "A microwave that can send messages to the past",
+        status: "completed",
+        world_line_change: 0.337192,
+        creator_id: "Rintaro Okabe"
+      }
     },
     {
       current_worldline: 1.698596,
       base_worldline: 1.0, 
       total_divergence: 0.698596,
       experiment_count: 2,
-      timestamp: '2025-04-07T12:34:56.789Z'
+      timestamp: '2025-04-07T12:34:56.789Z',
+      added_experiment: {
+        id: "EXP-002",
+        name: "Time Leap Machine",
+        description: "Device that can send memories to the past",
+        status: "completed",
+        world_line_change: 0.361404,
+        creator_id: "Kurisu Makise"
+      }
     }
   ];
   
@@ -189,7 +212,7 @@ describe('WorldlineMonitor', () => {
     });
   });
 
-  // Test chart rendering and data
+  // Test chart rendering with horizontal lines (annotations)
   test('chart displays correct data points and divergence lines', async () => {
     render(<WorldlineMonitor />);
     
@@ -202,13 +225,12 @@ describe('WorldlineMonitor', () => {
     // Check if mocked chart received correct data points count
     expect(screen.getByText('Data points: 3')).toBeInTheDocument(); // 3 points from mockWorldlineHistory
     
+    // Check if horizontal lines (annotations) are present for all readings
+    expect(screen.getByTestId('chart-annotations-count')).toHaveTextContent(`Annotations: ${mockDivergenceReadings.length}`);
+    
     // Check if chart legend shows divergence readings
     const chartContainer = screen.getByTestId('worldline-chart');
     const legendContainer = within(chartContainer).getByText('Known Divergence Lines:').parentElement;
-    
-    // Find all badge spans using className rather than role
-    // Remove the failing line:
-    // const legendBadges = within(legendContainer).getAllByRole('status', { hidden: true });
     
     // Instead, check that each reading's status appears in the legend
     mockDivergenceReadings.forEach(reading => {
@@ -225,8 +247,12 @@ describe('WorldlineMonitor', () => {
     expect(badgeElements.length).toBe(mockDivergenceReadings.length);
   });
   
-  // Test chart refresh button
-  test('chart refresh button triggers data reload', async () => {
+  // Test chart refresh button now using Promise.all
+  test('chart refresh button triggers data reload using Promise.all', async () => {
+    // Mock Promise.all to track it being called
+    const originalPromiseAll = Promise.all;
+    global.Promise.all = jest.fn().mockImplementation(originalPromiseAll);
+    
     render(<WorldlineMonitor />);
     
     // Wait for chart to render
@@ -241,15 +267,21 @@ describe('WorldlineMonitor', () => {
     // Click chart refresh button
     fireEvent.click(screen.getByTestId('refresh-chart-btn'));
     
+    // Check if Promise.all was called
+    expect(Promise.all).toHaveBeenCalled();
+    
     // Check if API calls were made to refresh chart data
     await waitFor(() => {
       expect(getWorldlineHistory).toHaveBeenCalledTimes(1);
       expect(getDivergenceReadings).toHaveBeenCalledTimes(1);
     });
+    
+    // Restore Promise.all
+    global.Promise.all = originalPromiseAll;
   });
 
-  // Test WebSocket updates chart
-  test('chart updates when WebSocket messages are received', async () => {
+  // Test WebSocket updates chart with new experiment data
+  test('chart updates when WebSocket messages are received with experiment data', async () => {
     render(<WorldlineMonitor />);
     
     // Wait for initial chart to render
@@ -260,15 +292,37 @@ describe('WorldlineMonitor', () => {
     // Get the subscribe callback
     const subscribeCallback = worldlineSocket.subscribe.mock.calls[0][0];
     
-    // Create an updated worldline status
+    // Create an updated worldline status with experiment preview
     const updatedStatus = {
       ...mockWorldlineStatus,
       current_worldline: 1.432891,
-      total_divergence: 0.432891
+      total_divergence: 0.432891,
+      includes_preview: true,
+      preview_experiment: {
+        name: "New Experiment",
+        world_line_change: 0.095699
+      }
     };
     
-    // Clear mock call counts
+    // Mock fetch chain for WebSocket update
     getWorldlineHistory.mockClear();
+    getDivergenceReadings.mockClear();
+    
+    getWorldlineHistory.mockResolvedValueOnce([
+      ...mockWorldlineHistory,
+      {
+        current_worldline: 1.432891,
+        base_worldline: 1.0,
+        total_divergence: 0.432891,
+        experiment_count: 3,
+        timestamp: '2025-04-07T12:45:00.000Z',
+        added_experiment: {
+          id: "EXP-003",
+          name: "New Experiment",
+          world_line_change: 0.095699
+        }
+      }
+    ]);
     
     // Simulate receiving WebSocket message
     act(() => {
@@ -278,10 +332,13 @@ describe('WorldlineMonitor', () => {
     // Check if history was refreshed for chart update
     await waitFor(() => {
       expect(getWorldlineHistory).toHaveBeenCalledTimes(1);
+      expect(notyfService.info).toHaveBeenCalledWith(
+        expect.stringContaining("Previewing worldline change from: New Experiment")
+      );
     });
   });
   
-  // Test error handling
+  // Test error handling 
   test('handles API errors correctly', async () => {
     // Setup API to fail
     getWorldlineStatus.mockRejectedValue(new Error('API error'));
@@ -296,6 +353,45 @@ describe('WorldlineMonitor', () => {
     // Should log the error
     expect(appInsights.trackException).toHaveBeenCalled();
     expect(notyfService.error).toHaveBeenCalled();
+  });
+  
+  // Test that chart shows loading state when refreshing data
+  test('chart displays properly when refreshing data', async () => {
+    render(<WorldlineMonitor />);
+    
+    // Wait for chart to render initially
+    await waitFor(() => {
+      expect(screen.getByTestId('worldline-chart')).toBeInTheDocument();
+    });
+    
+    // Simulate partial data load (only one API returns quickly)
+    getWorldlineHistory.mockClear();
+    getDivergenceReadings.mockClear();
+    
+    // Make one API call take longer
+    getWorldlineHistory.mockImplementation(async () => {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      return mockWorldlineHistory;
+    });
+    
+    getDivergenceReadings.mockResolvedValue(mockDivergenceReadings);
+    
+    // Click refresh button
+    fireEvent.click(screen.getByTestId('refresh-chart-btn'));
+    
+    // Now the loading state should be visible - check with waitFor to allow React to update
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-chart')).toBeInTheDocument();
+    }, { timeout: 100 });
+    
+    // Wait for data to fully load and chart to reappear
+    await waitFor(() => {
+      expect(screen.queryByTestId('worldline-chart')).toBeInTheDocument();
+    }, { timeout: 500 });
+    
+    // Verify both API calls completed
+    expect(getWorldlineHistory).toHaveBeenCalledTimes(1);
+    expect(getDivergenceReadings).toHaveBeenCalledTimes(1);
   });
   
   // Test WebSocket connection status
