@@ -339,8 +339,48 @@ const WorldlineMonitor = () => {
         enabled: true,
         shared: false,
         intersect: false,
-        y: {
-          formatter: (value) => value.toFixed(6)
+        custom: function({ series, seriesIndex, dataPointIndex, w }) {
+          // Skip the first point (base worldline with no experiment)
+          if (dataPointIndex === 0) {
+            return `
+              <div class="custom-tooltip">
+                <div class="tooltip-title">Base Worldline</div>
+                <div class="tooltip-value">Value: ${series[seriesIndex][dataPointIndex].toFixed(6)}</div>
+                <div class="tooltip-info">Starting point with no experiments</div>
+              </div>
+            `;
+          }
+    
+          // For other points, get the associated experiment (index-1 because the first point is base)
+          // The worldlineHistory includes base at index 0, but experiments start from index 1
+          const point = worldlineHistory[dataPointIndex];
+          const experiment = dataPointIndex > 0 && dataPointIndex < worldlineHistory.length 
+            ? point.added_experiment // Use added_experiment if available in the API response
+            : null;
+          
+          // For backward compatibility - if API doesn't include experiment details
+          const experimentNumber = dataPointIndex;
+          const previousValue = dataPointIndex > 0 ? series[seriesIndex][dataPointIndex-1] : 0;
+          const currentValue = series[seriesIndex][dataPointIndex];
+          const change = currentValue - previousValue;
+          const changeDisplay = (change >= 0 ? '+' : '') + change.toFixed(6);
+    
+          return `
+            <div class="custom-tooltip">
+              <div class="tooltip-title">Experiment ${experimentNumber}</div>
+              <div class="tooltip-value">Value: ${currentValue.toFixed(6)}</div>
+              <div class="tooltip-change">Change: ${changeDisplay}</div>
+              ${experiment ? `
+                <div class="tooltip-divider"></div>
+                <div class="tooltip-name">${experiment.name || 'Unnamed Experiment'}</div>
+                <div class="tooltip-creator">By: ${experiment.creator_id || 'Unknown'}</div>
+                ${experiment.description ? `<div class="tooltip-description">${experiment.description}</div>` : ''}
+              ` : ''}
+            </div>
+          `;
+        },
+        style: {
+          fontSize: '12px'
         }
       },
       dataLabels: {
@@ -785,6 +825,59 @@ const WorldlineMonitor = () => {
         .history-table-container {
           max-height: 300px;
           overflow-y: auto;
+        }
+
+        :global(.custom-tooltip) {
+          background: rgba(255, 255, 255, 0.95);
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+          padding: 10px;
+          min-width: 200px;
+        }
+      
+        :global(.tooltip-title) {
+          font-weight: bold;
+          font-size: 14px;
+          margin-bottom: 5px;
+        }
+      
+        :global(.tooltip-value) {
+          color: #3366ff;
+          font-family: monospace;
+          font-size: 13px;
+        }
+        
+        :global(.tooltip-change) {
+          color: #666;
+          font-family: monospace;
+          font-size: 12px;
+          margin-bottom: 5px;
+        }
+        
+        :global(.tooltip-divider) {
+          height: 1px;
+          background: #eee;
+          margin: 5px 0;
+        }
+        
+        :global(.tooltip-name) {
+          font-weight: bold;
+          margin-top: 5px;
+        }
+        
+        :global(.tooltip-creator) {
+          font-size: 11px;
+          color: #666;
+          margin-bottom: 5px;
+        }
+        
+        :global(.tooltip-description) {
+          font-size: 11px;
+          font-style: italic;
+          max-width: 200px;
+          white-space: normal;
+          word-wrap: break-word;
         }
       `}</style>
     </div>
