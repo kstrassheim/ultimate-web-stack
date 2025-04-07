@@ -1,18 +1,25 @@
-import aquaImage from './avatars/aqua.png';  
-import meguminImage from './avatars/megumin.png';
-
 export const getProfilePhoto = async (instance, activeAccount) => {
   if (!activeAccount) return null;
   
   try {
-    // Choose image based on user role
-    const isAdmin = activeAccount.idTokenClaims?.roles?.includes('Admin');
+    // Get the user's profile ID from their account
+    const profileId = activeAccount.localAccountId;
     
-    // Path to the image file
-    return isAdmin ? aquaImage : meguminImage;
-    
+    // Create dynamic import for the avatar based on profile ID
+    try {
+      // Dynamically import the image based on profile ID
+      const avatarModule = await import(`./avatars/${profileId}.png`);
+      return avatarModule.default;
+    } catch (importError) {
+      console.warn(`No profile image found for ID: ${profileId}, using default`);
+      
+      // Fallback to role-based default if specific avatar not found
+      const isAdmin = activeAccount.idTokenClaims?.roles?.includes('Admin');
+      const defaultModule = await import(`./avatars/${isAdmin ? 'admin' : 'user'}-default.png`);
+      return defaultModule.default;
+    }
   } catch (error) {
-    console.error('Error with mock profile photo:', error);
+    console.error('Error loading profile photo:', error);
     return null;
   }
 };
