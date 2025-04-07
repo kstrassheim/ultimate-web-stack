@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, Table, Badge, Row, Col, Form, InputGroup, Button, Alert } from 'react-bootstrap';
 import { useMsal } from '@azure/msal-react';
+import ReactApexChart from 'react-apexcharts'; // Add this import
 import { 
   getWorldlineStatus, 
   getWorldlineHistory, 
@@ -46,6 +47,7 @@ const WorldlineMonitor = () => {
   const [error, setError] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const historyChartRef = useRef(null);
+  const [chartKey, setChartKey] = useState(0); // For forcing chart re-renders
 
   // Fetch current worldline status
   const fetchWorldlineStatus = async () => {
@@ -203,6 +205,132 @@ const WorldlineMonitor = () => {
   useEffect(() => {
     applyFilters();
   }, [filters, readings]);
+
+  // Create memoized chart options and series
+  const { chartOptions, chartSeries } = useMemo(() => {
+    // Only compute when worldlineHistory or readings change
+    if (!worldlineHistory.length) {
+      return { chartOptions: {}, chartSeries: [] };
+    }
+    
+    // Extract data for chart
+    const labels = worldlineHistory.map((point, index) => 
+      index === 0 ? 'Base' : `Exp ${index}`
+    );
+    
+    const worldlineValues = worldlineHistory.map(point => 
+      parseFloat(point.current_worldline.toFixed(6))
+    );
+    
+    // Prepare divergence annotations - horizontal lines for known readings
+    const annotations = {
+      yaxis: readings.map(reading => {
+        const value = parseFloat(formatDivergenceReading(reading));
+        return {
+          y: value,
+          borderColor: getStatusColor(reading.status),
+          label: {
+            borderColor: getStatusColor(reading.status),
+            style: {
+              color: '#fff',
+              background: getStatusColor(reading.status),
+            },
+            text: `${reading.status} (${value})`,
+          }
+        };
+      })
+    };
+    
+    // Chart options
+    const options = {
+      chart: {
+        id: 'worldline-chart',
+        toolbar: {
+          show: true,
+          tools: {
+            download: true,
+            selection: true,
+            zoom: true,
+            zoomin: true,
+            zoomout: true,
+            pan: true,
+            reset: true
+          },
+        },
+        animations: {
+          enabled: true,
+          easing: 'easeinout',
+          speed: 800,
+          dynamicAnimation: {
+            enabled: true,
+            speed: 350
+          }
+        }
+      },
+      stroke: {
+        curve: 'smooth',
+        width: 3
+      },
+      colors: ['#3366ff'],
+      markers: {
+        size: 6,
+        colors: ['#3366ff'],
+        strokeWidth: 2,
+        strokeColors: '#fff',
+        hover: {
+          size: 8,
+        }
+      },
+      xaxis: {
+        categories: labels,
+        labels: {
+          rotate: 0
+        }
+      },
+      yaxis: {
+        title: {
+          text: 'Worldline Value'
+        },
+        decimalsInFloat: 6,
+        forceNiceScale: false,
+        min: Math.floor(Math.min(...worldlineValues, ...readings.map(r => parseFloat(formatDivergenceReading(r)))) * 10) / 10,
+        max: Math.ceil(Math.max(...worldlineValues, ...readings.map(r => parseFloat(formatDivergenceReading(r)))) * 10) / 10
+      },
+      annotations: annotations,
+      tooltip: {
+        enabled: true,
+        shared: false,
+        intersect: false,
+        y: {
+          formatter: (value) => value.toFixed(6)
+        }
+      },
+      dataLabels: {
+        enabled: true,
+        formatter: (value) => value.toFixed(6),
+        offsetY: -20,
+        style: {
+          fontSize: '12px',
+          colors: ['#304758']
+        }
+      },
+      grid: {
+        borderColor: "#e7e7e7",
+        row: {
+          colors: ['#f3f3f3', 'transparent'],
+          opacity: 0.5
+        },
+      }
+    };
+
+    // Chart series
+    const series = [{
+      name: 'Worldline',
+      data: worldlineValues
+    }];
+    
+    return { chartOptions: options, chartSeries: series };
+  }, [worldlineHistory, readings]);
 
   return (
     <div data-testid="worldline-monitor" className="worldline-monitor">
@@ -375,6 +503,62 @@ const WorldlineMonitor = () => {
         </Col>
       </Row>
       
+      {/* New Chart Card */}
+      <Card className="mb-4" data-testid="worldline-chart-card">
+        <Card.Header className="d-flex justify-content-between align-items-center">
+          <span>Worldline Divergence Chart</span>
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => {
+              fetchWorldlineHistory();
+              fetchDivergenceReadings();
+              setChartKey(prevKey => prevKey + 1);
+            }}
+            disabled={loading.history || loading.readings}
+            data-testid="refresh-chart-btn"
+          >
+            Refresh Chart
+          </Button>
+        </Card.Header>
+        <Card.Body>
+          {worldlineHistory.length > 0 && readings.length > 0 ? (
+            <div className="chart-container" data-testid="worldline-chart">
+              <ReactApexChart
+                key={chartKey} // Force re-render when data changes
+                options={chartOptions}
+                series={chartSeries}
+                type="line"
+                height={400}
+              />
+              <div className="chart-legend mt-3">
+                <div className="small text-muted mb-2">Known Divergence Lines:</div>
+                <div className="d-flex flex-wrap gap-2">
+                  {readings.map(reading => (
+                    <Badge 
+                      key={reading.id}
+                      bg={getStatusColor(reading.status)}
+                      className="d-flex align-items-center p-2"
+                    >
+                      <div className="me-1">{reading.status}:</div>
+                      <div>{formatDivergenceReading(reading)}</div>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : !loading.history && !loading.readings ? (
+            <div className="text-center p-4" data-testid="no-chart-data">
+              <p className="text-muted">No data available to generate chart.</p>
+            </div>
+          ) : (
+            <div className="text-center p-4" data-testid="loading-chart">
+              <p className="text-muted">Loading chart data...</p>
+            </div>
+          )}
+        </Card.Body>
+      </Card>
+
       {/* Divergence Readings Card */}
       <Card className="mb-4" data-testid="divergence-readings-card">
         <Card.Header className="d-flex justify-content-between align-items-center">
