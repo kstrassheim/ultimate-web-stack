@@ -70,8 +70,16 @@ const mockExperiments = [
 ];
 
 describe('Experiments Component', () => {
-  // Common setup before each test
+  // Add these variables at the top of your describe block
+  let originalConsoleLog;
+  
+  // Save original console.log and mock it before each test
   beforeEach(() => {
+    // Store original console method before mocking
+    originalConsoleLog = console.log;
+    console.log = jest.fn();
+    
+    // Rest of your existing beforeEach code...
     // Reset all mocks
     jest.clearAllMocks();
     
@@ -102,6 +110,11 @@ describe('Experiments Component', () => {
       callback('connected');
       return jest.fn(); // Return unsubscribe function
     });
+  });
+
+  // Restore original console.log after each test
+  afterEach(() => {
+    console.log = originalConsoleLog;
   });
 
   it('shows a loading indicator initially then renders experiments with world line and timestamp columns', async () => {
@@ -574,8 +587,14 @@ describe('Experiments Component', () => {
 // Add these tests to your existing test file
 
 describe('WebSocket Experiment Notifications', () => {
+  let originalConsoleLog;
   
   beforeEach(() => {
+    // Store original console method before mocking
+    originalConsoleLog = console.log;
+    console.log = jest.fn();
+    
+    // Rest of your existing beforeEach code...
     jest.clearAllMocks();
     
     // Mock useMsal for Kurisu (to test cross-user notifications)
@@ -595,6 +614,11 @@ describe('WebSocket Experiment Notifications', () => {
       window.testMessageHandler = handler; // Store handler globally for tests
       return jest.fn();
     });
+  });
+
+  // Restore original console.log after each test
+  afterEach(() => {
+    console.log = originalConsoleLog;
   });
   
   it('shows notifications when another user creates an experiment', async () => {
