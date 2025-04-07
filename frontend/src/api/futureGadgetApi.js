@@ -97,6 +97,47 @@ export const deleteExperiment = async (instance, experimentId) => {
   return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE');
 };
 
+// Add these functions after the existing experiment functions
+
+// ----- WORLDLINE & DIVERGENCE API -----
+
+export const getWorldlineStatus = async (instance) => {
+  return makeAuthenticatedRequest(instance, '/worldline-status');
+};
+
+export const getWorldlineHistory = async (instance) => {
+  return makeAuthenticatedRequest(instance, '/worldline-history');
+};
+
+export const getDivergenceReadings = async (instance, {
+  status = null,
+  recordedBy = null,
+  minValue = null,
+  maxValue = null
+} = {}) => {
+  // Build query string with any provided filters
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (recordedBy) params.append('recorded_by', recordedBy);
+  if (minValue !== null) params.append('min_value', minValue);
+  if (maxValue !== null) params.append('max_value', maxValue);
+  
+  const queryString = params.toString();
+  const url = `/divergence-readings${queryString ? `?${queryString}` : ''}`;
+  
+  return makeAuthenticatedRequest(instance, url);
+};
+
+// Format divergence reading for display
+export const formatDivergenceReading = (reading) => {
+  // Handle reading being in different field names
+  const value = reading.reading || reading.value;
+  if (value === null || value === undefined) return 'N/A';
+  
+  // Format with 6 decimal places (standard for divergence meters)
+  return parseFloat(value).toFixed(6);
+};
+
 // ----- WEBSOCKET CLIENTS -----
 
 // WebSocket client for experiments only
@@ -106,8 +147,16 @@ export class ExperimentsSocketClient extends WebSocketClient {
   }
 }
 
-// Create singleton instance for easy access
-const experimentsSocket = new ExperimentsSocketClient();
+// New WebSocket client for worldline status updates
+export class WorldlineSocketClient extends WebSocketClient {
+  constructor() {
+    super('future-gadget-lab/ws/worldline-status');
+  }
+}
 
-// Export the socket client
-export { experimentsSocket };
+// Create singleton instances for easy access
+const experimentsSocket = new ExperimentsSocketClient();
+const worldlineSocket = new WorldlineSocketClient();
+
+// Export the socket clients
+export { experimentsSocket, worldlineSocket };
