@@ -274,23 +274,27 @@ const Experiments = () => {
                       {formatExperimentTimestamp(exp)}
                     </td>
                     <td>{exp.description}</td>
-                    <td className="d-flex justify-content-around" data-testid="experiment-actions">
-                      <Button
-                        variant="outline-info"
-                        size="sm"
-                        onClick={() => openEditForm(exp.id)}
-                        data-testid={`edit-btn-${exp.id}`}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline-danger"
-                        size="sm"
-                        onClick={() => openDeleteModal(exp)}
-                        data-testid={`delete-btn-${exp.id}`}
-                      >
-                        Delete
-                      </Button>
+                    <td className="p-0" data-testid="experiment-actions">
+                      <div className="d-flex flex-column flex-md-row gap-1 h-100">
+                        <Button
+                          variant="outline-info"
+                          size="sm"
+                          className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
+                          onClick={() => openEditForm(exp.id)}
+                          data-testid={`edit-btn-${exp.id}`}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
+                          onClick={() => openDeleteModal(exp)}
+                          data-testid={`delete-btn-${exp.id}`}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
