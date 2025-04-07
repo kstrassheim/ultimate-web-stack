@@ -6,13 +6,13 @@ import NotFound from '@/pages/404';
 import EntraProfile from '@/components/EntraProfile';
 import AccessDenied from '@/pages/AccessDenied';
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ProtectedLink from "@/components/ProtectedLink";
 // get the pages
 import Home from '@/pages/Home';
+import Dashboard from '@/pages/Dashboard';
 import Chat from '@/pages/Chat';
-import Admin from '@/pages/Admin';
 // Add new imports for Experiments and DMails
-import Experiments from '@/pages/futureGadget/Experiments';
-import DMails from '@/pages/futureGadget/DMails';
+import Experiments from '@/pages/Experiments';
 
 function App() {
   return (
@@ -47,14 +47,11 @@ function App() {
             {/* Main navigation links */}
             <Nav className="me-auto" data-testid="page-navigation">
               <Nav.Link as={Link} to="/" data-testid="nav-home">Home</Nav.Link>
+              <Nav.Link as={Link} to="/dashboard" data-testid="nav-dashboard">Dashboard</Nav.Link>
               <Nav.Link as={Link} to="/chat" data-testid="nav-chat">Chat</Nav.Link>
-              
-              {/* Replace Admin link with dropdown */}
-              <NavDropdown title="Future Gadget Lab" id="future-gadget-dropdown" data-testid="nav-future-gadget">
-                <NavDropdown.Item as={Link} to="/admin" data-testid="nav-admin">Admin Panel</NavDropdown.Item>
-                <NavDropdown.Item as={Link} to="/experiments" data-testid="nav-experiments">Experiments</NavDropdown.Item>
-                <NavDropdown.Item as={Link} to="/dmails" data-testid="nav-dmails">D-Mail System</NavDropdown.Item>
-              </NavDropdown>
+              <ProtectedLink requiredRoles={["Admin"]}>
+                <Nav.Link as={Link} to="/experiments" data-testid="nav-experiments">Experiments</Nav.Link>
+              </ProtectedLink>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -65,8 +62,14 @@ function App() {
           <Route
             path="/"
             element={
-              <ProtectedRoute requiredRoles={[]}>
                 <Home />
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute requiredRoles={[]}>
+                <Dashboard />
               </ProtectedRoute>
             }
           />
@@ -78,28 +81,12 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRoles={["Admin"]}>
-                <Admin />
-              </ProtectedRoute>
-            }
-          />
           {/* Add new routes for Experiments and DMails */}
           <Route
             path="/experiments"
             element={
               <ProtectedRoute requiredRoles={["Admin"]}>
                 <Experiments />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dmails"
-            element={
-              <ProtectedRoute requiredRoles={["Admin"]}>
-                <DMails />
               </ProtectedRoute>
             }
           />

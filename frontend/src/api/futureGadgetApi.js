@@ -47,7 +47,28 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
   }
 };
 
-// ----- EXPERIMENTS API -----
+// Format timestamp for display
+export const formatExperimentTimestamp = (experiment) => {
+  if (experiment.timestamp) {
+    const date = new Date(experiment.timestamp);
+    return date.toLocaleString();
+  }
+  return 'Unknown';
+};
+
+// Format world line change to a nice readable format with +/- sign
+export const formatWorldLineChange = (change) => {
+  if (change === null || change === undefined) return 'N/A';
+  
+  // Convert to number if it's a string
+  const numChange = parseFloat(change);
+  
+  // Format with 6 decimal places (standard format for divergence values)
+  // Include sign for both positive and negative values
+  return (numChange >= 0 ? '+' : '') + numChange.toFixed(6);
+};
+
+// ----- EXPERIMENTS API ONLY -----
 
 export const getAllExperiments = async (instance) => {
   return makeAuthenticatedRequest(instance, '/lab-experiments');
@@ -58,7 +79,14 @@ export const getExperimentById = async (instance, experimentId) => {
 };
 
 export const createExperiment = async (instance, experimentData) => {
-  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', experimentData);
+  // Only add timestamp if not provided by user
+  const dataWithTimestamp = {
+    ...experimentData,
+    // Add timestamp if not provided or empty
+    timestamp: experimentData.timestamp || new Date().toISOString()
+  };
+  
+  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', dataWithTimestamp);
 };
 
 export const updateExperiment = async (instance, experimentId, experimentData) => {
@@ -69,112 +97,66 @@ export const deleteExperiment = async (instance, experimentId) => {
   return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE');
 };
 
-// ----- D-MAIL API -----
+// Add these functions after the existing experiment functions
 
-export const getAllDMails = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/d-mails');
+// ----- WORLDLINE & DIVERGENCE API -----
+
+export const getWorldlineStatus = async (instance) => {
+  return makeAuthenticatedRequest(instance, '/worldline-status');
 };
 
-export const getDMailById = async (instance, dMailId) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`);
+export const getWorldlineHistory = async (instance) => {
+  return makeAuthenticatedRequest(instance, '/worldline-history');
 };
 
-export const createDMail = async (instance, dMailData) => {
-  return makeAuthenticatedRequest(instance, '/d-mails', 'POST', dMailData);
+export const getDivergenceReadings = async (instance, {
+  status = null,
+  recordedBy = null,
+  minValue = null,
+  maxValue = null
+} = {}) => {
+  // Build query string with any provided filters
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (recordedBy) params.append('recorded_by', recordedBy);
+  if (minValue !== null) params.append('min_value', minValue);
+  if (maxValue !== null) params.append('max_value', maxValue);
+  
+  const queryString = params.toString();
+  const url = `/divergence-readings${queryString ? `?${queryString}` : ''}`;
+  
+  return makeAuthenticatedRequest(instance, url);
 };
 
-export const updateDMail = async (instance, dMailId, dMailData) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`, 'PUT', dMailData);
-};
-
-export const deleteDMail = async (instance, dMailId) => {
-  return makeAuthenticatedRequest(instance, `/d-mails/${dMailId}`, 'DELETE');
-};
-
-// ----- DIVERGENCE READINGS API -----
-
-export const getAllDivergenceReadings = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/divergence-readings');
-};
-
-export const getDivergenceReadingById = async (instance, readingId) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`);
-};
-
-export const createDivergenceReading = async (instance, readingData) => {
-  return makeAuthenticatedRequest(instance, '/divergence-readings', 'POST', readingData);
-};
-
-export const updateDivergenceReading = async (instance, readingId, readingData) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`, 'PUT', readingData);
-};
-
-export const deleteDivergenceReading = async (instance, readingId) => {
-  return makeAuthenticatedRequest(instance, `/divergence-readings/${readingId}`, 'DELETE');
-};
-
-// ----- LAB MEMBERS API -----
-
-export const getAllLabMembers = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/lab-members');
-};
-
-export const getLabMemberById = async (instance, memberId) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`);
-};
-
-export const createLabMember = async (instance, memberData) => {
-  return makeAuthenticatedRequest(instance, '/lab-members', 'POST', memberData);
-};
-
-export const updateLabMember = async (instance, memberId, memberData) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`, 'PUT', memberData);
-};
-
-export const deleteLabMember = async (instance, memberId) => {
-  return makeAuthenticatedRequest(instance, `/lab-members/${memberId}`, 'DELETE');
+// Format divergence reading for display
+export const formatDivergenceReading = (reading) => {
+  // Handle reading being in different field names
+  const value = reading.reading || reading.value;
+  if (value === null || value === undefined) return 'N/A';
+  
+  // Format with 6 decimal places (standard for divergence meters)
+  return parseFloat(value).toFixed(6);
 };
 
 // ----- WEBSOCKET CLIENTS -----
 
-// WebSocket client for experiments
+// WebSocket client for experiments only
 export class ExperimentsSocketClient extends WebSocketClient {
   constructor() {
-    super('future-gadget-lab/ws/experiments');
+    super('future-gadget-lab/ws/lab-experiments');
   }
 }
 
-// WebSocket client for D-Mails
-export class DMailsSocketClient extends WebSocketClient {
+// New WebSocket client for worldline status updates
+export class WorldlineSocketClient extends WebSocketClient {
   constructor() {
-    super('future-gadget-lab/ws/d-mails');
-  }
-}
-
-// WebSocket client for divergence readings
-export class DivergenceReadingsSocketClient extends WebSocketClient {
-  constructor() {
-    super('future-gadget-lab/ws/divergence-readings');
-  }
-}
-
-// WebSocket client for lab members
-export class LabMembersSocketClient extends WebSocketClient {
-  constructor() {
-    super('future-gadget-lab/ws/lab-members');
+    super('future-gadget-lab/ws/worldline-status');
   }
 }
 
 // Create singleton instances for easy access
 const experimentsSocket = new ExperimentsSocketClient();
-const dMailsSocket = new DMailsSocketClient();
-const divergenceReadingsSocket = new DivergenceReadingsSocketClient();
-const labMembersSocket = new LabMembersSocketClient();
+const worldlineSocket = new WorldlineSocketClient();
 
 // Export the socket clients
-export { 
-  experimentsSocket,
-  dMailsSocket, 
-  divergenceReadingsSocket, 
-  labMembersSocket 
-};
+export { experimentsSocket, worldlineSocket };

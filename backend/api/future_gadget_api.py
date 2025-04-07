@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Security, HTTPException, Body, Path, Query, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Dict, Optional, Union
-from pydantic import BaseModel, Field, validator, field_validator
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from common.auth import azure_scheme, scopes
 from common.log import logger
@@ -8,8 +8,8 @@ from common.role_based_access import required_roles
 from common.socket import ConnectionManager
 from db.future_gadget_lab_data_service import (
     FutureGadgetLabDataService, 
-    WorldLineStatus, 
-    ExperimentStatus
+    ExperimentStatus,
+    calculate_worldline_status
 )
 
 # Initialize router
@@ -18,25 +18,16 @@ future_gadget_api_router = APIRouter(tags=["Future Gadget Lab"])
 # Initialize data service with memory storage
 fgl_service = FutureGadgetLabDataService(use_memory_storage=True)
 
-# Create separate connection managers for each entity type with proper role permissions
+# Create connection manager for experiments only
 experiment_connection_manager = ConnectionManager(
-    receiver_roles=["Admin"],  # Only Admin can connect to receive updates
-    sender_roles=["Admin"]     # Only Admin can send updates
-)
-
-d_mail_connection_manager = ConnectionManager(
-    receiver_roles=["Admin"], 
-    sender_roles=["Admin"]
-)
-
-divergence_reading_connection_manager = ConnectionManager(
     receiver_roles=["Admin"],
     sender_roles=["Admin"]
 )
 
-lab_member_connection_manager = ConnectionManager(
-    receiver_roles=["Admin"],
-    sender_roles=["Admin"]
+# Add a new connection manager for worldline status updates
+worldline_connection_manager = ConnectionManager(
+    receiver_roles=None,  # Allow any authenticated user to receive
+    sender_roles=["Admin"]  # Only Admins can send
 )
 
 # --- Pydantic Models for Request/Response Validation ---
@@ -48,6 +39,18 @@ class ExperimentBase(BaseModel):
     creator_id: str
     collaborators: List[str] = []
     results: Optional[str] = None
+    world_line_change: Optional[float] = None
+    timestamp: Optional[str] = None
+    
+    # Validator for world_line_change
+    @field_validator('world_line_change', mode='before')
+    def convert_to_float(cls, v):
+        if isinstance(v, str) and v.strip():
+            try:
+                return float(v)
+            except ValueError:
+                raise ValueError(f"Could not convert {v} to float")
+        return v
 
 class ExperimentCreate(ExperimentBase):
     pass
@@ -59,73 +62,12 @@ class ExperimentUpdate(BaseModel):
     creator_id: Optional[str] = None
     collaborators: Optional[List[str]] = None
     results: Optional[str] = None
-
-class DMailBase(BaseModel):
-    sender_id: str
-    recipient: str
-    content: str
-    target_timestamp: str
-    world_line_before: Optional[float] = None  # Changed from str to float
-    world_line_after: Optional[float] = None   # Changed from str to float
-    observed_changes: Optional[str] = None
+    world_line_change: Optional[float] = None
+    timestamp: Optional[str] = None
     
-    # Validator to convert string values to float if needed
-    @field_validator('world_line_before', 'world_line_after', mode='before')
+    # Validator for world_line_change
+    @field_validator('world_line_change', mode='before')
     def convert_to_float(cls, v):
-        if isinstance(v, str) and v.strip():
-            try:
-                return float(v)
-            except ValueError:
-                raise ValueError(f"Could not convert {v} to float")
-        return v
-
-class DMailCreate(DMailBase):
-    pass
-
-class DMailUpdate(BaseModel):
-    recipient: Optional[str] = None
-    content: Optional[str] = None
-    target_timestamp: Optional[str] = None
-    world_line_before: Optional[float] = None
-    world_line_after: Optional[float] = None
-    observed_changes: Optional[str] = None
-    
-    @field_validator('world_line_before', 'world_line_after', mode='before')
-    def convert_to_float(cls, v):
-        if isinstance(v, str) and v.strip():
-            try:
-                return float(v)
-            except ValueError:
-                raise ValueError(f"Could not convert {v} to float")
-        return v
-
-class DivergenceReadingBase(BaseModel):
-    reading: float  # Changed from str to float
-    status: WorldLineStatus
-    recorded_by: str
-    notes: Optional[str] = None
-    
-    # Validator to convert string reading to float, if needed
-    @field_validator('reading', mode='before')
-    def convert_reading_to_float(cls, v):
-        if isinstance(v, str) and v.strip():
-            try:
-                return float(v)
-            except ValueError:
-                raise ValueError(f"Could not convert {v} to float")
-        return v
-
-class DivergenceReadingCreate(DivergenceReadingBase):
-    pass
-
-class DivergenceReadingUpdate(BaseModel):
-    reading: Optional[float] = None  # Changed from str to float
-    status: Optional[WorldLineStatus] = None
-    recorded_by: Optional[str] = None
-    notes: Optional[str] = None
-    
-    @field_validator('reading', mode='before')
-    def convert_reading_to_float(cls, v):
         if v is None:
             return v
         if isinstance(v, str) and v.strip():
@@ -135,22 +77,9 @@ class DivergenceReadingUpdate(BaseModel):
                 raise ValueError(f"Could not convert {v} to float")
         return v
 
-class LabMemberBase(BaseModel):
-    name: str
-    codename: str
-    role: str
-    
-class LabMemberCreate(LabMemberBase):
-    lab_member_number: Optional[int] = None
-
-class LabMemberUpdate(BaseModel):
-    name: Optional[str] = None
-    codename: Optional[str] = None
-    role: Optional[str] = None
-
 # --- API Routes ---
 
-# ----- EXPERIMENTS ROUTES -----
+# ----- EXPERIMENTS ROUTES ONLY -----
 
 @future_gadget_api_router.get("/lab-experiments", response_model=List[Dict])
 @required_roles(["Admin"])
@@ -188,13 +117,25 @@ async def create_experiment(
     token=Security(azure_scheme, scopes=scopes)
 ):
     logger.info(f"Future Gadget Lab API - Creating new experiment: {experiment.name}")
+    
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
+    
+    # Add creator information to track who performed this action
     created_experiment = fgl_service.create_experiment(experiment.model_dump())
     
-    # Use the new broadcast method for simplified notification
+    # Fix the broadcast call in create_experiment function
     await experiment_connection_manager.broadcast(
-        data=created_experiment,
+        data={
+            **created_experiment,
+            "actor": username,  # Username of who performed this action
+            "type": "create"    # Include type at the top level
+        },
         type="create"
     )
+    
+    # Broadcast updated worldline status
+    await broadcast_worldline_status(experiment=created_experiment, sender=None)
     
     return created_experiment
 
@@ -210,13 +151,23 @@ async def update_experiment(
     if not existing_experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
     
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
+    
     updated_experiment = fgl_service.update_experiment(experiment_id, experiment.model_dump(exclude_unset=True))
     
-    # Use broadcast method
+    # Fix the broadcast call in update_experiment function
     await experiment_connection_manager.broadcast(
-        data=updated_experiment,
+        data={
+            **updated_experiment,
+            "actor": username,  # Username of who performed this action
+            "type": "update"    # Include type at the top level
+        },
         type="update"
     )
+    
+    # Broadcast updated worldline status
+    await broadcast_worldline_status(experiment=updated_experiment, sender=None)
     
     return updated_experiment
 
@@ -228,305 +179,42 @@ async def delete_experiment(
 ):
     logger.info(f"Future Gadget Lab API - Deleting experiment with ID: {experiment_id}")
     
-    # Get the experiment before deletion to include in the notification
     experiment = fgl_service.get_experiment_by_id(experiment_id)
     if not experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
+    
+    # Fix: Access token properties directly instead of using .get()
+    username = getattr(token, "preferred_username", "unknown")
     
     success = fgl_service.delete_experiment(experiment_id)
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to delete experiment with ID {experiment_id}")
     
-    # Use broadcast with minimal data for delete operation
+    # Fix the broadcast call in delete_experiment function
     await experiment_connection_manager.broadcast(
-        data={"id": experiment_id, "name": experiment.get("name", "Unknown")},
+        data={
+            "id": experiment_id, 
+            "name": experiment.get("name", "Unknown"),
+            "actor": username,  # Username of who performed this action
+            "type": "delete"    # Include type at the top level
+        },
         type="delete"
     )
     
+    # Broadcast updated worldline status (no experiment to include since it was deleted)
+    await broadcast_worldline_status(sender=None)
+    
     return {"message": f"Experiment with ID {experiment_id} successfully deleted"}
 
-# ----- D-MAIL ROUTES -----
-
-@future_gadget_api_router.get("/d-mails", response_model=List[Dict])
-@required_roles(["Admin"])
-async def get_all_d_mails(token=Security(azure_scheme, scopes=scopes)):
-    logger.info("Future Gadget Lab API - Getting all D-Mails")
-    return fgl_service.get_all_d_mails()
-
-@future_gadget_api_router.get("/d-mails/{d_mail_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def get_d_mail_by_id(
-    d_mail_id: str = Path(..., description="The ID of the D-Mail to retrieve"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Getting D-Mail with ID: {d_mail_id}")
-    d_mail = fgl_service.get_d_mail_by_id(d_mail_id)
-    if not d_mail:
-        raise HTTPException(status_code=404, detail=f"D-Mail with ID {d_mail_id} not found")
-    return d_mail
-
-@future_gadget_api_router.post("/d-mails", response_model=Dict, status_code=201)
-@required_roles(["Admin"])
-async def create_d_mail(
-    d_mail: DMailCreate,
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Creating new D-Mail from sender: {d_mail.sender_id}")
-    created_d_mail = fgl_service.create_d_mail(d_mail.model_dump())
-    
-    # Notify all connected clients about the new D-Mail
-    for connection in d_mail_connection_manager.active_connections:
-        await d_mail_connection_manager.send_data(
-            data=created_d_mail,
-            type="create",
-            websocket=connection
-        )
-    
-    return created_d_mail
-
-@future_gadget_api_router.put("/d-mails/{d_mail_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def update_d_mail(
-    d_mail_id: str = Path(..., description="The ID of the D-Mail to update"),
-    d_mail: DMailUpdate = Body(...),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Updating D-Mail with ID: {d_mail_id}")
-    existing_d_mail = fgl_service.get_d_mail_by_id(d_mail_id)
-    if not existing_d_mail:
-        raise HTTPException(status_code=404, detail=f"D-Mail with ID {d_mail_id} not found")
-    
-    updated_d_mail = fgl_service.update_d_mail(d_mail_id, d_mail.model_dump(exclude_unset=True))
-    
-    # Notify all connected clients about the updated D-Mail
-    for connection in d_mail_connection_manager.active_connections:
-        await d_mail_connection_manager.send_data(
-            data=updated_d_mail,
-            type="update",
-            websocket=connection
-        )
-    
-    return updated_d_mail
-
-@future_gadget_api_router.delete("/d-mails/{d_mail_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def delete_d_mail(
-    d_mail_id: str = Path(..., description="The ID of the D-Mail to delete"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Deleting D-Mail with ID: {d_mail_id}")
-    
-    # Get the D-Mail before deletion to include in the notification
-    d_mail = fgl_service.get_d_mail_by_id(d_mail_id)
-    if not d_mail:
-        raise HTTPException(status_code=404, detail=f"D-Mail with ID {d_mail_id} not found")
-    
-    success = fgl_service.delete_d_mail(d_mail_id)
-    if not success:
-        raise HTTPException(status_code=500, detail=f"Failed to delete D-Mail with ID {d_mail_id}")
-    
-    # Notify all connected clients about the deleted D-Mail
-    for connection in d_mail_connection_manager.active_connections:
-        await d_mail_connection_manager.send_data(
-            data={"id": d_mail_id, "sender_id": d_mail.get("sender_id", "Unknown")},
-            type="delete",
-            websocket=connection
-        )
-    
-    return {"message": f"D-Mail with ID {d_mail_id} successfully deleted"}
-
-# ----- DIVERGENCE METER READINGS ROUTES -----
-
-@future_gadget_api_router.get("/divergence-readings", response_model=List[Dict])
-@required_roles(["Admin"])
-async def get_all_divergence_readings(token=Security(azure_scheme, scopes=scopes)):
-    logger.info("Future Gadget Lab API - Getting all divergence readings")
-    return fgl_service.get_all_divergence_readings()
-
-@future_gadget_api_router.get("/divergence-readings/{reading_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def get_divergence_reading_by_id(
-    reading_id: str = Path(..., description="The ID of the divergence reading to retrieve"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Getting divergence reading with ID: {reading_id}")
-    reading = fgl_service.get_divergence_reading_by_id(reading_id)
-    if not reading:
-        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
-    return reading
-
-@future_gadget_api_router.post("/divergence-readings", response_model=Dict, status_code=201)
-@required_roles(["Admin"])
-async def create_divergence_reading(
-    reading: DivergenceReadingCreate,
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Creating new divergence reading from {reading.recorded_by}")
-    created_reading = fgl_service.create_divergence_reading(reading.model_dump())
-    
-    # Notify all connected clients about the new reading
-    for connection in divergence_reading_connection_manager.active_connections:
-        await divergence_reading_connection_manager.send_data(
-            data=created_reading,
-            type="create",
-            websocket=connection
-        )
-        
-    return created_reading
-
-@future_gadget_api_router.put("/divergence-readings/{reading_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def update_divergence_reading(
-    reading_id: str = Path(..., description="The ID of the divergence reading to update"),
-    reading: DivergenceReadingUpdate = Body(...),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Updating divergence reading with ID: {reading_id}")
-    existing_reading = fgl_service.get_divergence_reading_by_id(reading_id)
-    if not existing_reading:
-        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
-    
-    updated_reading = fgl_service.update_divergence_reading(reading_id, reading.model_dump(exclude_unset=True))
-    
-    # Notify all connected clients about the updated reading
-    for connection in divergence_reading_connection_manager.active_connections:
-        await divergence_reading_connection_manager.send_data(
-            data=updated_reading,
-            type="update",
-            websocket=connection
-        )
-        
-    return updated_reading
-
-@future_gadget_api_router.delete("/divergence-readings/{reading_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def delete_divergence_reading(
-    reading_id: str = Path(..., description="The ID of the divergence reading to delete"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Deleting divergence reading with ID: {reading_id}")
-    
-    # Get the reading before deletion to include in the notification
-    reading = fgl_service.get_divergence_reading_by_id(reading_id)
-    if not reading:
-        raise HTTPException(status_code=404, detail=f"Divergence reading with ID {reading_id} not found")
-    
-    success = fgl_service.delete_divergence_reading(reading_id)
-    if not success:
-        raise HTTPException(status_code=500, detail=f"Failed to delete divergence reading with ID {reading_id}")
-    
-    # Notify all connected clients about the deleted reading
-    for connection in divergence_reading_connection_manager.active_connections:
-        await divergence_reading_connection_manager.send_data(
-            data={"id": reading_id, "reading": reading.get("reading", "Unknown")},
-            type="delete",
-            websocket=connection
-        )
-        
-    return {"message": f"Divergence reading with ID {reading_id} successfully deleted"}
-
-# ----- LAB MEMBER ROUTES -----
-
-@future_gadget_api_router.get("/lab-members", response_model=List[Dict])
-@required_roles(["Admin"])
-async def get_all_lab_members(token=Security(azure_scheme, scopes=scopes)):
-    logger.info("Future Gadget Lab API - Getting all lab members")
-    return fgl_service.get_all_lab_members()
-
-@future_gadget_api_router.get("/lab-members/{member_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def get_lab_member_by_id(
-    member_id: str = Path(..., description="The ID of the lab member to retrieve"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Getting lab member with ID: {member_id}")
-    member = fgl_service.get_lab_member_by_id(member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
-    return member
-
-@future_gadget_api_router.post("/lab-members", response_model=Dict, status_code=201)
-@required_roles(["Admin"])
-async def create_lab_member(
-    member: LabMemberCreate,
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Creating new lab member: {member.name}")
-    created_member = fgl_service.create_lab_member(member.model_dump())
-    
-    # Notify all connected clients about the new lab member
-    for connection in lab_member_connection_manager.active_connections:
-        await lab_member_connection_manager.send_data(
-            data=created_member,
-            type="create",
-            websocket=connection
-        )
-        
-    return created_member
-
-@future_gadget_api_router.put("/lab-members/{member_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def update_lab_member(
-    member_id: str = Path(..., description="The ID of the lab member to update"),
-    member: LabMemberUpdate = Body(...),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Updating lab member with ID: {member_id}")
-    existing_member = fgl_service.get_lab_member_by_id(member_id)
-    if not existing_member:
-        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
-    
-    updated_member = fgl_service.update_lab_member(member_id, member.model_dump(exclude_unset=True))
-    
-    # Notify all connected clients about the updated lab member
-    for connection in lab_member_connection_manager.active_connections:
-        await lab_member_connection_manager.send_data(
-            data=updated_member,
-            type="update",
-            websocket=connection
-        )
-        
-    return updated_member
-
-@future_gadget_api_router.delete("/lab-members/{member_id}", response_model=Dict)
-@required_roles(["Admin"])
-async def delete_lab_member(
-    member_id: str = Path(..., description="The ID of the lab member to delete"),
-    token=Security(azure_scheme, scopes=scopes)
-):
-    logger.info(f"Future Gadget Lab API - Deleting lab member with ID: {member_id}")
-    
-    # Get the lab member before deletion to include in the notification
-    member = fgl_service.get_lab_member_by_id(member_id)
-    if not member:
-        raise HTTPException(status_code=404, detail=f"Lab member with ID {member_id} not found")
-    
-    success = fgl_service.delete_lab_member(member_id)
-    if not success:
-        raise HTTPException(status_code=500, detail=f"Failed to delete lab member with ID {member_id}")
-    
-    # Notify all connected clients about the deleted lab member
-    for connection in lab_member_connection_manager.active_connections:
-        await lab_member_connection_manager.send_data(
-            data={"id": member_id, "name": member.get("name", "Unknown")},
-            type="delete",
-            websocket=connection
-        )
-        
-    return {"message": f"Lab member with ID {member_id} successfully deleted"}
-
-# WebSocket endpoints for real-time updates
-@future_gadget_api_router.websocket("/ws/experiments")
+# WebSocket endpoint for experiments only
+@future_gadget_api_router.websocket("/ws/lab-experiments")
 async def experiment_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for experiment data updates"""
     try:
-        # Remove the required_roles parameter - now defined in the manager's constructor
         await experiment_connection_manager.auth_connect(websocket)
         
         try:
-            # Keep connection alive
             while True:
-                # Wait for any messages (mostly to detect disconnection)
                 data = await websocket.receive_text()
                 await experiment_connection_manager.send_personal_message(f"Experiment channel: {data}", websocket)
         except WebSocketDisconnect:
@@ -537,66 +225,226 @@ async def experiment_websocket_endpoint(websocket: WebSocket):
         if websocket in experiment_connection_manager.active_connections:
             experiment_connection_manager.disconnect(websocket)
 
-@future_gadget_api_router.websocket("/ws/d-mails")
-async def d_mail_websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for D-Mail data updates"""
+# New WebSocket endpoint for worldline status
+@future_gadget_api_router.websocket("/ws/worldline-status")
+async def worldline_status_websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for worldline status updates. 
+    Any authenticated user can receive updates, but only Admins can send them."""
     try:
-        # Remove the required_roles parameter - now defined in the manager's constructor
-        await d_mail_connection_manager.auth_connect(websocket)
+        await worldline_connection_manager.auth_connect(websocket)
         
         try:
-            # Keep connection alive
             while True:
-                # Wait for any messages (mostly to detect disconnection)
+                # Wait for messages (mostly for ping/pong to keep connection alive)
                 data = await websocket.receive_text()
-                await d_mail_connection_manager.send_personal_message(f"D-Mail channel: {data}", websocket)
+                # Only respond with current worldline status to non-admin users
+                # (they can't send actual updates)
+                if "Admin" not in getattr(websocket.state.user, "roles", []):
+                    # Get current worldline status
+                    experiments = fgl_service.get_all_experiments()
+                    readings = fgl_service.get_all_divergence_readings()
+                    status = calculate_worldline_status(experiments, readings)
+                    
+                    # Add current timestamp
+                    import datetime
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    status["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                    
+                    # Send current status as response
+                    await worldline_connection_manager.send_personal_message(status, websocket)
         except WebSocketDisconnect:
-            d_mail_connection_manager.disconnect(websocket)
-            logger.info(f"Client disconnected from D-Mail WebSocket: {websocket.state.user.get('name', 'Unknown')}")
+            worldline_connection_manager.disconnect(websocket)
+            logger.info(f"Client disconnected from worldline WebSocket: {websocket.state.user.get('name', 'Unknown')}")
     except Exception as e:
-        logger.error(f"D-Mail WebSocket error: {str(e)}")
-        if websocket in d_mail_connection_manager.active_connections:
-            d_mail_connection_manager.disconnect(websocket)
+        logger.error(f"Worldline WebSocket error: {str(e)}")
+        if websocket in worldline_connection_manager.active_connections:
+            worldline_connection_manager.disconnect(websocket, log_error=False)
 
-@future_gadget_api_router.websocket("/ws/divergence-readings")
-async def divergence_reading_websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for divergence meter reading updates"""
-    try:
-        # Remove the required_roles parameter - now defined in the manager's constructor
-        await divergence_reading_connection_manager.auth_connect(websocket)
+# Add a new function to broadcast worldline status to all connected clients
+async def broadcast_worldline_status(experiment: Dict = None, sender: WebSocket = None):
+    """
+    Broadcast current worldline status to all connected clients.
+    
+    Args:
+        experiment: Optional experiment to include in the calculation
+                  (useful for previewing impact before saving)
+        sender: WebSocket of the client that initiated the broadcast
+                (needed for proper authorization in ConnectionManager)
+    
+    This function can be called whenever the worldline status changes.
+    """
+    # Get all experiments from the database
+    experiments = fgl_service.get_all_experiments()
+    
+    # If an additional experiment is provided, include it in the calculation
+    if experiment is not None and experiment.get("world_line_change") is not None:
+        # Create a copy of experiments to avoid modifying the original list
+        calculation_experiments = experiments.copy()
+        # Add the provided experiment to the temporary calculation list
+        calculation_experiments.append(experiment)
+    else:
+        calculation_experiments = experiments
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Calculate worldline status with the combined experiment list
+    status = calculate_worldline_status(calculation_experiments, readings)
+    
+    # Add current timestamp
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    status["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    # If preview experiment was included, add a flag to indicate this
+    if experiment is not None:
+        status["includes_preview"] = True
+        status["preview_experiment"] = {
+            "name": experiment.get("name", "Unnamed experiment"),
+            "world_line_change": experiment.get("world_line_change", 0.0)
+        }
+    
+    # Add a message type field to the data so clients can distinguish the message type
+    status["message_type"] = "worldline_update"
+    
+    # Broadcast to all connected clients using a valid type ("message" is always valid)
+    await worldline_connection_manager.broadcast(
+        data=status, 
+        type="message"  # Use "message" instead of "worldline_update"
+    )
+    
+    # Return the status (useful when calling this function directly)
+    return status
+
+@future_gadget_api_router.get("/worldline-status", response_model=Dict)
+async def get_current_worldline_status(
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Calculate the current worldline status by summing all experiment divergences.
+    Returns the calculated worldline value and the closest known reading.
+    """
+    logger.info("Future Gadget Lab API - Getting current worldline status")
+    
+    # Get all experiments
+    experiments = fgl_service.get_all_experiments()
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Calculate worldline status
+    response = calculate_worldline_status(experiments, readings)
+    
+    # Add current timestamp in JavaScript ISO format: YYYY-MM-DDTHH:mm:ss.sssZ
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    response["timestamp"] = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    
+    return response
+
+@future_gadget_api_router.get("/worldline-history", response_model=List[Dict])
+async def get_worldline_history(
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Calculate worldline states after each experiment.
+    Returns an array of worldline states showing how the worldline changed over time.
+    """
+    logger.info("Future Gadget Lab API - Getting worldline history")
+    
+    # Get all experiments
+    all_experiments = fgl_service.get_all_experiments()
+    
+    # Get all divergence readings
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Sort experiments by timestamp
+    sorted_experiments = sorted(
+        [exp for exp in all_experiments if exp.get('timestamp')],
+        key=lambda x: x.get('timestamp', ''),
+    )
+    
+    # Calculate worldline states progressively
+    history = []
+    accumulated_experiments = []
+    
+    # Add base worldline (1.0) as starting point with no experiments
+    base_state = calculate_worldline_status([], readings)
+    base_state["added_experiment"] = None
+    history.append(base_state)
+    
+    # Calculate worldline after each experiment
+    for experiment in sorted_experiments:
+        accumulated_experiments.append(experiment)
         
-        try:
-            # Keep connection alive
-            while True:
-                # Wait for any messages (mostly to detect disconnection)
-                data = await websocket.receive_text()
-                await divergence_reading_connection_manager.send_personal_message(f"Divergence reading channel: {data}", websocket)
-        except WebSocketDisconnect:
-            divergence_reading_connection_manager.disconnect(websocket)
-            logger.info(f"Client disconnected from divergence reading WebSocket: {websocket.state.user.get('name', 'Unknown')}")
-    except Exception as e:
-        logger.error(f"Divergence reading WebSocket error: {str(e)}")
-        if websocket in divergence_reading_connection_manager.active_connections:
-            divergence_reading_connection_manager.disconnect(websocket)
-
-@future_gadget_api_router.websocket("/ws/lab-members")
-async def lab_member_websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for lab member data updates"""
-    try:
-        # Remove the required_roles parameter - now defined in the manager's constructor
-        await lab_member_connection_manager.auth_connect(websocket)
+        # Calculate new state with all experiments up to this point
+        state = calculate_worldline_status(accumulated_experiments.copy(), readings)
         
-        try:
-            # Keep connection alive
-            while True:
-                # Wait for any messages (mostly to detect disconnection)
-                data = await websocket.receive_text()
-                await lab_member_connection_manager.send_personal_message(f"Lab member channel: {data}", websocket)
-        except WebSocketDisconnect:
-            lab_member_connection_manager.disconnect(websocket)
-            logger.info(f"Client disconnected from lab member WebSocket: {websocket.state.user.get('name', 'Unknown')}")
-    except Exception as e:
-        logger.error(f"Lab member WebSocket error: {str(e)}")
-        if websocket in lab_member_connection_manager.active_connections:
-            lab_member_connection_manager.disconnect(websocket)
+        # Add experiment details to the state - uncomment and use this code
+        state["added_experiment"] = {
+            "id": experiment.get("id"),
+            "name": experiment.get("name"),
+            "description": experiment.get("description", ""),
+            "status": experiment.get("status"),
+            "world_line_change": experiment.get("world_line_change", 0),
+            "creator_id": experiment.get("creator_id", "Unknown"),
+            "collaborators": experiment.get("collaborators", []),
+            "results": experiment.get("results", ""),
+            "timestamp": experiment.get("timestamp")
+        }
+        
+        history.append(state)
+    
+    # Add current timestamp to each state for consistency
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    iso_now = now.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    for state in history:
+        if "timestamp" not in state:
+            state["timestamp"] = iso_now
+    
+    return history
 
+@future_gadget_api_router.get("/divergence-readings", response_model=List[Dict])
+async def get_divergence_readings(
+    status: Optional[str] = Query(None, description="Filter by worldline status"),
+    recorded_by: Optional[str] = Query(None, description="Filter by who recorded the reading"),
+    min_value: Optional[float] = Query(None, description="Filter by minimum reading value"),
+    max_value: Optional[float] = Query(None, description="Filter by maximum reading value"),
+    token=Security(azure_scheme, scopes=scopes)
+):
+    """
+    Get all divergence meter readings.
+    This endpoint is accessible to all authenticated users.
+    """
+    logger.info("Future Gadget Lab API - Getting all divergence readings")
+    readings = fgl_service.get_all_divergence_readings()
+    
+    # Apply filters if specified
+    filtered_readings = readings
+    if status:
+        filtered_readings = [r for r in filtered_readings if r.get('status') == status]
+    if recorded_by:
+        filtered_readings = [r for r in filtered_readings if r.get('recorded_by') == recorded_by]
+    if min_value is not None:
+        filtered_readings = [r for r in filtered_readings if get_reading_value(r) >= min_value]
+    if max_value is not None:
+        filtered_readings = [r for r in filtered_readings if get_reading_value(r) <= max_value]
+    
+    return filtered_readings
+
+# Helper function to extract reading value safely
+def get_reading_value(reading: Dict) -> float:
+    """Extract the reading value, handling different field names and types"""
+    value = reading.get("reading")
+    if value is None:
+        value = reading.get("value")
+    
+    # Convert to float if it's a string
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    
+    return value or 0.0

@@ -3,7 +3,7 @@ from tinydb.storages import MemoryStorage, JSONStorage
 from pathlib import Path
 import os
 import datetime
-import uuid  # Add this import
+import uuid
 from typing import Dict, List, Optional, Union, Any
 from enum import Enum
 from common.log import logger
@@ -48,11 +48,9 @@ class FutureGadgetLabDataService:
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             self.db = TinyDB(self.db_path)
         
-        # Create tables
+        # Create tables (removed d_mails_table and lab_members_table)
         self.experiments_table = self.db.table('experiments')
-        self.d_mails_table = self.db.table('d_mails')
         self.divergence_readings_table = self.db.table('divergence_readings')
-        self.lab_members_table = self.db.table('lab_members')
         
     # ----- EXPERIMENT CRUD OPERATIONS -----
     
@@ -92,6 +90,10 @@ class FutureGadgetLabDataService:
         if 'created_at' not in experiment_data:
             experiment_data['created_at'] = datetime.datetime.now().isoformat()
         
+        # Convert world_line_change to float if it's a string
+        if 'world_line_change' in experiment_data and isinstance(experiment_data['world_line_change'], str):
+            experiment_data['world_line_change'] = float(experiment_data['world_line_change'])
+        
         # Insert the experiment
         self.experiments_table.insert(experiment_data)
         return experiment_data
@@ -109,6 +111,10 @@ class FutureGadgetLabDataService:
         if 'id' in experiment_data:
             del experiment_data['id']
         
+        # Convert world_line_change to float if it's a string
+        if 'world_line_change' in experiment_data and isinstance(experiment_data['world_line_change'], str):
+            experiment_data['world_line_change'] = float(experiment_data['world_line_change'])
+        
         # Add updated_at timestamp
         experiment_data['updated_at'] = datetime.datetime.now().isoformat()
         
@@ -122,75 +128,6 @@ class FutureGadgetLabDataService:
         """Delete an experiment"""
         Experiment = Query()
         removed = self.experiments_table.remove(Experiment.id == experiment_id)
-        return len(removed) > 0
-    
-    # ----- D-MAIL CRUD OPERATIONS -----
-    
-    def get_all_d_mails(self) -> List[Dict]:
-        """Get all D-Mails"""
-        return self.d_mails_table.all()
-    
-    def get_d_mail_by_id(self, d_mail_id: str) -> Optional[Dict]:
-        """Get D-Mail by ID"""
-        DMail = Query()
-        results = self.d_mails_table.search(DMail.id == d_mail_id)
-        return results[0] if results else None
-    
-    def create_d_mail(self, d_mail_data: Dict) -> Dict:
-        """Create a new D-Mail"""
-        if 'id' not in d_mail_data:
-            # Generate ID if not provided
-            current_count = len(self.d_mails_table)
-            d_mail_data['id'] = f"DM-{current_count + 1:03d}"
-        
-        # Set timestamp if not provided
-        if 'sent_timestamp' not in d_mail_data:
-            d_mail_data['sent_timestamp'] = datetime.datetime.now().isoformat()
-        
-        # Convert divergence values to float
-        if 'world_line_before' in d_mail_data and isinstance(d_mail_data['world_line_before'], str):
-            d_mail_data['world_line_before'] = float(d_mail_data['world_line_before'])
-            
-        if 'world_line_after' in d_mail_data and isinstance(d_mail_data['world_line_after'], str):
-            d_mail_data['world_line_after'] = float(d_mail_data['world_line_after'])
-        
-        # Insert the D-Mail
-        self.d_mails_table.insert(d_mail_data)
-        return d_mail_data
-    
-    def update_d_mail(self, d_mail_id: str, d_mail_data: Dict) -> Optional[Dict]:
-        """Update an existing D-Mail"""
-        # Get the D-Mail
-        existing_d_mail = self.get_d_mail_by_id(d_mail_id)
-        if not existing_d_mail:
-            return None
-        
-        # Convert divergence values to float
-        if 'world_line_before' in d_mail_data and isinstance(d_mail_data['world_line_before'], str):
-            d_mail_data['world_line_before'] = float(d_mail_data['world_line_before'])
-            
-        if 'world_line_after' in d_mail_data and isinstance(d_mail_data['world_line_after'], str):
-            d_mail_data['world_line_after'] = float(d_mail_data['world_line_after'])
-        
-        # Update the D-Mail
-        DMail = Query()
-        # Remove the ID from update data if present
-        if 'id' in d_mail_data:
-            del d_mail_data['id']
-        
-        # Add updated_at timestamp
-        d_mail_data['updated_at'] = datetime.datetime.now().isoformat()
-        
-        # Update the D-Mail
-        self.d_mails_table.update(d_mail_data, DMail.id == d_mail_id)
-        
-        # Return the updated D-Mail
-        return self.get_d_mail_by_id(d_mail_id)
-    
-    def delete_d_mail(self, d_mail_id: str) -> bool:
-        """Delete a D-Mail record"""
-        DMail = Query()
-        removed = self.d_mails_table.remove(DMail.id == d_mail_id)
         return len(removed) > 0
     
     # ----- DIVERGENCE METER READINGS CRUD OPERATIONS -----
@@ -275,115 +212,23 @@ class FutureGadgetLabDataService:
         # Sort by timestamp (descending) and return the first one
         return sorted(readings, key=lambda x: x.get('timestamp', ''), reverse=True)[0]
 
-    # Add missing create_lab_member method
-    def create_lab_member(self, member_data: Dict) -> Dict:
-        """Create a new lab member"""
-        if 'id' not in member_data:
-            # Generate ID if not provided
-            member_data['id'] = f"LM-{uuid.uuid4()}"
-        
-        # Set creation timestamp if not provided
-        if 'created_at' not in member_data:
-            member_data['created_at'] = datetime.datetime.now().isoformat()
-        
-        # Insert the lab member
-        self.lab_members_table.insert(member_data)
-        return member_data
-
-    def get_all_lab_members(self) -> List[Dict]:
-        """Get all lab members"""
-        return self.lab_members_table.all()
-
-    def get_lab_member_by_id(self, member_id: str) -> Optional[Dict]:
-        """Get lab member by ID"""
-        Member = Query()
-        results = self.lab_members_table.search(Member.id == member_id)
-        return results[0] if results else None
-
-    def update_lab_member(self, member_id: str, member_data: Dict) -> Optional[Dict]:
-        """Update an existing lab member"""
-        # Get the lab member
-        existing_member = self.get_lab_member_by_id(member_id)
-        if not existing_member:
-            return None
-        
-        # Update the lab member
-        Member = Query()
-        # Remove the ID from update data if present
-        if 'id' in member_data:
-            del member_data['id']
-        
-        # Add updated_at timestamp
-        member_data['updated_at'] = datetime.datetime.now().isoformat()
-        
-        # Update the lab member
-        self.lab_members_table.update(member_data, Member.id == member_id)
-        
-        # Return the updated lab member
-        return self.get_lab_member_by_id(member_id)
-
-    def delete_lab_member(self, member_id: str) -> bool:
-        """Delete a lab member"""
-        Member = Query()
-        removed = self.lab_members_table.remove(Member.id == member_id)
-        return len(removed) > 0
-
 def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Dict]]:
-    """Generate test data for all tables in the Future Gadget Lab database
-    
-    Args:
-        service: The FutureGadgetLabDataService instance to populate
-        
-    Returns:
-        A dictionary containing the generated data for each table
-    """
+    """Generate test data for experiments and divergence readings"""
     # Dictionary to store all created items
     created_items = {
         "experiments": [],
-        "d_mails": [],
-        "divergence_readings": [],
-        "lab_members": []
+        "divergence_readings": []
     }
     
-    # Create lab members
-    lab_members = [
-        {
-            "name": "Rintaro Okabe", 
-            "codename": "Hououin Kyouma", 
-            "role": "Lab Leader"
-        },
-        {
-            "name": "Kurisu Makise", 
-            "codename": "Christina", 
-            "role": "Senior Researcher"
-        },
-        {
-            "name": "Itaru Hashida", 
-            "codename": "Daru", 
-            "role": "Super Hacker"
-        },
-        {
-            "name": "Mayuri Shiina", 
-            "codename": "Mayushii", 
-            "role": "Hostage"
-        },
-        {
-            "name": "Suzuha Amane", 
-            "codename": "John Titor", 
-            "role": "Time Traveler"
-        },
-        {
-            "name": "Ruka Urushibara", 
-            "codename": "Rukako", 
-            "role": "Lab Member"
-        }
-    ]
+    # Create base timestamp (current time)
+    current_time = datetime.datetime.now(datetime.timezone.utc)
     
-    for member_data in lab_members:
-        created_member = service.create_lab_member(member_data)
-        created_items["lab_members"].append(created_member)
+    # Function to format timestamp in JavaScript ISO format
+    def js_iso_format(dt: datetime.datetime) -> str:
+        # Format to match JavaScript's toISOString() exactly: YYYY-MM-DDTHH:mm:ss.sssZ
+        return dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
     
-    # Create experiments
+    # Create experiments with both positive and negative world_line_change values
     experiments = [
         {
             "name": "Phone Microwave (Name subject to change)",
@@ -391,7 +236,9 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "status": ExperimentStatus.COMPLETED.value,
             "creator_id": "Rintaro Okabe",
             "collaborators": ["Kurisu Makise", "Itaru Hashida"],
-            "results": "Successfully sent messages to the past, causing world line shifts"
+            "results": "Successfully sent messages to the past, causing world line shifts",
+            "world_line_change": 0.409431,
+            "timestamp": js_iso_format(current_time)  # Current time
         },
         {
             "name": "Divergence Meter",
@@ -399,7 +246,9 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "status": ExperimentStatus.COMPLETED.value,
             "creator_id": "Kurisu Makise",
             "collaborators": ["Rintaro Okabe"],
-            "results": "Accurately displays the current world line divergence value"
+            "results": "Accurately displays the current world line divergence value",
+            "world_line_change": 0.000124,
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=5))  # 5 minutes ago
         },
         {
             "name": "Time Leap Machine",
@@ -407,7 +256,9 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "status": ExperimentStatus.COMPLETED.value,
             "creator_id": "Kurisu Makise",
             "collaborators": ["Rintaro Okabe", "Itaru Hashida"],
-            "results": "Successfully allows transferring consciousness to past self within 48-hour limit"
+            "results": "Successfully allows transferring consciousness to past self within 48-hour limit",
+            "world_line_change": -0.000337, # Negative change - moving closer to Alpha attractor field
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=10))  # 10 minutes ago
         },
         {
             "name": "IBN 5100 Decoder",
@@ -415,15 +266,40 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
             "status": ExperimentStatus.FAILED.value,
             "creator_id": "Itaru Hashida",
             "collaborators": ["Suzuha Amane"],
-            "results": "IBN 5100 was lost before project could be completed"
+            "results": "IBN 5100 was lost before project could be completed",
+            "world_line_change": -0.048256, # Negative change - experiment failure pushed timeline backwards
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=15))  # 15 minutes ago
         },
         {
-            "name": "Upa Metal Coating",
-            "description": "Method to transform normal Upas into metal ones",
-            "status": ExperimentStatus.IN_PROGRESS.value,
-            "creator_id": "Mayuri Shiina",
-            "collaborators": [],
-            "results": "Initial tests show limited durability of coating"
+            "name": "Operation Skuld",
+            "description": "Plan to reach Steins;Gate worldline and save Kurisu without changing observed history",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Suzuha Amane"],
+            "results": "Successfully reached Steins;Gate worldline while saving Kurisu",
+            "world_line_change": 0.334137,
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=20))  # 20 minutes ago
+        },
+        # Add more experiments with negative world line changes
+        {
+            "name": "Jelly Person Experiment",
+            "description": "Experiment attempting to transform a person into jelly-like state",
+            "status": ExperimentStatus.FAILED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Itaru Hashida"],
+            "results": "Resulted in unstable human teleportation with catastrophic failure",
+            "world_line_change": -0.275349, # Significant negative change due to failure
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=25))  # 25 minutes ago
+        },
+        {
+            "name": "D-Mail Recovery Operation",
+            "description": "Operation to undo previous D-Mail effects",
+            "status": ExperimentStatus.COMPLETED.value,
+            "creator_id": "Rintaro Okabe",
+            "collaborators": ["Kurisu Makise", "Moeka Kiryu"],
+            "results": "Successfully undid effects of previous D-Mails, returning closer to Beta attractor field",
+            "world_line_change": -0.412591, # Large negative change - deliberately moving backwards
+            "timestamp": js_iso_format(current_time - datetime.timedelta(minutes=30))  # 30 minutes ago
         }
     ]
     
@@ -431,7 +307,7 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
         created_exp = service.create_experiment(exp_data)
         created_items["experiments"].append(created_exp)
     
-    # Create divergence readings
+    # Create divergence readings (existing code)
     readings = [
         {
             "reading": 1.048596,
@@ -469,59 +345,6 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
         created_reading = service.create_divergence_reading(reading_data)
         created_items["divergence_readings"].append(created_reading)
     
-    # Create D-Mails
-    d_mails = [
-        {
-            "sender_id": "Rintaro Okabe",
-            "recipient": "Rintaro Okabe (past)",
-            "content": "Don't follow Kurisu into the room.",
-            "target_timestamp": "2010-07-28T12:30:00",
-            "world_line_before": 1.130205,
-            "world_line_after": 0.571024,
-            "observed_changes": "Changed Alpha -> Beta worldline, prevented Kurisu's 'death'"
-        },
-        {
-            "sender_id": "Itaru Hashida",
-            "recipient": "Itaru Hashida (past)",
-            "content": "Buy IBM stock now.",
-            "target_timestamp": "2010-07-29T08:45:00",
-            "world_line_before": 0.571024,
-            "world_line_after": 0.571015,
-            "observed_changes": "Minor divergence, Daru becomes interested in stocks"
-        },
-        {
-            "sender_id": "Rintaro Okabe",
-            "recipient": "Moeka Kiryu",
-            "content": "FB is waiting on Braun Tube workshop. Go there now.",
-            "target_timestamp": "2010-08-04T18:20:00",
-            "world_line_before": 0.523299,
-            "world_line_after": 0.523307,
-            "observed_changes": "Moeka's actions delayed by a few hours"
-        },
-        {
-            "sender_id": "Kurisu Makise",
-            "recipient": "Rintaro Okabe (past)",
-            "content": "Lottery numbers: 03-07-10-26-41-42",
-            "target_timestamp": "2010-07-30T15:45:00",
-            "world_line_before": 0.571024,
-            "world_line_after": 0.409431,
-            "observed_changes": "Lab members became wealthy, attracted attention from SERN"
-        },
-        {
-            "sender_id": "Rintaro Okabe",
-            "recipient": "Rintaro Okabe (past)",
-            "content": "Operation Skuld will succeed. El Psy Kongroo.",
-            "target_timestamp": "2010-08-21T13:45:00",
-            "world_line_before": 1.382733,
-            "world_line_after": 1.048596,
-            "observed_changes": "Successfully reached Steins;Gate worldline"
-        }
-    ]
-    
-    for d_mail_data in d_mails:
-        created_d_mail = service.create_d_mail(d_mail_data)
-        created_items["d_mails"].append(created_d_mail)
-    
     # Return all created items
     return created_items
 
@@ -529,28 +352,110 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
 # In production code, you would inject this service where needed
 default_fgl_db = FutureGadgetLabDataService(use_memory_storage=True)
 
+
+def calculate_worldline_status(experiments, readings=None):
+    """
+    Calculate the current worldline by summing all experiment divergences.
+    
+    Args:
+        experiments: List of experiment objects with world_line_change values
+        readings: Optional list of divergence readings to find closest match
+                 If None, only worldline value is calculated without closest reading
+    
+    Returns:
+        Dict containing calculated worldline value and related information
+    """
+    # Calculate current worldline (start at 1.0 and add all divergences)
+    base_worldline = 1.0
+    current_worldline = base_worldline
+    
+    for exp in experiments:
+        if exp.get("world_line_change") is not None:
+            current_worldline += exp.get("world_line_change", 0.0)
+    
+    # Get the most recent experiment timestamp
+    last_experiment_timestamp = None
+    
+    if experiments:
+        # Sort experiments by timestamp (descending)
+        sorted_experiments = sorted(
+            [exp for exp in experiments if exp.get('timestamp')], 
+            key=lambda x: x.get('timestamp', ''), 
+            reverse=True
+        )
+        
+        if sorted_experiments:
+            last_experiment_timestamp = sorted_experiments[0].get('timestamp')
+    
+    # Initialize response with calculated values
+    response = {
+        "current_worldline": round(current_worldline, 6),
+        "base_worldline": base_worldline,
+        "total_divergence": round(current_worldline - base_worldline, 6),
+        "experiment_count": len(experiments),
+        "last_experiment_timestamp": last_experiment_timestamp
+    }
+    
+    # Rest of the function remains unchanged
+    if readings:
+        closest_reading = None
+        min_distance = float('inf')
+        
+        for reading in readings:
+            # Get reading value, checking both "reading" and "value" fields
+            reading_value = reading.get("reading")
+            if reading_value is None:
+                reading_value = reading.get("value")
+            
+            # Default to 0.0 if neither field exists
+            if reading_value is None:
+                reading_value = 0.0
+            
+            # Convert to float if it's a string
+            if isinstance(reading_value, str):
+                try:
+                    reading_value = float(reading_value)
+                except ValueError:
+                    reading_value = 0.0
+            
+            distance = abs(reading_value - current_worldline)
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_reading = reading
+        
+        # If no readings found, create a placeholder
+        if not closest_reading:
+            closest_reading = {
+                "reading": current_worldline,
+                "status": "unknown",
+                "recorded_by": "System",
+                "notes": "No divergence readings available for comparison"
+            }
+        
+        # Add closest reading to response
+        response["closest_reading"] = {
+            "value": closest_reading.get("reading"),
+            "status": closest_reading.get("status"),
+            "recorded_by": closest_reading.get("recorded_by", "Unknown"),
+            "notes": closest_reading.get("notes", ""),
+            "distance": round(min_distance, 6)
+        }
+    
+    return response
+
 # Example usage
 if __name__ == "__main__":
-    # Create a new experiment
+    # Create a new experiment with world_line_change
     new_experiment = default_fgl_db.create_experiment({
         "name": "Phone Microwave (Name subject to change)",
         "description": "A microwave that can send text messages to the past",
         "status": ExperimentStatus.COMPLETED.value,
-        "world_line": WorldLineStatus.ALPHA.value
+        "world_line": WorldLineStatus.ALPHA.value,
+        "world_line_change": 0.337192
     })
     
     print(f"Created experiment: {new_experiment}")
-    
-    # Create a new D-Mail
-    new_d_mail = default_fgl_db.create_d_mail({
-        "sender": "Okabe Rintaro",
-        "recipient": "Okabe Rintaro (past)",
-        "message": "Don't use the microwave today!",
-        "world_line_before": 0.571024,  # Now a float instead of string
-        "world_line_after": 1.048596    # Now a float instead of string
-    })
-    
-    print(f"Created D-Mail: {new_d_mail}")
     
     # Create a new divergence reading
     new_reading = default_fgl_db.create_divergence_reading({
@@ -568,16 +473,10 @@ if __name__ == "__main__":
     test_data = generate_test_data(test_db)
     
     # Print summary of created data
-    print(f"Created {len(test_data['lab_members'])} lab members")
     print(f"Created {len(test_data['experiments'])} experiments")
     print(f"Created {len(test_data['divergence_readings'])} divergence readings")
-    print(f"Created {len(test_data['d_mails'])} D-Mails")
     
     # Example of fetching data from the populated database
-    print("\nLab Members:")
-    for member in test_db.lab_members_table.all():
-        print(f"- {member['name']} ({member['codename']}): {member['role']}")
-    
     print("\nCurrent Worldline:")
     latest_reading = test_db.get_latest_divergence_reading()
     if latest_reading:

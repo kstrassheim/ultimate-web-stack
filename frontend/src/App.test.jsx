@@ -11,14 +11,27 @@ jest.mock('@/components/ProtectedRoute', () => ({ children, requiredRoles }) => 
     {children}
   </div>
 ));
-jest.mock('@/pages/Home', () => () => <div data-testid="mocked-home-page">Home Page</div>);
+
+// Mock ProtectedLink with different implementations based on role
+jest.mock('@/components/ProtectedLink', () => {
+  // Return a component that renders children only if requiredRoles includes 'Admin'
+  return ({ children, requiredRoles = [] }) => {
+    // For testing purposes, simulate different auth states using data attributes
+    const showForAdmin = requiredRoles.includes('Admin');
+    return (
+      <div data-testid="mocked-protected-link" data-roles={requiredRoles.join(',')} data-visible={showForAdmin}>
+        {showForAdmin ? children : null}
+      </div>
+    );
+  };
+});
+
+jest.mock('@/pages/Home', () => () => <div data-testid="home-page">Home Page</div>);
+jest.mock('@/pages/Dashboard', () => () => <div data-testid="mocked-dashboard-page">Dashboard Page</div>);
 jest.mock('@/pages/Chat', () => () => <div data-testid="mocked-chat-page">Chat Page</div>);
-jest.mock('@/pages/Admin', () => () => <div data-testid="mocked-admin-page">Admin Page</div>);
 jest.mock('@/pages/404', () => () => <div data-testid="mocked-404-page">404 Page</div>);
 jest.mock('@/pages/AccessDenied', () => () => <div data-testid="mocked-access-denied-page">Access Denied Page</div>);
-// Mock the new pages
-jest.mock('@/pages/futureGadget/Experiments', () => () => <div data-testid="mocked-experiments-page">Experiments Page</div>);
-jest.mock('@/pages/futureGadget/DMails', () => () => <div data-testid="mocked-dmails-page">DMails Page</div>);
+jest.mock('@/pages/Experiments', () => () => <div data-testid="mocked-experiments-page">Experiments Page</div>);
 
 describe('App Component', () => {
   // Set document.title for testing
@@ -41,42 +54,60 @@ describe('App Component', () => {
     expect(screen.getByTestId('main-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('logo-link')).toBeInTheDocument();
     expect(screen.getByTestId('logo-image')).toBeInTheDocument();
-    expect(screen.getByText('Test Page Title')).toBeInTheDocument(); // Now checking for document.title
+    expect(screen.getByText('Test Page Title')).toBeInTheDocument();
     
     // Check page navigation links
     expect(screen.getByTestId('page-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('nav-home')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-chat')).toBeInTheDocument(); // Test chat link
+    expect(screen.getByTestId('nav-dashboard')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-chat')).toBeInTheDocument();
     
-    // Check dropdown exists
-    expect(screen.getByTestId('nav-future-gadget')).toBeInTheDocument();
+    // Check protected links
+    const protectedLink = screen.getByTestId('mocked-protected-link');
+    expect(protectedLink).toBeInTheDocument();
+    expect(protectedLink).toHaveAttribute('data-roles', 'Admin');
     
     // Check auth navigation components
     expect(screen.getByTestId('auth-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('mocked-entra-profile')).toBeInTheDocument();
   });
 
-  test('checks dropdown items are in the DOM', () => {
+  test('verifies experiments link is protected with Admin role', () => {
     render(
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <App />
       </BrowserRouter>
     );
     
-    // First, click the dropdown toggle to open the menu
-    const dropdownToggle = screen.getByText('Future Gadget Lab');
-    fireEvent.click(dropdownToggle);
+    // Check that the experiments link is wrapped in a ProtectedLink
+    const protectedLink = screen.getByTestId('mocked-protected-link');
+    expect(protectedLink).toHaveAttribute('data-roles', 'Admin');
     
-    // Now the dropdown items should be visible in the DOM
-    expect(screen.getByTestId('nav-admin')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-experiments')).toBeInTheDocument();
-    expect(screen.getByTestId('nav-dmails')).toBeInTheDocument();
+    // Check if the link is visible (based on our mock implementation)
+    const isVisible = protectedLink.getAttribute('data-visible') === 'true';
+    
+    // The experiments link visibility depends on the mock implementation
+    // In our mock, we're showing it when requiredRoles includes 'Admin'
+    expect(isVisible).toBe(true);
   });
 
-  test('renders home route with correct protection', () => {
+  test('renders home route with no protection', () => {
     render(
       <MemoryRouter 
         initialEntries={['/']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <App />
+      </MemoryRouter>
+    );
+    // No required roles
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
+  });
+
+  test('renders dashboard route with correct protection', () => {
+    render(
+      <MemoryRouter 
+        initialEntries={['/dashboard']}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <App />
@@ -86,7 +117,7 @@ describe('App Component', () => {
     const protectedRoute = screen.getByTestId('mocked-protected-route');
     expect(protectedRoute).toBeInTheDocument();
     expect(protectedRoute).toHaveAttribute('data-roles', ''); // No required roles
-    expect(screen.getByTestId('mocked-home-page')).toBeInTheDocument();
+    expect(screen.getByTestId('mocked-dashboard-page')).toBeInTheDocument();
   });
   
   test('renders chat route with correct protection', () => {
@@ -105,22 +136,6 @@ describe('App Component', () => {
     expect(screen.getByTestId('mocked-chat-page')).toBeInTheDocument();
   });
 
-  test('renders admin route with Admin role protection', () => {
-    render(
-      <MemoryRouter 
-        initialEntries={['/admin']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <App />
-      </MemoryRouter>
-    );
-    
-    const protectedRoute = screen.getByTestId('mocked-protected-route');
-    expect(protectedRoute).toBeInTheDocument();
-    expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
-    expect(screen.getByTestId('mocked-admin-page')).toBeInTheDocument();
-  });
-  
   test('renders experiments route with Admin role protection', () => {
     render(
       <MemoryRouter 
@@ -135,22 +150,6 @@ describe('App Component', () => {
     expect(protectedRoute).toBeInTheDocument();
     expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
     expect(screen.getByTestId('mocked-experiments-page')).toBeInTheDocument();
-  });
-  
-  test('renders dmails route with Admin role protection', () => {
-    render(
-      <MemoryRouter 
-        initialEntries={['/dmails']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <App />
-      </MemoryRouter>
-    );
-    
-    const protectedRoute = screen.getByTestId('mocked-protected-route');
-    expect(protectedRoute).toBeInTheDocument();
-    expect(protectedRoute).toHaveAttribute('data-roles', 'Admin'); // Admin role required
-    expect(screen.getByTestId('mocked-dmails-page')).toBeInTheDocument();
   });
 
   test('renders 404 page for unknown routes', () => {
