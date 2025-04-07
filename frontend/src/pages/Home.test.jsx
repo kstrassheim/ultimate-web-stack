@@ -58,7 +58,7 @@ describe('Home Component', () => {
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Home - Fetch data completed' });
     
     // Verify Notyf success notification was shown
-    expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
+    expect(notyfService.success).toHaveBeenCalledWith('Data loaded successfully!');
 
     // Add these assertions after the existing tests in the 'renders and loads data successfully' test
     // Wait for ALL data to load with a longer timeout
@@ -125,7 +125,7 @@ describe('Home Component', () => {
       expect(getAllGroups).toHaveBeenCalledTimes(1);
       
       // Now check the notification was called
-      expect(notyfService.success).toHaveBeenCalledWith('Data reloaded successfully!');
+      expect(notyfService.success).toHaveBeenCalledWith('Data loaded successfully!');
     }, { timeout: 3000 });
   });
 });

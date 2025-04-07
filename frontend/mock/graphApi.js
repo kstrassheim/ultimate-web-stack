@@ -141,5 +141,5 @@ const adminGroups = [
 export const getAllGroups = async (instance) => {
   const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
-  return isAdmin ? adminGroups: userGroups;
+  return isAdmin ? [...userGroups, ...adminGroups] : userGroups;
 };

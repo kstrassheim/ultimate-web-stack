@@ -263,10 +263,12 @@ export class PublicClientApplication {
     
     this._instanceStateChanged();
     this.accounts = []; // Clear accounts after notification
+    setTimeout(() => { window.location.reload(); }, 100);
     return Promise.resolve();
   }
 
   logoutRedirect() {
+    setTimeout(() => { window.location.reload(); }, 100);
     return Promise.resolve();
   }
 

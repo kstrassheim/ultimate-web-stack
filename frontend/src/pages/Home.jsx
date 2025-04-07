@@ -15,6 +15,7 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const initFetchCompleted = useRef(false);
+  const currentUserRef = useRef(instance.getActiveAccount()?.username);
 
   const fetchData = async () => {
     setLoading(true);
@@ -28,7 +29,7 @@ const Home = () => {
       setData(userData);
       setGroupData(groupsData);
       // Show success notification
-      notyfService.success('Data reloaded successfully!');
+      notyfService.success('Data loaded successfully!');
     } catch (err) {
       setError(err.message);
       // Show error notification
@@ -40,13 +41,23 @@ const Home = () => {
   }
 
   useEffect(() => { 
+    // Get current user
+    const currentUser = instance.getActiveAccount()?.username;
+    
+    // Force a reload of data when the user changes
+    if (currentUserRef.current !== currentUser) {
+      console.log('User changed, reloading data...');
+      currentUserRef.current = currentUser;
+      initFetchCompleted.current = false; // Reset to force reload
+    }
+    
     if (!initFetchCompleted.current) {
       appInsights.trackEvent({ name: 'Home - Fetch data started' });
       fetchData();
       appInsights.trackEvent({ name: 'Home - Fetch data completed' });
       initFetchCompleted.current = true;
     }
-  }, [instance, instance.getActiveAccount()?.name])
+  }, [instance, instance.getActiveAccount()?.username, instance.getActiveAccount()?.name]);
 
   return (
     <>
