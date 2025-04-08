@@ -1,4 +1,4 @@
-import { backendUrl, backendSocketUrl } from '@/config';
+import { backendUrl } from '@/config';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 import { WebSocketClient } from '@/api/socket';
@@ -143,14 +143,14 @@ export const formatDivergenceReading = (reading) => {
 // WebSocket client for experiments only
 export class ExperimentsSocketClient extends WebSocketClient {
   constructor() {
-    super(`${backendSocketUrl}/future-gadget-lab/ws/lab-experiments`);
+    super(`future-gadget-lab/ws/lab-experiments`);
   }
 }
 
 // New WebSocket client for worldline status updates
 export class WorldlineSocketClient extends WebSocketClient {
   constructor() {
-    super(`${backendSocketUrl}/future-gadget-lab/ws/worldline-status`);
+    super(`/future-gadget-lab/ws/worldline-status`);
   }
 }
 

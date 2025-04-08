@@ -135,7 +135,7 @@ async def create_experiment(
     )
     
     # Broadcast updated worldline status
-    await broadcast_worldline_status(experiment=created_experiment, sender=None)
+    await broadcast_worldline_status(experiment=created_experiment, sender=worldline_connection_manager.get_server_sender())
     
     return created_experiment
 
@@ -167,7 +167,7 @@ async def update_experiment(
     )
     
     # Broadcast updated worldline status
-    await broadcast_worldline_status(experiment=updated_experiment, sender=None)
+    await broadcast_worldline_status(experiment=updated_experiment, sender=worldline_connection_manager.get_server_sender())
     
     return updated_experiment
 
@@ -202,7 +202,7 @@ async def delete_experiment(
     )
     
     # Broadcast updated worldline status (no experiment to include since it was deleted)
-    await broadcast_worldline_status(sender=None)
+    await broadcast_worldline_status(sender=worldline_connection_manager.get_server_sender())
     
     return {"message": f"Experiment with ID {experiment_id} successfully deleted"}
 

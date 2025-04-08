@@ -185,3 +185,15 @@ class ConnectionManager:
                 continue
                 
             await self.send(data, type, connection)
+
+    def get_server_sender(self):
+        """Create a pseudo-sender with admin privileges for server-initiated broadcasts"""
+        from types import SimpleNamespace
+        
+        # Create a mock WebSocket object with admin user state
+        mock_sender = SimpleNamespace()
+        mock_sender.state = SimpleNamespace()
+        mock_sender.state.user = SimpleNamespace()
+        mock_sender.state.user.roles = ["Admin"]
+        
+        return mock_sender

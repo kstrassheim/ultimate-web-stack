@@ -25,7 +25,9 @@ export class WebSocketClient {
       const token = await retrieveTokenForBackend(instance);
       
       // Form the complete URL from backendSocketUrl and the path
-      const url = `${backendSocketUrl}/${this.path}`;
+      const baseUrl = backendSocketUrl.endsWith('/') ? backendSocketUrl.slice(0, -1) : backendSocketUrl;
+      const pathSegment = this.path.startsWith('/') ? this.path.slice(1) : this.path;
+      const url = `${baseUrl}/${pathSegment}`;
       this.socket = new WebSocket(url);
       
       this.socket.onopen = () => {
