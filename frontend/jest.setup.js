@@ -94,7 +94,7 @@ jest.mock('@/config', () => ({
   }));
 
 // Mock the terraform.config.json import
-jest.mock('../terraform.config.json', () => ({
+const mockTFJson = {
   client_id: { value: 'mock-client-id' },
   tenant_id: { value: 'mock-tenant-id' },
   oauth2_permission_scope_uri: { value: 'api://mock-app/access' },
@@ -107,7 +107,11 @@ jest.mock('../terraform.config.json', () => ({
     value: 'InstrumentationKey=mock-key;IngestionEndpoint=https://mock-endpoint' 
   },
   env: { value: 'dev' }
-}), { virtual: true });
+};
+
+jest.mock('../terraform.config.json', () => mockTFJson, { virtual: true });
+
+jest.mock('@/../terraform.config.json', () => mockTFJson, { virtual: true });
 
 // Configure jest-preview
 jestPreviewConfigure({
