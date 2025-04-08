@@ -22,11 +22,11 @@ jest.mock('@microsoft/applicationinsights-web', () => {
 let appInsights;
 beforeAll(async () => {
   jest.resetModules();
-  jest.doMock('@/../terraform.config.json', () => ({
-    application_insights_connection_string: {
-      value: 'Test_Connection_String'
-    }
-  }), { virtual: true });
+  // jest.doMock('@/../terraform.config.json', () => ({
+  //   application_insights_connection_string: {
+  //     value: 'Test_Connection_String'
+  //   }
+  // }), { virtual: true });
   
   await jest.isolateModulesAsync(async () => {
     // Import appInsights after our mocks are in place.
