@@ -22,9 +22,9 @@ export const msalConfig = () =>{
         loggerCallback: (level, message, containsPii) => {
           if (containsPii) return;
           console[level === LogLevel.Error ? 'error' : 'info'](message);
-        },
-      },
-    },
+        }
+      }
+    }
   };
 };
 

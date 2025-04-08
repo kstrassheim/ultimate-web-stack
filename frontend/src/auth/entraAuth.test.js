@@ -53,7 +53,7 @@ describe('entraAuth Module', () => {
       expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'MSAL Retrieving Token' });
       expect(mockInstance.getActiveAccount).toHaveBeenCalled();
       expect(mockAcquireTokenSilent).toHaveBeenCalledWith({
-        scopes: ['api://f73802a3-4bd6-4114-94ed-8b7da036b0b6/user_impersonation', 'extra.scope'],
+        scopes: ['api://mock-app/access', 'extra.scope'],
         account: mockActiveAccount
       });
       expect(token).toBe('mockBackendToken');

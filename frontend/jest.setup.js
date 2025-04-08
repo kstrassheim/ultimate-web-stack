@@ -93,6 +93,22 @@ jest.mock('@/config', () => ({
     frontendUrl: 'http://localhost:5173'
   }));
 
+// Mock the terraform.config.json import
+jest.mock('@/../terraform.config.json', () => ({
+  client_id: { value: 'mock-client-id' },
+  tenant_id: { value: 'mock-tenant-id' },
+  oauth2_permission_scope_uri: { value: 'api://mock-app/access' },
+  oauth2_permission_scope: { value: 'access_as_user' },
+  requested_graph_api_delegated_permissions: { 
+    value: ['User.Read', 'Group.Read.All'] 
+  },
+  web_url: { value: 'https://mock-app.azurewebsites.net' },
+  application_insights_connection_string: { 
+    value: 'InstrumentationKey=mock-key;IngestionEndpoint=https://mock-endpoint' 
+  },
+  env: { value: 'dev' }
+}), { virtual: true });
+
 // Configure jest-preview
 jestPreviewConfigure({
     port: 3336,
