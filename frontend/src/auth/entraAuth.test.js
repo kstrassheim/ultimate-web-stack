@@ -1,4 +1,4 @@
-import { msalConfig, loginRequest, retrieveTokenForBackend, retrieveTokenForGraph } from './entraAuth';
+import { msalConfig, loginRequest, retrieveTokenForBackend, retrieveTokenForGraph } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights'; // mock or spy as needed
 import { LogLevel } from '@azure/msal-browser';
 

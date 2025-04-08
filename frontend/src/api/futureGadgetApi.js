@@ -1,7 +1,7 @@
 import { backendUrl } from '@/config';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
-import { WebSocketClient } from './socket';
+import { WebSocketClient } from '@/api/socket';
 
 // Base URL for all Future Gadget Lab API endpoints
 const BASE_URL = `${backendUrl}/future-gadget-lab`;

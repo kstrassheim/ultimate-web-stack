@@ -9,7 +9,7 @@ jest.mock('@/log/appInsights', () => ({
 }));
 
 // Define a mock function for WebSocketClient
-jest.mock('./socket', () => {
+jest.mock('@/api/socket', () => {
   // Factory function approach
   return {
     WebSocketClient: function(endpoint) {
