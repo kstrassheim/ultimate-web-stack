@@ -94,7 +94,7 @@ jest.mock('@/config', () => ({
   }));
 
 // Mock the terraform.config.json import
-jest.mock('@/../terraform.config.json', () => ({
+jest.mock('../terraform.config.json', () => ({
   client_id: { value: 'mock-client-id' },
   tenant_id: { value: 'mock-tenant-id' },
   oauth2_permission_scope_uri: { value: 'api://mock-app/access' },
