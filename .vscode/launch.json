@@ -73,7 +73,7 @@
             "name": "Vite Dev Server - Mock",
             "type": "node-terminal",
             "request": "launch",
-            "command": "npm run dev -- --mock",
+            "command": "npm run test:frontend",
             "cwd": "${workspaceFolder}/frontend",
             "console": "integratedTerminal"
         },
