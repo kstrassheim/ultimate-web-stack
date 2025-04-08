@@ -94,24 +94,24 @@ jest.mock('@/config', () => ({
   }));
 
 // Mock the terraform.config.json import
-const mockTFJson = {
-  client_id: { value: 'mock-client-id' },
-  tenant_id: { value: 'mock-tenant-id' },
-  oauth2_permission_scope_uri: { value: 'api://mock-app/access' },
-  oauth2_permission_scope: { value: 'access_as_user' },
-  requested_graph_api_delegated_permissions: { 
-    value: ['User.Read', 'Group.Read.All'] 
-  },
-  web_url: { value: 'https://mock-app.azurewebsites.net' },
-  application_insights_connection_string: { 
-    value: 'InstrumentationKey=mock-key;IngestionEndpoint=https://mock-endpoint' 
-  },
-  env: { value: 'dev' }
-};
+// const mockTFJson = {
+//   client_id: { value: 'mock-client-id' },
+//   tenant_id: { value: 'mock-tenant-id' },
+//   oauth2_permission_scope_uri: { value: 'api://mock-app/access' },
+//   oauth2_permission_scope: { value: 'access_as_user' },
+//   requested_graph_api_delegated_permissions: { 
+//     value: ['User.Read', 'Group.Read.All'] 
+//   },
+//   web_url: { value: 'https://mock-app.azurewebsites.net' },
+//   application_insights_connection_string: { 
+//     value: 'InstrumentationKey=mock-key;IngestionEndpoint=https://mock-endpoint' 
+//   },
+//   env: { value: 'dev' }
+// };
 
-jest.mock('../terraform.config.json', () => mockTFJson, { virtual: true });
+// jest.mock('../terraform.config.json', () => mockTFJson, { virtual: true });
 
-jest.mock('@/../terraform.config.json', () => mockTFJson, { virtual: true });
+// jest.mock('@/../terraform.config.json', () => mockTFJson, { virtual: true });
 
 // Configure jest-preview
 jestPreviewConfigure({
