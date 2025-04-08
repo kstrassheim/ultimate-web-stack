@@ -1,6 +1,6 @@
 import { LogLevel } from '@azure/msal-browser';
 import { frontendUrl } from "@/config";
-import tfconfig from '@/../terraform.config.json' with { type: 'json' };
+import tfconfig from '@/../terraform.config.json';
 import appInsights from '@/log/appInsights';
 
 
