@@ -110,8 +110,9 @@ jest.mock('@/config', () => ({
 // };
 
 // jest.mock('../terraform.config.json', () => mockTFJson, { virtual: true });
+import mockTerraformConfig from './mock/terraform.mock.config.json';
 
-// jest.mock('@/../terraform.config.json', () => mockTFJson, { virtual: true });
+jest.mock('@/../terraform.config.json', () => mockTerraformConfig, { virtual: true });
 
 // Configure jest-preview
 jestPreviewConfigure({
