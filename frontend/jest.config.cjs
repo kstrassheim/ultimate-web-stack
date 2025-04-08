@@ -4,6 +4,7 @@ module.exports ={
     moduleNameMapper: {
       "^@/.*\\.css$": '<rootDir>/mock/styleMock.js',  // Handle @/App.css specifically
       "^@/(.*)$": "<rootDir>/src/$1",
+      "^@/../terraform.config.json$": "<rootDir>/mock/terraform.mock.config.json", // Add this line
       "\\.(css|less|sass|scss)$": '<rootDir>/mock/styleMock.js',
       "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/mock/fileMock.js"
     },
