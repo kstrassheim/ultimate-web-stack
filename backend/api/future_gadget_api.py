@@ -118,24 +118,28 @@ async def create_experiment(
 ):
     logger.info(f"Future Gadget Lab API - Creating new experiment: {experiment.name}")
     
-    # Fix: Access token properties directly instead of using .get()
+    # Get username directly from token
     username = getattr(token, "preferred_username", "unknown")
     
-    # Add creator information to track who performed this action
+    # Create the experiment in database
     created_experiment = fgl_service.create_experiment(experiment.model_dump())
     
-    # Fix the broadcast call in create_experiment function
-    await experiment_connection_manager.broadcast(
+    # Broadcast to experiment subscribers using server broadcast
+    await experiment_connection_manager.broadcast_server(
         data={
             **created_experiment,
-            "actor": username,  # Username of who performed this action
-            "type": "create"    # Include type at the top level
+            "type": "create"
         },
-        type="create"
+        type="create",
+        username=f"Lab Member: {username}"
     )
     
-    # Broadcast updated worldline status
-    await broadcast_worldline_status(experiment=created_experiment, sender=None)
+    # Broadcast worldline status update to all users
+    await broadcast_worldline_status(
+        experiment=created_experiment,
+        username=f"Lab Member: {username}",
+        custom_message=f"New experiment '{created_experiment['name']}' created"
+    )
     
     return created_experiment
 
@@ -151,23 +155,27 @@ async def update_experiment(
     if not existing_experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
     
-    # Fix: Access token properties directly instead of using .get()
+    # Get username directly from token
     username = getattr(token, "preferred_username", "unknown")
     
     updated_experiment = fgl_service.update_experiment(experiment_id, experiment.model_dump(exclude_unset=True))
     
-    # Fix the broadcast call in update_experiment function
-    await experiment_connection_manager.broadcast(
+    # Broadcast to experiment subscribers using server broadcast
+    await experiment_connection_manager.broadcast_server(
         data={
             **updated_experiment,
-            "actor": username,  # Username of who performed this action
-            "type": "update"    # Include type at the top level
+            "type": "update"
         },
-        type="update"
+        type="update",
+        username=f"Lab Member: {username}"
     )
     
-    # Broadcast updated worldline status
-    await broadcast_worldline_status(experiment=updated_experiment, sender=None)
+    # Broadcast worldline status update to all users
+    await broadcast_worldline_status(
+        experiment=updated_experiment,
+        username=f"Lab Member: {username}",
+        custom_message=f"Experiment '{updated_experiment['name']}' updated"
+    )
     
     return updated_experiment
 
@@ -183,26 +191,29 @@ async def delete_experiment(
     if not experiment:
         raise HTTPException(status_code=404, detail=f"Experiment with ID {experiment_id} not found")
     
-    # Fix: Access token properties directly instead of using .get()
+    # Get username directly from token
     username = getattr(token, "preferred_username", "unknown")
     
     success = fgl_service.delete_experiment(experiment_id)
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to delete experiment with ID {experiment_id}")
     
-    # Fix the broadcast call in delete_experiment function
-    await experiment_connection_manager.broadcast(
+    # Broadcast to experiment subscribers using server broadcast
+    await experiment_connection_manager.broadcast_server(
         data={
             "id": experiment_id, 
             "name": experiment.get("name", "Unknown"),
-            "actor": username,  # Username of who performed this action
-            "type": "delete"    # Include type at the top level
+            "type": "delete"
         },
-        type="delete"
+        type="delete",
+        username=f"Lab Member: {username}"
     )
     
-    # Broadcast updated worldline status (no experiment to include since it was deleted)
-    await broadcast_worldline_status(sender=None)
+    # Broadcast worldline status update to all users
+    await broadcast_worldline_status(
+        username=f"Lab Member: {username}",
+        custom_message=f"Experiment '{experiment['name']}' deleted"
+    )
     
     return {"message": f"Experiment with ID {experiment_id} successfully deleted"}
 
@@ -258,18 +269,18 @@ async def worldline_status_websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Worldline WebSocket error: {str(e)}")
         if websocket in worldline_connection_manager.active_connections:
-            worldline_connection_manager.disconnect(websocket, log_error=False)
+            worldline_connection_manager.disconnect(websocket)
 
 # Add a new function to broadcast worldline status to all connected clients
-async def broadcast_worldline_status(experiment: Dict = None, sender: WebSocket = None):
+async def broadcast_worldline_status(experiment: Dict = None, username: str = "Divergence Meter", custom_message: str = None):
     """
-    Broadcast current worldline status to all connected clients.
+    Broadcast current worldline status to all connected clients using server broadcast.
     
     Args:
         experiment: Optional experiment to include in the calculation
                   (useful for previewing impact before saving)
-        sender: WebSocket of the client that initiated the broadcast
-                (needed for proper authorization in ConnectionManager)
+        username: Optional custom username for the broadcast (defaults to "Divergence Meter")
+        custom_message: Optional message to include with the broadcast
     
     This function can be called whenever the worldline status changes.
     """
@@ -304,13 +315,18 @@ async def broadcast_worldline_status(experiment: Dict = None, sender: WebSocket 
             "world_line_change": experiment.get("world_line_change", 0.0)
         }
     
-    # Add a message type field to the data so clients can distinguish the message type
+    # Add a message type field to help clients distinguish the message type
     status["message_type"] = "worldline_update"
     
-    # Broadcast to all connected clients using a valid type ("message" is always valid)
-    await worldline_connection_manager.broadcast(
-        data=status, 
-        type="message"  # Use "message" instead of "worldline_update"
+    # If a custom message was provided, include it in the broadcast
+    if custom_message:
+        status["message"] = custom_message
+    
+    # Use the new broadcast_server method instead of broadcast
+    await worldline_connection_manager.broadcast_server(
+        data=status,
+        type="worldline_update",
+        username=username
     )
     
     # Return the status (useful when calling this function directly)

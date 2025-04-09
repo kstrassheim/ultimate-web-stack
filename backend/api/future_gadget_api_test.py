@@ -559,7 +559,7 @@ class TestExperimentWebSocketEndpoints:
     
     @pytest.mark.asyncio
     async def test_broadcast_crud_operations(self, monkeypatch, mock_websocket):
-        """Test broadcasting CRUD operations data through WebSockets"""
+        """Test broadcasting CRUD operations data through WebSockets using broadcast_server"""
         # Create a test experiment data with new fields
         test_experiment = {
             "id": "EXP-001",
@@ -575,12 +575,13 @@ class TestExperimentWebSocketEndpoints:
         mock_manager = MagicMock()
         
         # Track broadcast calls with a function that stores arguments
-        broadcast_args = []
-        async def mock_broadcast(data, type, sender_websocket=None, skip_self=True):
-            broadcast_args.append((data, type, sender_websocket, skip_self))
+        broadcast_server_args = []
+        async def mock_broadcast_server(data, type, username=None):
+            broadcast_server_args.append((data, type, username))
             return None
         
-        mock_manager.broadcast = mock_broadcast
+        # Assign the mock to the manager
+        mock_manager.broadcast_server = mock_broadcast_server
         mock_manager.active_connections = [mock_websocket]
         
         # Patch the experiment connection manager
@@ -611,23 +612,21 @@ class TestExperimentWebSocketEndpoints:
             # Verify result
             assert result == test_experiment
             
-            # Verify broadcast was called
-            assert len(broadcast_args) == 1
-            
-            # Create expected broadcast data object (with the added fields)
-            expected_broadcast_data = {
-                **test_experiment,  # All the original experiment data
-                "actor": mock_username,  # Username from token
-                "type": "create"     # Type field added in broadcast
-            }
+            # Verify broadcast_server was called
+            assert len(broadcast_server_args) == 1
             
             # Check broadcast data matches expected structure
-            assert broadcast_args[0][0] == expected_broadcast_data  # data
-            assert broadcast_args[0][1] == "create"  # type
+            assert broadcast_server_args[0][0]["id"] == test_experiment["id"]
+            assert broadcast_server_args[0][0]["name"] == test_experiment["name"]
+            assert broadcast_server_args[0][0]["type"] == "create"  # type field added in broadcast
+            assert broadcast_server_args[0][1] == "create"  # type parameter
+            assert broadcast_server_args[0][2] == f"Lab Member: {mock_username}"  # username parameter
             
             # Also verify worldline status broadcast was called
             from api.future_gadget_api import broadcast_worldline_status
             assert broadcast_worldline_status.called
+            # Verify username was passed to broadcast_worldline_status
+            assert broadcast_worldline_status.call_args[1]["username"] == f"Lab Member: {mock_username}"
 
 
 class TestWorldlineEndpoints:
@@ -707,14 +706,14 @@ class TestWorldlineEndpoints:
     
     @pytest.mark.asyncio
     async def test_broadcast_worldline_status(self, monkeypatch, mock_websocket):
-        """Test the broadcast_worldline_status function correctly calculates and broadcasts worldline status"""
+        """Test the broadcast_worldline_status function with new broadcast_server method"""
         # Create mocks
         mock_worldline_manager = MagicMock()
-        broadcast_args = []
+        broadcast_server_args = []
         
-        # Define mock async broadcast method
-        async def mock_broadcast(data, type, sender=None):
-            broadcast_args.append((data, type, sender))
+        # Define mock async broadcast_server method
+        async def mock_broadcast_server(data, type, username="SERVER"):
+            broadcast_server_args.append((data, type, username))
             return None
         
         # Define mock calculate method
@@ -735,7 +734,7 @@ class TestWorldlineEndpoints:
         }
         
         # Apply patches
-        mock_worldline_manager.broadcast = mock_broadcast
+        mock_worldline_manager.broadcast_server = mock_broadcast_server
         monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_worldline_manager)
         monkeypatch.setattr("api.future_gadget_api.calculate_worldline_status", mock_calculate)
         monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_experiments", MagicMock(return_value=[]))
@@ -744,17 +743,23 @@ class TestWorldlineEndpoints:
         # Import the function after patching
         from api.future_gadget_api import broadcast_worldline_status
         
-        # Test with experiment included
-        result = await broadcast_worldline_status(experiment=test_experiment)
+        # Test with experiment included and custom username
+        custom_username = "Lab Member: Kurisu Makise"
+        custom_message = "New experiment added"
+        result = await broadcast_worldline_status(
+            experiment=test_experiment, 
+            username=custom_username,
+            custom_message=custom_message
+        )
         
-        # Verify the broadcast was called with correct parameters
-        assert len(broadcast_args) == 1
+        # Verify the broadcast_server was called with correct parameters
+        assert len(broadcast_server_args) == 1
+        assert broadcast_server_args[0][1] == "worldline_update"  # type
+        assert broadcast_server_args[0][2] == custom_username  # username
         
-        # Fix: Check for "message" type instead of "worldline_update"
-        assert broadcast_args[0][1] == "message"  # type
-        
-        # Check that message_type field is correctly set in the data
-        assert broadcast_args[0][0]["message_type"] == "worldline_update"
+        # Check that message_type and custom_message fields are correctly set in the data
+        assert broadcast_server_args[0][0]["message_type"] == "worldline_update"
+        assert broadcast_server_args[0][0]["message"] == custom_message
         
         # Verify result contains preview flag when experiment is provided
         assert "includes_preview" in result
@@ -762,12 +767,13 @@ class TestWorldlineEndpoints:
         assert "preview_experiment" in result
         assert result["preview_experiment"]["name"] == test_experiment["name"]
         
-        # Test without experiment (normal post-save broadcast)
-        broadcast_args.clear()
+        # Test without experiment and with default username
+        broadcast_server_args.clear()
         result = await broadcast_worldline_status()
         
-        # Verify broadcast was still called
-        assert len(broadcast_args) == 1
+        # Verify broadcast was still called with default username
+        assert len(broadcast_server_args) == 1
+        assert broadcast_server_args[0][2] == "Divergence Meter"  # Default username
         
         # Verify no preview flag when no experiment provided
         assert "includes_preview" not in result

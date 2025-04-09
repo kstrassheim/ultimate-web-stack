@@ -638,6 +638,7 @@ const WorldlineMonitor = () => {
           ) : worldlineHistory.length > 0 && readings.length > 0 ? (
             <div className="chart-container" data-testid="worldline-chart">
               <ReactApexChart
+                data-testid="apex-chart"
                 key={chartKey} // Force re-render when data changes
                 options={chartOptions}
                 series={chartSeries}

@@ -2,10 +2,11 @@
 module.exports ={
     testEnvironment: "jsdom",
     moduleNameMapper: {
+      "^@/../terraform.config.json$": "<rootDir>/mock/terraform.mock.config.json", // Add this line
       "^@/.*\\.css$": '<rootDir>/mock/styleMock.js',  // Handle @/App.css specifically
-      "^@/(.*)$": "<rootDir>/src/$1",
       "\\.(css|less|sass|scss)$": '<rootDir>/mock/styleMock.js',
-      "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/mock/fileMock.js"
+      "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/mock/fileMock.js",
+      "^@/(.*)$": "<rootDir>/src/$1"
     },
     transform: {
         "^.+\\.[jt]sx?$": ["@swc/jest"]

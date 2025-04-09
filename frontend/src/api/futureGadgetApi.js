@@ -1,7 +1,7 @@
-import { backendUrl, backendSocketUrl } from '@/config';
+import { backendUrl } from '@/config';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
-import { WebSocketClient } from './socket';
+import { WebSocketClient } from '@/api/socket';
 
 // Base URL for all Future Gadget Lab API endpoints
 const BASE_URL = `${backendUrl}/future-gadget-lab`;
@@ -143,14 +143,15 @@ export const formatDivergenceReading = (reading) => {
 // WebSocket client for experiments only
 export class ExperimentsSocketClient extends WebSocketClient {
   constructor() {
-    super('future-gadget-lab/ws/lab-experiments');
+    super(`future-gadget-lab/ws/lab-experiments`);
   }
 }
 
 // New WebSocket client for worldline status updates
 export class WorldlineSocketClient extends WebSocketClient {
   constructor() {
-    super('future-gadget-lab/ws/worldline-status');
+    // Fix the path to make it consistent with ExperimentsSocketClient (no leading slash)
+    super(`future-gadget-lab/ws/worldline-status`);
   }
 }
 

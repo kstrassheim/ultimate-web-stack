@@ -1,4 +1,4 @@
-import { msalConfig, loginRequest, retrieveTokenForBackend, retrieveTokenForGraph } from './entraAuth';
+import { msalConfig, loginRequest, retrieveTokenForBackend, retrieveTokenForGraph } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights'; // mock or spy as needed
 import { LogLevel } from '@azure/msal-browser';
 
@@ -53,7 +53,7 @@ describe('entraAuth Module', () => {
       expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'MSAL Retrieving Token' });
       expect(mockInstance.getActiveAccount).toHaveBeenCalled();
       expect(mockAcquireTokenSilent).toHaveBeenCalledWith({
-        scopes: ['api://f73802a3-4bd6-4114-94ed-8b7da036b0b6/user_impersonation', 'extra.scope'],
+        scopes: ['mock-api://00000000-0000-0000-0000-000000000001/user_impersonation', 'extra.scope'],
         account: mockActiveAccount
       });
       expect(token).toBe('mockBackendToken');
