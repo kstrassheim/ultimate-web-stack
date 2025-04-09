@@ -3,11 +3,15 @@ output "env" {
   description = "The current deployment environment"
 }
 
+output "app_name" {
+  value = var.app_name
+  description = "The name of the application"
+}
+
 output "web_app_name" {
   value = "${azurerm_linux_web_app.web.name}"
   description = "The name of the web application"
 }
-
 
 output "web_url" {
   value = "https://${azurerm_linux_web_app.web.default_hostname}"

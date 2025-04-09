@@ -128,6 +128,7 @@ async def create_experiment(
     await experiment_connection_manager.broadcast_server(
         data={
             **created_experiment,
+            "actor": username,  # Add this line
             "type": "create"
         },
         type="create",
@@ -164,6 +165,7 @@ async def update_experiment(
     await experiment_connection_manager.broadcast_server(
         data={
             **updated_experiment,
+            "actor": username,  # Add this line
             "type": "update"
         },
         type="update",
@@ -203,6 +205,7 @@ async def delete_experiment(
         data={
             "id": experiment_id, 
             "name": experiment.get("name", "Unknown"),
+            "actor": username,  # Add this line
             "type": "delete"
         },
         type="delete",

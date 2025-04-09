@@ -48,9 +48,67 @@ const copyLogos = () => {
   }
 }
 
+// Add this function after copyLogos function
+const generateWebManifest = () => {
+  try {
+    // Get app name from terraform config
+    const baseAppName = tfconfig.app_name?.value || 'Ultimate Web Stack';
+    const env = tfconfig.env?.value?.toLowerCase() || 'dev';
+    
+    // Add environment to app name for dev or test environments
+    const appName = (env === 'dev' || env === 'test') 
+      ? `${baseAppName} ${env.toLowerCase()}`
+      : baseAppName;
+    
+    // Path to the manifest file
+    const manifestPath = resolve(__dirname, 'public/site.webmanifest');
+    
+    // Read existing manifest as template
+    let manifest;
+    if (fs.existsSync(manifestPath)) {
+      const manifestContent = fs.readFileSync(manifestPath, 'utf8');
+      manifest = JSON.parse(manifestContent);
+    } else {
+      // Default template if file doesn't exist
+      manifest = {
+        "icons": [
+          {
+            "src": "android-chrome-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+          },
+          {
+            "src": "android-chrome-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+          }
+        ],
+        "theme_color": "#ffffff",
+        "background_color": "#ffffff",
+        "display": "standalone"
+      };
+    }
+    
+    // Update name fields with app name from terraform config
+    manifest.name = appName;
+    manifest.short_name = appName;
+    
+    // Write updated manifest back to file
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    console.log(`Generated site.webmanifest with app name: "${appName}"`);
+  } catch (error) {
+    console.error('Error generating site.webmanifest:', error);
+  }
+};
+
+const setTitleEnvVariable = () => {
+  const appName = tfconfig.app_name?.value || 'Ultimate Web Stack';
+  process.env.VITE_APP_TITLE = appName;
+  console.log(`Set VITE_APP_TITLE to "${appName}"`);
+};
+
 //const mockRoleIndex = process.argv.indexOf('--role');
 // const mockRole = mockRoleIndex > -1 ? process.argv[mockRoleIndex + 1] : null;
-
 
 const getAliases = () => {
 
@@ -108,5 +166,6 @@ export default defineConfig({
   },
 })
 
-
 copyLogos();
+generateWebManifest();
+setTitleEnvVariable();

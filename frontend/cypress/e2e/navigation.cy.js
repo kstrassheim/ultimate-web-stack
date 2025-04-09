@@ -313,7 +313,7 @@ describe('Navigation Tests with Role-Based Access Control', () => {
       cy.get('[data-testid="role-badge-Admin"]').should('be.visible');
       
       // Should be able to access experiments page
-      cy.get('body').click(); // Close dropdown
+      cy.get('body').type('{esc}'); // Close dropdown
       cy.get('[data-testid="nav-experiments"]').click();
       cy.url().should('include', '/experiments');
       cy.get('[data-testid="experiments-page"]').should('be.visible');
@@ -395,5 +395,27 @@ describe('Navigation Tests with Bootstrap Components', () => {
     
     // Reset viewport
     cy.viewport(1000, 660);
+  });
+});
+
+
+describe('Navigation Error Handling Tests', () => {
+  it('should display fallback UI when navigation data fails to load', () => {
+    // Intercept API calls that might fetch navigation data
+    cy.intercept('GET', '**/api/navigation', {
+      statusCode: 500,
+      body: { error: 'Server error' }
+    }).as('navError');
+    
+    cy.setMockRole('Admin');
+    cy.visit('/');
+    
+    // Check that navigation still renders in error state
+    cy.get('[data-testid="main-navigation"]').should('exist');
+    cy.get('[data-testid="nav-home"]').should('exist');
+    
+    // Error shouldn't prevent basic navigation
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
   });
 });

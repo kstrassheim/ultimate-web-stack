@@ -4,18 +4,6 @@ variable app_name {
     type        = string
 }
 
-variable resource_group_name {
-    description = "The name of the resource group to deploy the resources to"
-    default     = "ultimate-web-stack-dev"
-    type        = string
-}
-
-variable deployment_user_managed_identity_name {
-    description = "The name of the user managed identity that does the deployment"
-    default     = "github-ultimate-web-stack-dev"
-    type        = string
-} 
-
 variable env {
     description = "The environment to deploy the resources to"
     default     = "dev"

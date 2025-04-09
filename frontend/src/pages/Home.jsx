@@ -17,6 +17,7 @@ const Home = () => {
         </Row>
         
         <Row className="mb-5 g-4">
+          {/* Original 6 features */}
           <Col lg={4} md={6} sm={12}>
             <Card className="h-100 shadow-sm feature-card">
               <Card.Body>
@@ -44,7 +45,7 @@ const Home = () => {
               <Card.Body>
                 <Card.Title>Real-time Features</Card.Title>
                 <Card.Text>
-                  WebSocket connections for live updates and notifications between clients.
+                  Secure WebSocket connections with token authentication and role-based access control for real-time updates, notifications, and data streaming between clients.
                 </Card.Text>
               </Card.Body>
             </Card>
@@ -78,6 +79,73 @@ const Home = () => {
                 <Card.Title>Developer Experience</Card.Title>
                 <Card.Text>
                   Hot module replacement, code splitting, and optimized build process.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          {/* New feature cards */}
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Role-Based Access Control</Card.Title>
+                <Card.Text>
+                  Secure components and API endpoints with fine-grained role-based permissions system.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Advanced Visualizations</Card.Title>
+                <Card.Text>
+                  Interactive charts and data visualizations using ApexCharts with real-time updates.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Responsive Design</Card.Title>
+                <Card.Text>
+                  Mobile-first layout with Bootstrap 5 ensuring optimal display across all device sizes.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>PWA Support</Card.Title>
+                <Card.Text>
+                  Progressive Web App capabilities with web manifest, enabling installation on supported devices.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Centralized Error Handling</Card.Title>
+                <Card.Text>
+                  Comprehensive error tracking and notifications with Application Insights integration.
+                </Card.Text>
+              </Card.Body>
+            </Card>
+          </Col>
+          
+          <Col lg={4} md={6} sm={12}>
+            <Card className="h-100 shadow-sm feature-card">
+              <Card.Body>
+                <Card.Title>Mock Data Infrastructure</Card.Title>
+                <Card.Text>
+                  Testing environment with mock authentication and API responses for development and testing.
                 </Card.Text>
               </Card.Body>
             </Card>
