@@ -1,4 +1,9 @@
 {
+  "app_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "mocked-web-stack"
+  },
   "app_roles_allowed_member_types_list": {
     "sensitive": false,
     "type": "string",

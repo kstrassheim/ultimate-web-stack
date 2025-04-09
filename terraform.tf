@@ -3,28 +3,30 @@ module api_roles {
   source = "./modules/azure_api_roles"
 }
 
+locals {
+  # apply resouce naming conventions
+  # remove environment from the name in prod
+  resourceGroupName = var.env == "prod" ? var.app_name : "${var.app_name}-${var.env}"
+  deploymentUserManagedIdentityName = var.env == "prod" ? "github-${var.app_name}" : "github-${var.app_name}-${var.env}"
+  planName = var.env == "prod" ? replace(replace(module.naming.app_service_plan.name, "_", "-"), "-prod", "") : replace(module.naming.app_service_plan.name, "_", "-")
+  webName = var.env == "prod" ? replace(replace("${var.app_name}", "_", "-"), "-prod", "") : "${replace("${var.app_name}-${var.env}", "_", "-")}"
+  insightsName = var.env == "prod" ? "${replace("${var.app_name}-insights", "_", "-")}" : "${replace("${var.app_name}-insights-${var.env}", "_", "-")}"
+  appRegName = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
+}
+
 # Reference the resource group of this project
 data "azurerm_resource_group" "rg" {
-  name = var.resource_group_name   // name of your resource group
+  name = local.resourceGroupName   // name of your resource group
 }
 
 // Reference to assign the ownership to the app registration
 data "azurerm_user_assigned_identity" "deploy_managed_identity" {
-  name = var.deployment_user_managed_identity_name
+  name = local.deploymentUserManagedIdentityName
   resource_group_name = data.azurerm_resource_group.rg.name
 }
 
 data "azuread_service_principal" "deploy_managed_identity_pricipal" {
   client_id = data.azurerm_user_assigned_identity.deploy_managed_identity.client_id
-}
-
-locals {
-  # apply resouce naming conventions
-  # remove environment from the name in prod
-  planName = var.env == "prod" ? replace(replace(module.naming.app_service_plan.name, "_", "-"), "-prod", "") : replace(module.naming.app_service_plan.name, "_", "-")
-  webName = var.env == "prod" ? replace(replace("${var.app_name}", "_", "-"), "-prod", "") : "${replace("${var.app_name}-${var.env}", "_", "-")}"
-  insightsName = var.env == "prod" ? "${replace("${var.app_name}-insights", "_", "-")}" : "${replace("${var.app_name}-insights-${var.env}", "_", "-")}"
-  appRegName = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
 }
 
 // Create an App Service Plan (Linux)
