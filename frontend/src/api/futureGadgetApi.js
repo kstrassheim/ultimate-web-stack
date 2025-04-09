@@ -150,7 +150,8 @@ export class ExperimentsSocketClient extends WebSocketClient {
 // New WebSocket client for worldline status updates
 export class WorldlineSocketClient extends WebSocketClient {
   constructor() {
-    super(`/future-gadget-lab/ws/worldline-status`);
+    // Fix the path to make it consistent with ExperimentsSocketClient (no leading slash)
+    super(`future-gadget-lab/ws/worldline-status`);
   }
 }
 
