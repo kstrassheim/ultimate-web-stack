@@ -269,7 +269,7 @@ async def worldline_status_websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Worldline WebSocket error: {str(e)}")
         if websocket in worldline_connection_manager.active_connections:
-            worldline_connection_manager.disconnect(websocket, log_error=False)
+            worldline_connection_manager.disconnect(websocket)
 
 # Add a new function to broadcast worldline status to all connected clients
 async def broadcast_worldline_status(experiment: Dict = None, username: str = "Divergence Meter", custom_message: str = None):

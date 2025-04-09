@@ -1,5 +1,27 @@
 # Ultimate Web Stack
 The web app provides all testing tools required to build a frontend. 
+### Installation on WSL
+```bash
+# Update package lists
+sudo apt-get update
+
+# Install system dependencies
+sudo apt-get install -y libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 libasound2-dev libxtst6 xauth xvfb fonts-liberation libappindicator3-1 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdbus-1-3 libnspr4 libu2f-udev libvulkan1 wget gnupg curl python3 python3-pip python3-venv python3-pytest nodejs npm
+
+# Install Google Chrome
+wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+sudo apt-get update
+sudo apt-get install -y google-chrome-stable
+
+# Install Microsoft Edge
+curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+sudo install -o root -g root -m 644 microsoft.gpg /etc/apt/trusted.gpg.d/
+sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list'
+sudo rm microsoft.gpg
+sudo apt-get update
+sudo apt-get install -y microsoft-edge-stable
+```
 ## Purpose detail
 This project fulfills the following requirements.
 ### From current project [EntraId-Web-Auth-Reference]
