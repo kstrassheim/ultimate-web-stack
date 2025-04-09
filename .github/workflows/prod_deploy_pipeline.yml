@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    uses: ./.github/workflows/.entraid_web_deployment.yml
+    uses: ./.github/workflows/.web_deployment.yml
     with:
       environment: 'test'
     #needs: dev-deploy  # Required to wait for dev to complete
