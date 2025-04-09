@@ -397,3 +397,25 @@ describe('Navigation Tests with Bootstrap Components', () => {
     cy.viewport(1000, 660);
   });
 });
+
+
+describe('Navigation Error Handling Tests', () => {
+  it('should display fallback UI when navigation data fails to load', () => {
+    // Intercept API calls that might fetch navigation data
+    cy.intercept('GET', '**/api/navigation', {
+      statusCode: 500,
+      body: { error: 'Server error' }
+    }).as('navError');
+    
+    cy.setMockRole('Admin');
+    cy.visit('/');
+    
+    // Check that navigation still renders in error state
+    cy.get('[data-testid="main-navigation"]').should('exist');
+    cy.get('[data-testid="nav-home"]').should('exist');
+    
+    // Error shouldn't prevent basic navigation
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="authenticated-container"]').should('be.visible');
+  });
+});
