@@ -1,6 +1,8 @@
 describe('Chat Page Functionality', () => {
   
   beforeEach(() => {
+    cy.clearLocalStorage()
+    cy.clearCookies()
     // Start with a fresh visit and log in
     cy.visit('/');
     cy.setMockRole('User');
