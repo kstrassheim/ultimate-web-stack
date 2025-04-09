@@ -313,7 +313,7 @@ describe('Navigation Tests with Role-Based Access Control', () => {
       cy.get('[data-testid="role-badge-Admin"]').should('be.visible');
       
       // Should be able to access experiments page
-      cy.get('body').click(); // Close dropdown
+      cy.get('body').type('{esc}'); // Close dropdown
       cy.get('[data-testid="nav-experiments"]').click();
       cy.url().should('include', '/experiments');
       cy.get('[data-testid="experiments-page"]').should('be.visible');
