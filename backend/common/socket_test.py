@@ -310,3 +310,179 @@ async def test_auth_data_clear(manager, fake_websocket):
     finally:
         # Restore original verify_token
         common.socket.verify_token = original_verify_token
+
+@pytest.mark.asyncio
+async def test_send_server(manager, fake_websocket):
+    """Test sending a server message to a specific client."""
+    # Setup a fake websocket
+    await fake_websocket.accept()
+    
+    # Create test data
+    data = {"action": "worldline_update", "value": 1.048596}
+    
+    # Send server message
+    await manager.send_server(data, "update", fake_websocket)
+    
+    # Verify the message was sent
+    assert len(fake_websocket.sent_jsons) == 1
+    sent = fake_websocket.sent_jsons[0]
+    
+    # Check message contents
+    assert sent["action"] == "worldline_update"
+    assert sent["value"] == 1.048596
+    assert sent["username"] == "SERVER"
+    assert sent["type"] == "update"
+    assert sent["server_initiated"] is True
+    
+    # Check timestamp is in valid ISO format
+    try:
+        datetime.datetime.fromisoformat(sent["timestamp"])
+    except ValueError:
+        pytest.fail(f"Timestamp is not in valid ISO format: {sent['timestamp']}")
+
+@pytest.mark.asyncio
+async def test_send_server_with_custom_username(manager, fake_websocket):
+    """Test sending a server message with custom username."""
+    # Setup a fake websocket
+    await fake_websocket.accept()
+    
+    # Create test data
+    data = {"action": "experiment_updated", "id": "EXP-001"}
+    
+    # Send server message with custom username
+    await manager.send_server(data, "update", fake_websocket, username="Experiment Monitor")
+    
+    # Verify the message was sent with custom username
+    assert len(fake_websocket.sent_jsons) == 1
+    sent = fake_websocket.sent_jsons[0]
+    
+    # Check username was set to custom value
+    assert sent["username"] == "Experiment Monitor"
+    assert sent["server_initiated"] is True
+
+@pytest.mark.asyncio
+async def test_broadcast_server(manager, monkeypatch):
+    """Test broadcasting server message to all connected clients."""
+    # Mock the logger to avoid real logging
+    monkeypatch.setattr("common.socket.logger", DummyLogger())
+    
+    # Setup multiple fake websockets
+    ws1 = FakeWebSocket()
+    await ws1.accept()
+    ws1.state.user = {"name": "User1"}
+    
+    ws2 = FakeWebSocket()
+    await ws2.accept()
+    ws2.state.user = {"name": "User2"}
+    
+    # Add websockets to active connections
+    manager.active_connections = [ws1, ws2]
+    
+    # Create test data
+    data = {
+        "action": "experiment_created", 
+        "experiment_id": "EXP-001", 
+        "experiment_name": "Phone Microwave",
+        "worldline_change": 0.337192
+    }
+    
+    # Broadcast server message
+    await manager.broadcast_server(data, "notification")
+    
+    # Verify all clients received the message
+    for websocket in [ws1, ws2]:
+        assert len(websocket.sent_jsons) == 1
+        sent = websocket.sent_jsons[0]
+        
+        # Check message contents
+        assert sent["action"] == "experiment_created"
+        assert sent["experiment_id"] == "EXP-001"
+        assert sent["experiment_name"] == "Phone Microwave"
+        assert sent["worldline_change"] == 0.337192
+        assert sent["username"] == "SERVER"
+        assert sent["type"] == "notification"
+        assert sent["server_initiated"] is True
+        
+        # Check timestamp is in valid ISO format
+        try:
+            datetime.datetime.fromisoformat(sent["timestamp"])
+        except ValueError:
+            pytest.fail(f"Timestamp is not in valid ISO format: {sent['timestamp']}")
+
+@pytest.mark.asyncio
+async def test_broadcast_server_with_custom_username(manager, monkeypatch):
+    """Test broadcasting server message with custom username."""
+    # Mock the logger to avoid real logging
+    monkeypatch.setattr("common.socket.logger", DummyLogger())
+    
+    # Setup multiple fake websockets
+    ws1 = FakeWebSocket()
+    await ws1.accept()
+    ws2 = FakeWebSocket()
+    await ws2.accept()
+    
+    # Add websockets to active connections
+    manager.active_connections = [ws1, ws2]
+    
+    # Create test data
+    data = {
+        "action": "worldline_diverged", 
+        "new_value": 1.048596,
+        "status": "steins_gate"
+    }
+    
+    # Broadcast server message with custom username
+    await manager.broadcast_server(data, "alert", username="Divergence Meter")
+    
+    # Verify all clients received the message with custom username
+    for websocket in [ws1, ws2]:
+        assert len(websocket.sent_jsons) == 1
+        sent = websocket.sent_jsons[0]
+        assert sent["username"] == "Divergence Meter"
+        assert sent["server_initiated"] is True
+
+@pytest.mark.asyncio
+async def test_broadcast_server_with_errors(manager, monkeypatch):
+    """Test broadcast_server handles errors with individual clients gracefully."""
+    # Create a logger that will collect error messages
+    error_messages = []
+    
+    class TestLogger(DummyLogger):
+        def error(self, message):
+            error_messages.append(message)
+    
+    # Mock the logger
+    mock_logger = TestLogger()
+    monkeypatch.setattr("common.socket.logger", mock_logger)
+    
+    # Create a normal websocket
+    normal_ws = FakeWebSocket()
+    await normal_ws.accept()
+    
+    # Create a problematic websocket that will raise an exception
+    class ProblemWebSocket(FakeWebSocket):
+        async def send_json(self, data: dict):
+            raise Exception("Connection error")
+    
+    problem_ws = ProblemWebSocket()
+    await problem_ws.accept()
+    
+    # Add both websockets to active connections
+    manager.active_connections = [normal_ws, problem_ws]
+    
+    # Create test data
+    data = {"action": "system_notification", "message": "Testing error handling"}
+    
+    # Broadcast server message
+    await manager.broadcast_server(data, "alert")
+    
+    # Verify the normal websocket received the message
+    assert len(normal_ws.sent_jsons) == 1
+    assert normal_ws.sent_jsons[0]["action"] == "system_notification"
+    
+    # Verify an error was logged for the problematic websocket
+    assert len(error_messages) == 1
+    assert "Error broadcasting to client" in error_messages[0]
+    
+    # Ensure the broadcast continued despite the error
+    assert len(normal_ws.sent_jsons) == 1

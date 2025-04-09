@@ -186,6 +186,51 @@ class ConnectionManager:
                 
             await self.send(data, type, connection)
 
+    async def send_server(self, data: dict, type: str, websocket: WebSocket, username: str = "SERVER"):
+        """
+        Sends JSON data from the server to a specific client without authentication checks.
+        Used for server-initiated communications where no user sender exists.
+        
+        Args:
+            data: The data payload to send
+            type: Type of operation or message 
+            websocket: The WebSocket connection to send to
+            username: Optional custom username to use instead of "SERVER"
+        """
+        # Add server indicator and timestamp
+        current_time = datetime.datetime.now().isoformat()
+        
+        data_with_metadata = {
+            **data, 
+            "username": username,
+            "type": type,
+            "timestamp": current_time,
+            "server_initiated": True
+        }
+        
+        await websocket.send_json(data_with_metadata)
+
+    async def broadcast_server(self, data: dict, type: str, username: str = "SERVER"):
+        """
+        Broadcasts JSON data from the server to all connected clients without authentication checks.
+        Used for server-initiated broadcasts like system notifications or background process updates.
+        
+        Args:
+            data: The data payload to broadcast
+            type: Type of operation or message
+            username: Optional custom username to use instead of "SERVER"
+        """
+        # Log server broadcast for audit trail
+        logger.info(f"Server broadcasting message of type '{type}' from '{username}' to {len(self.active_connections)} clients")
+        
+        # Send to all connected clients
+        for connection in self.active_connections:
+            try:
+                await self.send_server(data, type, connection, username)
+            except Exception as e:
+                # Log error but continue with other connections
+                logger.error(f"Error broadcasting to client: {str(e)}")
+
     def get_server_sender(self):
         """Create a pseudo-sender with admin privileges for server-initiated broadcasts"""
         from types import SimpleNamespace
