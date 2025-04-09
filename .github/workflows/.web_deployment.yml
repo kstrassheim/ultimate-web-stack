@@ -114,9 +114,7 @@ jobs:
             terraform apply -auto-approve
           fi
 
-          terraform output -json > terraform_output.raw
-          sed '1d' terraform_output.raw > terraform_output.f1
-          grep -v "^::" terraform_output.f1 > terraform_output.json
+          terraform output -json > terraform_output.json
 
           echo "Validating JSON..."
           if jq . terraform_output.json > /dev/null 2>&1; then
