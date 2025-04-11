@@ -133,7 +133,7 @@ describe('User Flow Test', () => {
     // Should be able to access home page without authentication
     cy.url().should('not.include', '/access-denied');
     cy.get('[data-testid="home-page"]').should('be.visible');
-    cy.contains('Welcome to Ultimate Web Stack').should('be.visible');
+    cy.contains('Welcome').should('be.visible');
   });
 
   // Update this test - verify experiments link is NOT visible

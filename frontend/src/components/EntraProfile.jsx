@@ -22,7 +22,13 @@ const EntraProfile = () => {
     if (account) {
       try {
         let photo = await getProfilePhoto(instance, account);
-        setPhotoUrl(photo);
+        // Only set photo URL if it's a valid URL string
+        if (photo && typeof photo === 'string' && photo.trim() !== '') {
+          setPhotoUrl(photo);
+        } else {
+          // If photo is empty, null, or invalid, use dummy avatar
+          setPhotoUrl(dummy_avatar);
+        }
       } catch (error) {
         console.error("Error fetching profile photo:", error);
         setPhotoUrl(dummy_avatar);

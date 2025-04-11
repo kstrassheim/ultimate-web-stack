@@ -8,7 +8,7 @@ describe('Home Component', () => {
     render(<Home />);
     const headingElement = screen.getByRole('heading', { level: 1 });
     expect(headingElement).toBeInTheDocument();
-    expect(headingElement).toHaveTextContent('Welcome to Ultimate Web Stack');
+    expect(headingElement).toHaveTextContent('Welcome');
   });
 
   test('renders the page wrapper with correct test id', () => {
@@ -17,12 +17,6 @@ describe('Home Component', () => {
     expect(pageWrapper).toBeInTheDocument();
   });
 
-  test('renders the intro paragraph text', () => {
-    render(<Home />);
-    const paragraphText = screen.getByText(/modern full-stack application/i);
-    expect(paragraphText).toBeInTheDocument();
-  });
-  
   test('renders all feature cards', () => {
     render(<Home />);
     

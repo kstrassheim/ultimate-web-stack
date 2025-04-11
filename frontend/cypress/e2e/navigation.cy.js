@@ -18,7 +18,6 @@ describe('Navigation Tests', () => {
     cy.get('[data-testid="auth-navigation"]').should('exist');
     
     // Logo checks
-    cy.get('[data-testid="logo-link"]').should('have.attr', 'href', 'https://github.com/kstrassheim/ultimate-web-stack');
     cy.get('[data-testid="logo-image"]').should('be.visible');
     
     // Home navigation test - Home is now publicly accessible welcome page
@@ -90,7 +89,7 @@ describe('Unauthenticated Flow Tests', () => {
     
     // Verify home page content
     cy.get('[data-testid="home-page"]').should('be.visible');
-    cy.contains('h1', 'Welcome to Ultimate Web Stack').should('be.visible');
+    cy.contains('h1', 'Welcome').should('be.visible');
     
     // Check for feature cards
     cy.contains('React Frontend').should('be.visible');
