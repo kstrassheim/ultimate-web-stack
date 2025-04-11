@@ -48,6 +48,9 @@ const copyLogos = () => {
   }
 }
 
+// Path to the manifest file
+const manifestPath = resolve(__dirname, 'public/site.webmanifest');
+
 // Add this function after copyLogos function
 const generateWebManifest = () => {
   try {
@@ -59,9 +62,6 @@ const generateWebManifest = () => {
     const appName = (env === 'dev' || env === 'test') 
       ? `${baseAppName} ${env.toLowerCase()}`
       : baseAppName;
-    
-    // Path to the manifest file
-    const manifestPath = resolve(__dirname, 'public/site.webmanifest');
     
     // Read existing manifest as template
     let manifest;
@@ -94,6 +94,7 @@ const generateWebManifest = () => {
     manifest.short_name = appName;
     
     // Write updated manifest back to file
+
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     console.log(`Generated site.webmanifest with app name: "${appName}"`);
   } catch (error) {
@@ -166,6 +167,14 @@ export default defineConfig({
   },
 })
 
+
 copyLogos();
-generateWebManifest();
+// Only generate the web manifest when NOT there or in deployment mode
+// Generate manifest file logic:
+// 1. In dev mode (not deployment), only generate if file doesn't exist
+// 2. In production deployment, always generate
+if (isDeployment || !fs.existsSync(manifestPath)) {
+  generateWebManifest();
+}
+
 setTitleEnvVariable();

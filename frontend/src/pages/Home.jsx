@@ -11,8 +11,13 @@ const Home = () => {
       <Container fluid>
         <Row className="mb-4 justify-content-center">
           <Col lg={8} md={10} xs={12} className="text-center">
-            <h1 className="display-4 mb-3">Welcome to Ultimate Web Stack</h1>
-            <p className="lead">A modern full-stack application built with React, FastAPI, and Azure integration.</p>
+            <h1 className="display-4 mb-3">
+              {/* For small screens and up - no wrapping */}
+              <span className="d-none d-sm-inline text-nowrap">Welcome to "{document.title}"</span>
+              {/* For extra small screens only - normal wrapping */}
+              <span className="d-sm-none">Welcome to "{document.title}"</span>
+            </h1>
+            <p className="lead">A python based website that gives the users a blank  canvas for their solutions in an production ready arrangement.</p>
           </Col>
         </Row>
         
@@ -149,6 +154,15 @@ const Home = () => {
                 </Card.Text>
               </Card.Body>
             </Card>
+          </Col>
+        </Row>
+        
+        {/* Attribution footer */}
+        <Row className="mt-5 pt-4 border-top">
+          <Col className="text-center text-muted small">
+            <p>
+              Inspired by <a href="https://github.com/kstrassheim/ultimate-web-stack" target="_blank" rel="noopener noreferrer">Ultimate Web Stack</a> at github. Please leave a star there if you like this project.
+            </p>
           </Col>
         </Row>
       </Container>
