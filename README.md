@@ -1,4 +1,4 @@
-# Web Reference Stack
+# Ultimate Web Stack
 This project is based on Python (FastAPI) and gives the users a blank canvas in Python to publish their solutions within a website and in an acceptable technical framework to go into production with entra id users while avoiding producing legacy code. This concretely means the following features: Entra ID role-based authentication, Azure logging, e2e tests with mockup, unit tests (Jest, PyTest), authenticated RealTime WebSocket connections and many more features. The whole stack auto-installs via terraform and derives its settings into the frontend and backend. You just have to adjust the app name.
 
 ## Features
