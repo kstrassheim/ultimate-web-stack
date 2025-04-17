@@ -11,6 +11,7 @@ locals {
   planName = var.env == "prod" ? replace(replace(module.naming.app_service_plan.name, "_", "-"), "-prod", "") : replace(module.naming.app_service_plan.name, "_", "-")
   webName = var.env == "prod" ? replace(replace("${var.app_name}", "_", "-"), "-prod", "") : "${replace("${var.app_name}-${var.env}", "_", "-")}"
   insightsName = var.env == "prod" ? "${replace("${var.app_name}-insights", "_", "-")}" : "${replace("${var.app_name}-insights-${var.env}", "_", "-")}"
+  insightsLogAnalyticsName = var.env == "prod" ? "${replace("${var.app_name}-log-analytics", "_", "-")}" : "${replace("${var.app_name}-log-analytics-${var.env}", "_", "-")}"
   appRegName = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
 }
 
@@ -62,16 +63,25 @@ resource "azurerm_linux_web_app" "web" {
 
   # Add the telemetry instrumentation key as an app setting
   app_settings = {
-    # "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.log.instrumentation_key
+    "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.log.instrumentation_key
     // !!! IMPORTANT or python site will not build !!!
     "SCM_DO_BUILD_DURING_DEPLOYMENT"= true
   }
+}
+
+resource "azurerm_log_analytics_workspace" "log_workspace" {
+  name                = local.insightsLogAnalyticsName
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
 }
 
 resource "azurerm_application_insights" "log" {
   name                = local.insightsName
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = data.azurerm_resource_group.rg.location
+  workspace_id = azurerm_log_analytics_workspace.log_workspace.id
   application_type    = "web"
 }
 
