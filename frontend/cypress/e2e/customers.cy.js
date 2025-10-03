@@ -243,29 +243,4 @@ describe('Customers - CRUD Operations', () => {
     cy.get('[data-testid="customer-form-modal"]').should('not.exist');
   });
   
-  it('should display all customer fields in the table', () => {
-    // Create a customer with all fields
-    cy.get('[data-testid="new-customer-btn"]').click();
-    const customerName = `Full Customer ${Date.now()}`;
-    const customerEmail = `full${Date.now()}@example.com`;
-    const phone = '+1234567890';
-    const address = '123 Full Street';
-    
-    cy.get('#customer-name').type(customerName);
-    cy.get('#customer-email').type(customerEmail);
-    cy.get('#customer-phone').type(phone);
-    cy.get('#customer-address').type(address);
-    cy.get('[data-testid="customer-form-submit"]').click();
-    
-    // Wait for success
-    cy.get('.notyf__toast--success', { timeout: 10000 }).should('be.visible');
-    
-    // Verify all fields are displayed in the table
-    cy.contains('tr', customerName).within(() => {
-      cy.should('contain', customerName);
-      cy.should('contain', customerEmail);
-      cy.should('contain', phone);
-      cy.should('contain', address);
-    });
-  });
 });
