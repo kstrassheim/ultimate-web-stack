@@ -206,9 +206,17 @@ describe('Customers - CRUD Operations', () => {
   });
   
   it('should handle empty customer list', () => {
-    // If there are no customers, should show appropriate message
-    // This test may need to be adjusted based on initial data state
-    cy.get('[data-testid="customers-table"]').should('exist');
+    // Check if either the table exists OR the "no customers" message is shown
+    // This handles both cases: empty list and list with data
+    cy.get('body').then(($body) => {
+      if ($body.find('[data-testid="customers-table"]').length > 0) {
+        // Table exists, meaning there are customers
+        cy.get('[data-testid="customers-table"]').should('be.visible');
+      } else {
+        // No table, should show the empty state message
+        cy.contains('No customers found. Create your first customer!').should('be.visible');
+      }
+    });
   });
   
   it('should close form modal when close button is clicked', () => {
