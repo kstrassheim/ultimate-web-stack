@@ -62,10 +62,12 @@ describe('App Component', () => {
     expect(screen.getByTestId('nav-dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('nav-chat')).toBeInTheDocument();
     
-    // Check protected links
-    const protectedLink = screen.getByTestId('mocked-protected-link');
-    expect(protectedLink).toBeInTheDocument();
-    expect(protectedLink).toHaveAttribute('data-roles', 'Admin');
+    // Check protected links (experiments and customers)
+    const protectedLinks = screen.getAllByTestId('mocked-protected-link');
+    expect(protectedLinks.length).toBeGreaterThanOrEqual(1);
+    protectedLinks.forEach(link => {
+      expect(link).toHaveAttribute('data-roles', 'Admin');
+    });
     
     // Check auth navigation components
     expect(screen.getByTestId('auth-navigation')).toBeInTheDocument();
@@ -79,16 +81,18 @@ describe('App Component', () => {
       </BrowserRouter>
     );
     
-    // Check that the experiments link is wrapped in a ProtectedLink
-    const protectedLink = screen.getByTestId('mocked-protected-link');
-    expect(protectedLink).toHaveAttribute('data-roles', 'Admin');
+    // Check that the experiments and customers links are wrapped in ProtectedLinks
+    const protectedLinks = screen.getAllByTestId('mocked-protected-link');
+    expect(protectedLinks.length).toBeGreaterThanOrEqual(1);
     
-    // Check if the link is visible (based on our mock implementation)
-    const isVisible = protectedLink.getAttribute('data-visible') === 'true';
-    
-    // The experiments link visibility depends on the mock implementation
-    // In our mock, we're showing it when requiredRoles includes 'Admin'
-    expect(isVisible).toBe(true);
+    // Both experiments and customers should require Admin role
+    protectedLinks.forEach(link => {
+      expect(link).toHaveAttribute('data-roles', 'Admin');
+      
+      // Check if the link is visible (based on our mock implementation)
+      const isVisible = link.getAttribute('data-visible') === 'true';
+      expect(isVisible).toBe(true);
+    });
   });
 
   test('renders home route with no protection', () => {
