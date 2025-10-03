@@ -262,10 +262,10 @@ describe('Customers - CRUD Operations', () => {
     
     // Verify all fields are displayed in the table
     cy.contains('tr', customerName).within(() => {
-      cy.should('contain.text', customerName);
-      cy.should('contain.text', customerEmail);
-      cy.should('contain.text', phone);
-      cy.should('contain.text', address);
+      cy.should('contain', customerName);
+      cy.should('contain', customerEmail);
+      cy.should('contain', phone);
+      cy.should('contain', address);
     });
   });
 });
