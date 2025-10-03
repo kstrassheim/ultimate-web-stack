@@ -13,7 +13,11 @@ class MockAzureLogHandler(logging.StreamHandler):
     """Mock handler that outputs to console instead of Azure"""
     def __init__(self, connection_string=None):
         super().__init__()
+        # Ensure filters list is initialized (required by logging.Handler)
+        if not hasattr(self, 'filters'):
+            self.filters = []
         self.setFormatter(logging.Formatter('[MOCK AZURE LOG] %(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.setLevel(log_level)  # Set the log level
         # Only print when log level allows it
         if log_level <= logging.INFO:
             print("Using MockAzureLogHandler instead of sending to Application Insights")
@@ -54,6 +58,9 @@ def create_fixed_logger():
     
     # Always add a console handler for local debugging
     console_handler = logging.StreamHandler()
+    # Ensure filters list is initialized (required by logging.Handler in Python 3.12+)
+    if not hasattr(console_handler, 'filters'):
+        console_handler.filters = []
     console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     console_handler.lock = threading.RLock()
     console_handler.setLevel(log_level)  # Set the handler's level too

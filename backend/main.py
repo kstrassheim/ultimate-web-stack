@@ -16,6 +16,7 @@ load_dotenv()
 # get routers
 from api.api import api_router
 from api.future_gadget_api import future_gadget_api_router
+from api.customer_api import customer_api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # Init FastAPI
@@ -35,6 +36,9 @@ app.include_router(api_router, prefix="/api")
 
 # Register Future gadget Router
 app.include_router(future_gadget_api_router, prefix="/future-gadget-lab")
+
+# Register Customer Router
+app.include_router(customer_api_router, prefix="/api")
 
 # Generate test data for Future Gadget Lab
 from db.future_gadget_lab_data_service import generate_test_data
@@ -67,7 +71,7 @@ frontend_router = APIRouter()
 async def frontend_handler(path: str):
 
     # Exclude API paths - prevent serving HTML for API routes
-    if path.startswith('api/') or path.startswith('future-gadget-lab/'):
+    if path.startswith('api/') or path.startswith('future-gadget-lab/') or path.startswith('customers/'):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="API path not found")
     
@@ -97,4 +101,5 @@ app.include_router(frontend_router, prefix="")
 
 # Bootstrap the app
 if __name__ == '__main__':
+    import uvicorn
     uvicorn.run('main:app', reload=True)

@@ -13,6 +13,7 @@ import Dashboard from '@/pages/Dashboard';
 import Chat from '@/pages/Chat';
 // Add new imports for Experiments and DMails
 import Experiments from '@/pages/Experiments';
+import Customers from '@/pages/Customers';
 
 function App() {
   return (
@@ -52,6 +53,9 @@ function App() {
               <ProtectedLink requiredRoles={["Admin"]}>
                 <Nav.Link as={Link} to="/experiments" data-testid="nav-experiments">Experiments</Nav.Link>
               </ProtectedLink>
+              <ProtectedLink requiredRoles={["Admin"]}>
+                <Nav.Link as={Link} to="/customers" data-testid="nav-customers">Customers</Nav.Link>
+              </ProtectedLink>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -87,6 +91,14 @@ function App() {
             element={
               <ProtectedRoute requiredRoles={["Admin"]}>
                 <Experiments />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers"
+            element={
+              <ProtectedRoute requiredRoles={["Admin"]}>
+                <Customers />
               </ProtectedRoute>
             }
           />
