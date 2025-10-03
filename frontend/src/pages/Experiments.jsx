@@ -19,6 +19,7 @@ const Experiments = () => {
   const { instance } = useMsal();
   const [experiments, setExperiments] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [currentExperiment, setCurrentExperiment] = useState(null);
@@ -27,10 +28,11 @@ const Experiments = () => {
   const [experimentToDelete, setExperimentToDelete] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const initFetchCompleted = useRef(false);
+  const [initialised, setInitialised] = useState(false);
 
   // Load experiments data
   const fetchExperiments = async (showMessage = false) => {
-    setLoading(true);
+  setLoading(true);
     setError(null);
     
     try {
@@ -48,6 +50,7 @@ const Experiments = () => {
       appInsights.trackException({ error: err, severityLevel: 'Error' });
     } finally {
       setLoading(false);
+      setInitialised(true);
     }
   };
 
@@ -65,6 +68,7 @@ const Experiments = () => {
   // Create new experiment
   const handleCreateExperiment = async (experimentData) => {
     setLoading(true);
+    setActionLoading(true);
     try {
       await createExperiment(instance, experimentData);
       notyfService.success('Experiment created successfully');
@@ -74,12 +78,14 @@ const Experiments = () => {
       notyfService.error(`Failed to create experiment: ${err.message}`);
     } finally {
       setLoading(false);
+      setActionLoading(false);
     }
   };
 
   // Update existing experiment
   const handleUpdateExperiment = async (id, experimentData) => {
     setLoading(true);
+    setActionLoading(true);
     try {
       await updateExperiment(instance, id, experimentData);
       notyfService.success('Experiment updated successfully');
@@ -89,6 +95,7 @@ const Experiments = () => {
       notyfService.error(`Failed to update experiment: ${err.message}`);
     } finally {
       setLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -96,6 +103,7 @@ const Experiments = () => {
   const handleDeleteExperiment = async () => {
     if (!experimentToDelete) return;
     setLoading(true);
+    setActionLoading(true);
     try {
       await deleteExperiment(instance, experimentToDelete.id);
       notyfService.success('Experiment deleted successfully');
@@ -106,6 +114,7 @@ const Experiments = () => {
       notyfService.error(`Failed to delete experiment: ${err.message}`);
     } finally {
       setLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -252,8 +261,9 @@ const Experiments = () => {
     });
     
     if (!initFetchCompleted.current) {
-      fetchExperiments(false);
-      initFetchCompleted.current = true;
+      fetchExperiments(false).finally(() => {
+        initFetchCompleted.current = true;
+      });
     }
     
     return () => {
@@ -265,124 +275,128 @@ const Experiments = () => {
 
   return (
     <div data-testid="experiments-page">
-      <h1 data-testid="experiments-heading">Future Gadget Lab Experiments</h1>
-      
       <Loading visible={loading} message="Processing experiment data..." />
-      
-      <div className="mb-3" data-testid="connection-status">
-        <span className="me-2">WebSocket Status:</span>
-        <Badge bg={connectionStatus === 'connected' ? 'success' : 'danger'} data-testid="status-badge">
-          {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
-        </Badge>
-      </div>
-      
-      {error && (
-        <Alert variant="danger" className="mb-3" data-testid="experiments-error">
-          {error}
-        </Alert>
-      )}
-      
-      <Card className="mb-4" data-testid="experiments-card">
-        <Card.Header
-          className="d-flex justify-content-between align-items-center"
-          data-testid="experiments-card-header"
-        >
-          <span>All Experiments</span>
-          <div>
-            <Button
-              variant="primary"
-              size="sm"
-              className="me-2"
-              onClick={openCreateForm}
-              disabled={loading}
-              data-testid="new-experiment-btn"
-            >
-              New Experiment
-            </Button>
-            <Button
-              variant="outline-primary"
-              size="sm"
-              onClick={() => fetchExperiments(true)} // Show message when explicitly reloading
-              disabled={loading}
-              data-testid="reload-experiments-btn"
-            >
-              Reload
-            </Button>
+
+      {initialised && (
+        <>
+          <h1 data-testid="experiments-heading">Future Gadget Lab Experiments</h1>
+          
+          <div className="mb-3" data-testid="connection-status">
+            <span className="me-2">WebSocket Status:</span>
+            <Badge bg={connectionStatus === 'connected' ? 'success' : 'danger'} data-testid="status-badge">
+              {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
+            </Badge>
           </div>
-        </Card.Header>
-        <Card.Body>
-          {experiments.length > 0 ? (
-            <Table striped bordered hover responsive data-testid="experiments-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th className="d-none d-lg-table-cell">Creator</th>
-                  <th className="d-none d-lg-table-cell">World Line Change</th>
-                  <th className="d-none d-sm-table-cell">Timestamp</th>
-                  <th className="d-none d-md-table-cell">Description</th>
-                  <th style={{ width: '120px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {experiments.map(exp => (
-                  <tr key={exp.id} data-testid={`experiment-row-${exp.id}`}>
-                    <td className="text-break">{exp.name}</td>
-                    
-                    <td>
-                      <Badge bg={getStatusBadgeColor(exp.status)} data-testid="experiment-status">
-                        {exp.status}
-                      </Badge>
-                    </td>
-                    
-                    <td className="d-none d-lg-table-cell">{exp.creator_id}</td>
-                    
-                    <td className="d-none d-lg-table-cell" data-testid="experiment-worldline">
-                      {formatWorldLineChange(exp.world_line_change)}
-                    </td>
-                    
-                    <td className="d-none d-sm-table-cell" data-testid="experiment-timestamp">
-                      {formatExperimentTimestamp(exp)}
-                    </td>
-                    
-                    <td className="d-none d-md-table-cell text-break">{exp.description}</td>
-                    
-                    <td className="p-0" data-testid="experiment-actions">
-                      <div className="d-flex flex-column h-100">
-                        <Button
-                          variant="outline-info"
-                          size="sm"
-                          className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
-                          onClick={() => openEditForm(exp.id)}
-                          data-testid={`edit-btn-${exp.id}`}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline-danger"
-                          size="sm"
-                          className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
-                          onClick={() => openDeleteModal(exp)}
-                          data-testid={`delete-btn-${exp.id}`}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          ) : !loading && (
-            <div className="text-center p-4" data-testid="no-experiments">
-              <p className="text-muted">No experiments found.</p>
-              <Button variant="primary" onClick={openCreateForm} data-testid="create-first-experiment-btn">
-                Create your first experiment
-              </Button>
-            </div>
+          
+          {error && (
+            <Alert variant="danger" className="mb-3" data-testid="experiments-error">
+              {error}
+            </Alert>
           )}
-        </Card.Body>
-      </Card>
+          
+          <Card className="mb-4" data-testid="experiments-card">
+            <Card.Header
+              className="d-flex justify-content-between align-items-center"
+              data-testid="experiments-card-header"
+            >
+              <span>All Experiments</span>
+              <div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="me-2"
+                  onClick={openCreateForm}
+                  disabled={actionLoading}
+                  data-testid="new-experiment-btn"
+                >
+                  New Experiment
+                </Button>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={() => fetchExperiments(true)} // Show message when explicitly reloading
+                  disabled={loading || actionLoading}
+                  data-testid="reload-experiments-btn"
+                >
+                  Reload
+                </Button>
+              </div>
+            </Card.Header>
+            <Card.Body>
+              {experiments.length > 0 ? (
+                <Table striped bordered hover responsive data-testid="experiments-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Status</th>
+                      <th className="d-none d-lg-table-cell">Creator</th>
+                      <th className="d-none d-lg-table-cell">World Line Change</th>
+                      <th className="d-none d-sm-table-cell">Timestamp</th>
+                      <th className="d-none d-md-table-cell">Description</th>
+                      <th style={{ width: '120px' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {experiments.map(exp => (
+                      <tr key={exp.id} data-testid={`experiment-row-${exp.id}`}>
+                        <td className="text-break">{exp.name}</td>
+                        
+                        <td>
+                          <Badge bg={getStatusBadgeColor(exp.status)} data-testid="experiment-status">
+                            {exp.status}
+                          </Badge>
+                        </td>
+                        
+                        <td className="d-none d-lg-table-cell">{exp.creator_id}</td>
+                        
+                        <td className="d-none d-lg-table-cell" data-testid="experiment-worldline">
+                          {formatWorldLineChange(exp.world_line_change)}
+                        </td>
+                        
+                        <td className="d-none d-sm-table-cell" data-testid="experiment-timestamp">
+                          {formatExperimentTimestamp(exp)}
+                        </td>
+                        
+                        <td className="d-none d-md-table-cell text-break">{exp.description}</td>
+                        
+                        <td className="p-0" data-testid="experiment-actions">
+                          <div className="d-flex flex-column h-100">
+                            <Button
+                              variant="outline-info"
+                              size="sm"
+                              className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
+                              onClick={() => openEditForm(exp.id)}
+                              data-testid={`edit-btn-${exp.id}`}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              className="flex-grow-1 m-1 d-flex align-items-center justify-content-center"
+                              onClick={() => openDeleteModal(exp)}
+                              data-testid={`delete-btn-${exp.id}`}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : !loading && (
+                <div className="text-center p-4" data-testid="no-experiments">
+                  <p className="text-muted">No experiments found.</p>
+                  <Button variant="primary" onClick={openCreateForm} data-testid="create-first-experiment-btn">
+                    Create your first experiment
+                  </Button>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </>
+      )}
       
       {/* Experiment Form Modal */}
       <Modal show={showForm} onHide={() => setShowForm(false)} size="lg" data-testid="experiment-form-modal">
@@ -412,11 +426,11 @@ const Experiments = () => {
           <p className="text-danger">This action cannot be undone.</p>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDeleteModal(false)} data-testid="cancel-delete-btn">
+              <Button variant="secondary" onClick={() => setShowDeleteModal(false)} data-testid="cancel-delete-btn">
             Cancel
           </Button>
-          <Button variant="danger" onClick={handleDeleteExperiment} disabled={loading} data-testid="confirm-delete-btn">
-            {loading ? 'Deleting...' : 'Delete Experiment'}
+              <Button variant="danger" onClick={handleDeleteExperiment} disabled={loading} data-testid="confirm-delete-btn">
+                {loading ? 'Deleting...' : 'Delete Experiment'}
           </Button>
         </Modal.Footer>
       </Modal>

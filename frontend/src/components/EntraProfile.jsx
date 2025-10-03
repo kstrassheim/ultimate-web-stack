@@ -18,10 +18,11 @@ const EntraProfile = () => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false); // Track dropdown state
   
-  const fetchProfilePhotoFunc = async () => {
-    if (account) {
+  const fetchProfilePhotoFunc = async (targetAccount) => {
+    const accountToUse = targetAccount ?? account;
+    if (accountToUse) {
       try {
-        let photo = await getProfilePhoto(instance, account);
+        const photo = await getProfilePhoto(instance, accountToUse);
         // Only set photo URL if it's a valid URL string
         if (photo && typeof photo === 'string' && photo.trim() !== '') {
           setPhotoUrl(photo);
@@ -47,7 +48,7 @@ const EntraProfile = () => {
     }
     else if (currentAccount !== account) {
       setAccount(currentAccount);
-      fetchProfilePhotoFunc();
+      fetchProfilePhotoFunc(currentAccount);
     }
   }, [instance.getActiveAccount()?.name]);
 
