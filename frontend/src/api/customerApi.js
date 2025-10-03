@@ -1,14 +1,13 @@
-import { getAccessToken } from '../auth/AuthConfig';
-
-const API_BASE_URL = '/api';
+import { retrieveTokenForBackend } from '@/auth/entraAuth';
+import { backendUrl } from '@/config';
 
 /**
  * Get all customers
  */
 export const getAllCustomers = async (msalInstance) => {
-  const token = await getAccessToken(msalInstance);
+  const token = await retrieveTokenForBackend(msalInstance);
   
-  const response = await fetch(`${API_BASE_URL}/customers`, {
+  const response = await fetch(`${backendUrl}/api/customers`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -28,9 +27,9 @@ export const getAllCustomers = async (msalInstance) => {
  * Get a single customer by ID
  */
 export const getCustomerById = async (msalInstance, id) => {
-  const token = await getAccessToken(msalInstance);
+  const token = await retrieveTokenForBackend(msalInstance);
   
-  const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
+  const response = await fetch(`${backendUrl}/api/customers/${id}`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -50,9 +49,9 @@ export const getCustomerById = async (msalInstance, id) => {
  * Create a new customer
  */
 export const createCustomer = async (msalInstance, customerData) => {
-  const token = await getAccessToken(msalInstance);
+  const token = await retrieveTokenForBackend(msalInstance);
   
-  const response = await fetch(`${API_BASE_URL}/customers`, {
+  const response = await fetch(`${backendUrl}/api/customers`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -73,9 +72,9 @@ export const createCustomer = async (msalInstance, customerData) => {
  * Update an existing customer
  */
 export const updateCustomer = async (msalInstance, id, customerData) => {
-  const token = await getAccessToken(msalInstance);
+  const token = await retrieveTokenForBackend(msalInstance);
   
-  const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
+  const response = await fetch(`${backendUrl}/api/customers/${id}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -96,9 +95,9 @@ export const updateCustomer = async (msalInstance, id, customerData) => {
  * Delete a customer
  */
 export const deleteCustomer = async (msalInstance, id) => {
-  const token = await getAccessToken(msalInstance);
+  const token = await retrieveTokenForBackend(msalInstance);
   
-  const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
+  const response = await fetch(`${backendUrl}/api/customers/${id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
