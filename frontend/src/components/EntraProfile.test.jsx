@@ -6,7 +6,7 @@ import EntraProfile from './EntraProfile';
 import { getProfilePhoto } from '@/api/graphApi';
 import appInsights from '@/log/appInsights';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 // Add this with your other mocks at the top of the file
 jest.mock('@/auth/entraAuth', () => ({
@@ -16,8 +16,8 @@ jest.mock('@/auth/entraAuth', () => ({
 }));
 
 // Mock React Router hooks
-jest.mock('react-router-dom', () => ({
-  ...jest.requireActual('react-router-dom'),
+jest.mock('react-router', () => ({
+  ...jest.requireActual('react-router'),
   useNavigate: () => jest.fn(),
   useLocation: () => ({ pathname: '/test' })
 }));
@@ -316,7 +316,7 @@ describe('EntraProfile Component', () => {
     
     // Mock navigate function
     const mockedNavigate = jest.fn();
-    jest.spyOn(require('react-router-dom'), 'useNavigate').mockReturnValue(mockedNavigate);
+    jest.spyOn(require('react-router'), 'useNavigate').mockReturnValue(mockedNavigate);
     
     // Mock successful login response
     msalInstance.loginPopup.mockResolvedValue({

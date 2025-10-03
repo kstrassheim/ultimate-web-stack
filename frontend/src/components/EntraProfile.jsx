@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { Button, Dropdown } from 'react-bootstrap';
 import { useMsal } from '@azure/msal-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { loginRequest } from '@/auth/entraAuth';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
 import appInsights from '@/log/appInsights';

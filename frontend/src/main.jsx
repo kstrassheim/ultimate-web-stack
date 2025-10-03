@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import { MsalProvider } from '@azure/msal-react';
 import { msalConfig } from '@/auth/entraAuth';
 import { PublicClientApplication } from '@azure/msal-browser';

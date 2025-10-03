@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link } from "react-router";
 import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
 import '@/App.css';
 // get the components
