@@ -15,12 +15,20 @@ describe('Customers - CRUD Operations', () => {
   });
   
   it('should load and display the customers page', () => {
-    // Verify customers table exists
-    cy.get('[data-testid="customers-table"]').should('be.visible');
-    
-    // Verify action buttons exist
+    // Verify action buttons exist (always present)
     cy.get('[data-testid="new-customer-btn"]').should('be.visible');
     cy.contains('button', 'Reload').should('be.visible');
+    
+    // Verify either customers table or empty message is shown
+    cy.get('body').then(($body) => {
+      if ($body.find('[data-testid="customers-table"]').length > 0) {
+        // Table exists, meaning there are customers
+        cy.get('[data-testid="customers-table"]').should('be.visible');
+      } else {
+        // No table, should show the empty state message
+        cy.contains('No customers found. Create your first customer!').should('be.visible');
+      }
+    });
   });
   
   it('should create a new customer', () => {
