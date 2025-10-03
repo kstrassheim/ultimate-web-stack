@@ -1,6 +1,17 @@
 import '@testing-library/jest-dom';
 import { jestPreviewConfigure, debug } from 'jest-preview';
+import { TextEncoder, TextDecoder } from 'util';
 import PublicClientApplication from './mock/azureMsalBrowser';
+
+// Provide TextEncoder/TextDecoder in the JSDOM environment for libraries like React Router
+if (!global.TextEncoder) {
+  global.TextEncoder = TextEncoder;
+}
+
+if (!global.TextDecoder) {
+  global.TextDecoder = TextDecoder;
+}
+
 
 global.import = { meta: { env: { MODE: 'test', PROD: false, DEV: false } } };
 

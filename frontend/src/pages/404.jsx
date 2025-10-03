@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import appInsights from '@/log/appInsights';
 
 export default function NotFound() {

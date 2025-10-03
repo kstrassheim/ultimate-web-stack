@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 import ProtectedRoute from './ProtectedRoute';
 import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { BrowserRouter, MemoryRouter } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter } from 'react-router';
 import App from './App';
 
 // Mock all child components to isolate App testing
