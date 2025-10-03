@@ -14,6 +14,7 @@ class MockAzureLogHandler(logging.StreamHandler):
     def __init__(self, connection_string=None):
         super().__init__()
         self.setFormatter(logging.Formatter('[MOCK AZURE LOG] %(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.setLevel(log_level)  # Set the log level
         # Only print when log level allows it
         if log_level <= logging.INFO:
             print("Using MockAzureLogHandler instead of sending to Application Insights")
