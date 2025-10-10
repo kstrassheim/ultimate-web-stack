@@ -14,7 +14,7 @@ export const msalConfig = () =>{
       postLogoutRedirectUri: frontendUrl+'/post-logout',
     },
     cache: {
-      cacheLocation: 'sessionStorage',
+      cacheLocation: 'localStorage',
       storeAuthStateInCookie: false,
     },
     system: {
