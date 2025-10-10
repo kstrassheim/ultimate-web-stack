@@ -71,6 +71,11 @@ export const AuthenticationScheme = {
   POP: "pop"
 };
 
+const STORAGE_KEYS = {
+  activeAccount: 'MSAL_MOCK_ACTIVE_ACCOUNT',
+  isAuthenticated: 'MSAL_MOCK_IS_AUTHENTICATED',
+};
+
 // Logger class
 export class Logger {
   constructor(loggerOptions) {
@@ -116,6 +121,10 @@ export class PublicClientApplication {
     this._allAccounts = accounts;
     this.accounts = [];           // Start with no accounts
 
+  this.storageKeys = STORAGE_KEYS;
+  this._fallbackMemoryStorage = {};
+  this._storage = this._detectStorage();
+
     this.activeAccountIndex = this._getInitialActiveAccountIndex(); // init from localStorage role if available
     this.eventCallbacks = [];
     
@@ -136,7 +145,8 @@ export class PublicClientApplication {
     
     // Store config
     this.config = config;
-    
+
+    this._hydrateAuthenticationState();
   }
 
   // Private JWT generator
@@ -194,7 +204,15 @@ export class PublicClientApplication {
   }
 
   _getInitialActiveAccountIndex() {
-    const mockRole = localStorage.getItem('MOCKROLE');
+    const persistedAccountId = this._getPersistedAccountId();
+    if (persistedAccountId) {
+      const persistedIndex = this._allAccounts.findIndex(account => account.localAccountId === persistedAccountId);
+      if (persistedIndex !== -1) {
+        return persistedIndex;
+      }
+    }
+
+  const mockRole = this._storage?.getItem('MOCKROLE');
     if (!mockRole) { return 0; } // Default to first account
     else {
       const targetRole = mockRole.toLowerCase();
@@ -217,6 +235,79 @@ export class PublicClientApplication {
     
   }
 
+  _hydrateAuthenticationState() {
+    if (this._getStoredAuthState()) {
+      const activeAccount = this._allAccounts[this.activeAccountIndex];
+      if (activeAccount) {
+        this.accounts = [activeAccount];
+        this.isAuthenticated = true;
+      }
+    }
+  }
+
+  _detectStorage() {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage;
+      }
+    } catch (error) {
+      console.warn('Mock MSAL: unable to access window.localStorage, falling back to in-memory storage.', error);
+    }
+
+    if (typeof globalThis !== 'undefined' && globalThis.localStorage) {
+      return globalThis.localStorage;
+    }
+
+    // Provide in-memory fallback if no storage is available
+    return {
+      getItem: (key) => this._fallbackMemoryStorage[key] ?? null,
+      setItem: (key, value) => { this._fallbackMemoryStorage[key] = value; },
+      removeItem: (key) => { delete this._fallbackMemoryStorage[key]; }
+    };
+  }
+
+  _getPersistedAccountId() {
+    try {
+      return this._storage?.getItem(this.storageKeys.activeAccount) || null;
+    } catch (error) {
+      console.warn('Mock MSAL: unable to read persisted account id.', error);
+      return null;
+    }
+  }
+
+  _getStoredAuthState() {
+    try {
+      return this._storage?.getItem(this.storageKeys.isAuthenticated) === 'true';
+    } catch (error) {
+      console.warn('Mock MSAL: unable to read persisted auth state.', error);
+      return false;
+    }
+  }
+
+  _persistActiveAccount(account) {
+    try {
+      if (!account) {
+        this._storage?.removeItem(this.storageKeys.activeAccount);
+      } else {
+        this._storage?.setItem(this.storageKeys.activeAccount, account.localAccountId);
+      }
+    } catch (error) {
+      console.warn('Mock MSAL: unable to persist active account.', error);
+    }
+  }
+
+  _persistAuthState(isAuthenticated) {
+    try {
+      if (isAuthenticated) {
+        this._storage?.setItem(this.storageKeys.isAuthenticated, 'true');
+      } else {
+        this._storage?.setItem(this.storageKeys.isAuthenticated, 'false');
+      }
+    } catch (error) {
+      console.warn('Mock MSAL: unable to persist auth state.', error);
+    }
+  }
+
   // Public methods (same as in your original mock)
   acquireTokenSilent() {
     return Promise.resolve({
@@ -237,6 +328,8 @@ export class PublicClientApplication {
     // Set the logged in account
     this.accounts = [this._allAccounts[this.activeAccountIndex]];
     this.isAuthenticated = true;
+    this._persistActiveAccount(this.accounts[0]);
+    this._persistAuthState(true);
     
     const account = this.accounts[0];
     this._notify(this.eventType.LOGIN_SUCCESS, {
@@ -255,6 +348,8 @@ export class PublicClientApplication {
   logoutPopup() {
     const wasAuthenticated = this.isAuthenticated;
     this.isAuthenticated = false;
+    this._persistAuthState(false);
+    this._persistActiveAccount(null);
     
     this._notify(this.eventType.LOGOUT_SUCCESS, {
       wasAuthenticated: wasAuthenticated,
@@ -268,6 +363,8 @@ export class PublicClientApplication {
   }
 
   logoutRedirect() {
+    this._persistAuthState(false);
+    this._persistActiveAccount(null);
     setTimeout(() => { window.location.reload(); }, 100);
     return Promise.resolve();
   }
@@ -280,18 +377,28 @@ export class PublicClientApplication {
   }
 
   setActiveAccount(accountParam) {
-    if (!accountParam) return null;
-    
+    if (!accountParam) {
+      this.accounts = [];
+      this.isAuthenticated = false;
+      this._persistActiveAccount(null);
+      this._persistAuthState(false);
+      this._instanceStateChanged();
+      return Promise.resolve();
+    }
+
     const index = this._allAccounts.findIndex(
       (account) => account.username === accountParam.username
     );
-    
+
     if (index !== -1) {
       this.activeAccountIndex = index;
       this.accounts = [this._allAccounts[index]];
+      this.isAuthenticated = true;
+      this._persistActiveAccount(this.accounts[0]);
+      this._persistAuthState(true);
       this._instanceStateChanged();
     }
-    
+
     return Promise.resolve();
   }
 
