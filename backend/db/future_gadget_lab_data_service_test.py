@@ -2,11 +2,12 @@ import pytest
 import datetime
 import re
 from db.future_gadget_lab_data_service import (
-    FutureGadgetLabDataService, 
-    WorldLineStatus, 
+    FutureGadgetLabDataService,
+    WorldLineStatus,
     ExperimentStatus,
-    generate_test_data
+    generate_test_data,
 )
+from mock.mock_future_gadget_lab_data_service import MockFutureGadgetLabDataService
 from common.log import logger
 from unittest.mock import patch, MagicMock
 
@@ -32,7 +33,7 @@ def patch_logger_handlers(monkeypatch):
 @pytest.fixture
 def db_service():
     """Create a fresh in-memory database for testing"""
-    return FutureGadgetLabDataService(use_memory_storage=True)
+    return MockFutureGadgetLabDataService()
 
 # Test Initialization
 def test_initialization(db_service):

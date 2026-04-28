@@ -68,4 +68,34 @@ output "requested_graph_api_application_permissions" {
       for ra in rra.resource_access : ra.type == "Role" ? lookup(module.api_roles.application_roles_dictionary_reversed, ra.id, "unknown") : null
     ]
   ])))
+}
+
+output "resource_group_name" {
+  value = data.azurerm_resource_group.rg.name
+  description = "The name of the resource group"
+}
+
+output "cosmos_account_endpoint" {
+  description = "Primary Cosmos DB account endpoint URI"
+  value       = azurerm_cosmosdb_account.db_account.endpoint
+}
+
+output "cosmos_account_hostname" {
+  description = "Cosmos DB account hostname for direct SDK connections"
+  value       = "${azurerm_cosmosdb_account.db_account.name}.documents.azure.com"
+}
+
+output "cosmos_account_hostname_regional" {
+  description = "Region-specific Cosmos DB account hostname"
+  value       = "${azurerm_cosmosdb_account.db_account.name}-${azurerm_cosmosdb_account.db_account.location}.documents.azure.com"
+}
+
+output "cosmos_database_name" {
+  description = "The Cosmos DB database (SQL API) name"
+  value       = azurerm_cosmosdb_sql_database.db.name
+}
+
+output "cosmos_container_name" {
+  description = "The Cosmos DB container (SQL API) name"
+  value       = azurerm_cosmosdb_sql_container.container.name
 } 

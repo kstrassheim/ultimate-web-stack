@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"  # update to your preferred version
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
   }
   backend "azurerm" {
     resource_group_name  = "terraform"      # the resource group where your storage account exists
@@ -17,6 +21,8 @@ terraform {
 provider "azurerm" {
   features {}
 }
+
+provider "random" {}
 
 module "naming" {
   source      = "Azure/naming/azurerm"
