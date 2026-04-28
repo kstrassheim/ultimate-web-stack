@@ -192,3 +192,5 @@ outputs.json
 *terraform.config.json
 login.cm
 login.cmd
+.claude/*
+web-reference-stack-upgrade-package/*
