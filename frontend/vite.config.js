@@ -121,6 +121,7 @@ const getAliases = () => {
     console.log('Redirecting MSAL imports to mock implementation');
     // !! Important : This does the actual mocking in a transparent way
     return {
+      '@azure/msal-browser/redirect-bridge': resolve(__dirname, 'mock/azureMsalRedirectBridge.js'),
       '@azure/msal-browser': resolve(__dirname, 'mock/azureMsalBrowser.js'),
       '@/../terraform.config.json': resolve(__dirname, 'mock/terraform.mock.config.json'),
       '@/log/appInsights': resolve(__dirname, 'mock/appInsights.js'),
