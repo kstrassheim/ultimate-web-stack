@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { MsalProvider } from '@azure/msal-react';
-import msalInstance from '@/auth/msalInstance';
+import msalInstance, { msalInitialization } from '@/auth/msalInstance';
 import 'bootstrap/dist/css/bootstrap.min.css';  // Add this line
 
 import App from './App';
@@ -25,13 +25,15 @@ if (isAuthRedirectFrame) {
       console.error('MSAL redirect bridge failed', error);
     });
 } else {
-  ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-      <BrowserRouter>
-        <MsalProvider instance={msalInstance}>
-          <App />
-        </MsalProvider>
-      </BrowserRouter>
-    </React.StrictMode>
-  );
+  msalInitialization.then(() => {
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <React.StrictMode>
+        <BrowserRouter>
+          <MsalProvider instance={msalInstance}>
+            <App />
+          </MsalProvider>
+        </BrowserRouter>
+      </React.StrictMode>
+    );
+  });
 }
