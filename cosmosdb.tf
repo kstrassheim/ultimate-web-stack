@@ -81,3 +81,29 @@ resource "azurerm_cosmosdb_sql_role_assignment" "deploy_managed_identity_owner" 
   role_definition_id = "${azurerm_cosmosdb_account.db_account.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id       = data.azuread_service_principal.deploy_managed_identity_pricipal.object_id
 }
+
+# Current principal running terraform: a developer when run locally via az login,
+# or the deploy managed identity when run in CI/CD (already covered above).
+data "azuread_client_config" "current" {}
+
+locals {
+  cosmos_developer_principal_ids = setsubtract(
+    toset([data.azuread_client_config.current.object_id]),
+    toset([data.azuread_service_principal.deploy_managed_identity_pricipal.object_id])
+  )
+}
+
+resource "random_uuid" "local_developer_data_contributor" {
+  for_each = local.cosmos_developer_principal_ids
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "local_developer_data_contributor" {
+  for_each            = local.cosmos_developer_principal_ids
+  name                = random_uuid.local_developer_data_contributor[each.key].result
+  resource_group_name = data.azurerm_resource_group.rg.name
+  account_name        = azurerm_cosmosdb_account.db_account.name
+  scope               = azurerm_cosmosdb_account.db_account.id
+  # Built-in Cosmos DB Data Contributor role for read/write access
+  role_definition_id = "${azurerm_cosmosdb_account.db_account.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id       = each.key
+}
