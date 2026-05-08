@@ -7,16 +7,50 @@ from common.log import logger
 from common.role_based_access import required_roles
 from common.socket import ConnectionManager
 from db.future_gadget_lab_data_service import (
-    FutureGadgetLabDataService, 
+    FutureGadgetLabDataService,
     ExperimentStatus,
-    calculate_worldline_status
+    calculate_worldline_status,
 )
+
+from common.config import mock_enabled, tfconfig
 
 # Initialize router
 future_gadget_api_router = APIRouter(tags=["Future Gadget Lab"])
 
-# Initialize data service with memory storage
-fgl_service = FutureGadgetLabDataService(use_memory_storage=True)
+# Initialize data service based on environment configuration
+if mock_enabled:
+    # Important: import this only when mock enabled - locally, because on deploy the mock folder does not exist
+    from mock.mock_future_gadget_lab_data_service import MockFutureGadgetLabDataService
+    fgl_service = MockFutureGadgetLabDataService()
+else:
+    try:
+        cosmos_endpoint_entry = tfconfig.get("cosmos_account_endpoint")
+        cosmos_endpoint = cosmos_endpoint_entry.get("value") if isinstance(cosmos_endpoint_entry, dict) else None
+        if not cosmos_endpoint:
+            cosmos_host_entry = tfconfig.get("cosmos_account_hostname")
+            host_value = cosmos_host_entry.get("value") if isinstance(cosmos_host_entry, dict) else None
+            if not host_value:
+                raise RuntimeError("Missing Cosmos configuration value 'cosmos_account_hostname'")
+            account_name = host_value.split(".")[0]
+            cosmos_endpoint = f"https://{account_name}.documents.azure.com:443/"
+
+        cosmos_db_entry = tfconfig.get("cosmos_database_name")
+        cosmos_database = cosmos_db_entry.get("value") if isinstance(cosmos_db_entry, dict) else None
+        if not cosmos_database:
+            raise RuntimeError("Missing Cosmos configuration value 'cosmos_database_name'")
+
+        cosmos_container_entry = tfconfig.get("cosmos_container_name")
+        cosmos_container = cosmos_container_entry.get("value") if isinstance(cosmos_container_entry, dict) else None
+        if not cosmos_container:
+            raise RuntimeError("Missing Cosmos configuration value 'cosmos_container_name'")
+
+        fgl_service = FutureGadgetLabDataService(
+            cosmos_account_uri=cosmos_endpoint,
+            cosmos_database=cosmos_database,
+            cosmos_container=cosmos_container,
+        )
+    except KeyError as exc:  # pragma: no cover - configuration errors surfaced at runtime
+        raise RuntimeError(f"Missing Cosmos configuration value from terraform outputs: {exc}") from exc
 
 # Create connection manager for experiments only
 experiment_connection_manager = ConnectionManager(

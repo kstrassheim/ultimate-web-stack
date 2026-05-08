@@ -47,6 +47,12 @@ resource "azurerm_linux_web_app" "web" {
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = azurerm_service_plan.plan.location
   service_plan_id     = azurerm_service_plan.plan.id
+
+  # System-assigned identity used by the web app to authenticate against Cosmos DB
+  identity {
+    type = "SystemAssigned"
+  }
+
   site_config {
     always_on = false # in free version, always_on is not supported
     application_stack {
