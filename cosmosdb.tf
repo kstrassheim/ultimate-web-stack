@@ -4,7 +4,8 @@ resource "azurerm_cosmosdb_account" "db_account" {
     "_",
     "-"
   )
-  location            = data.azurerm_resource_group.rg.location
+  # Override region: westeurope has Cosmos DB capacity unavailable
+  location            = "northeurope"
   resource_group_name = data.azurerm_resource_group.rg.name
 
   offer_type = "Standard"
@@ -22,8 +23,9 @@ resource "azurerm_cosmosdb_account" "db_account" {
   }
 
   geo_location {
-    location          = data.azurerm_resource_group.rg.location
+    location          = "northeurope"
     failover_priority = 0
+    zone_redundant    = false
   }
 
   local_authentication_disabled = true
@@ -75,7 +77,7 @@ resource "azurerm_cosmosdb_sql_role_assignment" "deploy_managed_identity_owner" 
   resource_group_name = data.azurerm_resource_group.rg.name
   account_name        = azurerm_cosmosdb_account.db_account.name
   scope               = azurerm_cosmosdb_account.db_account.id
-  # Custom Cosmos DB role granting full account-level permissions for admins
-  role_definition_id = azurerm_cosmosdb_sql_role_definition.local_data_admin_owner.id
+  # Built-in Cosmos DB Data Contributor role for read/write access
+  role_definition_id = "${azurerm_cosmosdb_account.db_account.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id       = data.azuread_service_principal.deploy_managed_identity_pricipal.object_id
 }
