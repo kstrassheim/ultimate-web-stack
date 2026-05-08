@@ -81,9 +81,9 @@ const Home = () => {
           <Col lg={4} md={6} sm={12}>
             <Card className="h-100 shadow-sm feature-card">
               <Card.Body>
-                <Card.Title>Developer Experience</Card.Title>
+                <Card.Title>Cosmos DB Persistence</Card.Title>
                 <Card.Text>
-                  Hot module replacement, code splitting, and optimized build process.
+                  Serverless Azure Cosmos DB (NoSQL) with managed-identity RBAC authentication, Terraform-provisioned roles, and an in-memory mock fallback for local development and testing.
                 </Card.Text>
               </Card.Body>
             </Card>

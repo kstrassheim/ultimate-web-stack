@@ -12,6 +12,11 @@ In the following is a description of the provided features. **(please leave a st
     - Backend Unit Testing (PyTest) + Coverage
     - Mockout of Entra ID Token Authentication to Passthrough during development and testing (Role Authentication stays)
 - Real Time Web Socket Connections with Token and Role Authentication
+- Azure Cosmos DB (NoSQL) persistence with __auto__ installation and setup
+    - Serverless tier (pay-per-request) to keep costs low
+    - Managed-identity authentication only (no keys), with RBAC role assignments provisioned by Terraform
+    - Local developer access auto-granted to the current `az login` principal during apply
+    - In-memory TinyDB fallback for Mock mode (no Azure dependency for local dev and tests)
 - Responsive Design and PWA support out of the box
 - Logo flipping (Different Logo on dev, test, prod) 
 - Running on Free Plan F1 of Azure App Service to avoid any unnecessary costs
