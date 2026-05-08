@@ -26,7 +26,7 @@ describe('Home Component', () => {
     expect(screen.getByText('Real-time Features')).toBeInTheDocument();
     expect(screen.getByText('Comprehensive Testing')).toBeInTheDocument();
     expect(screen.getByText('Azure Integration')).toBeInTheDocument();
-    expect(screen.getByText('Developer Experience')).toBeInTheDocument();
+    expect(screen.getByText('Cosmos DB Persistence')).toBeInTheDocument();
   });
   
   test('renders responsive Bootstrap container', () => {
