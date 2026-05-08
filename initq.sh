@@ -1,13 +1,15 @@
+#!/usr/bin/env bash
 #TODO check for az login
 echo -e "\033[34mInitializing Frontend\033[0m"
 cd frontend
 npm install
 echo -e "\033[34mInitializing Backend\033[0m"
 cd ../
-python3 -m venv backend/venv
+python3.12 -m venv backend/venv
 backend/venv/bin/pip install -r ./backend/requirements.txt
 
 # Activate the virtual environment
+cd backend
 source "venv/bin/activate"
 
 # Launch an interactive shell with the virtualenv active
