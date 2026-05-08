@@ -1,11 +1,23 @@
 terraform {
-   required_providers {
+  required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"  # update to your preferred version
+      version = "~> 4.0"
+    }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.8"
     }
     random = {
       source  = "hashicorp/random"
+      version = "~> 3.8"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
+    http = {
+      source  = "hashicorp/http"
       version = "~> 3.5"
     }
   }
@@ -26,7 +38,7 @@ provider "random" {}
 
 module "naming" {
   source      = "Azure/naming/azurerm"
-  version     = "0.4.2"
+  version     = "0.4.3"
   prefix = [var.app_name]       # base prefix for the generated names
   suffix = [var.env]     # Azure region (adjust as needed)
 }
