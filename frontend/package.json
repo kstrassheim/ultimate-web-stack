@@ -12,10 +12,6 @@
     "test:e2e:coverage": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser chrome --env coverage=true'\"",
     "check-coverage": "nyc check-coverage",
     "coverage:report:no-check": "nyc report --reporter=lcov --reporter=html --reporter=text-summary --check-coverage=false",
-    "test": "jest",
-    "test:preview": "npx jest-preview",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
     "preview": "vite preview",
     "backend": "node start-backend.js",
     "backend:test": "cross-env MOCK=true node start-backend.js",
@@ -28,7 +24,7 @@
     "coverage:report:e2e": "nyc report --reporter=lcov --reporter=html --reporter=text-summary",
     "coverage:merge": "nyc merge .nyc_output coverage/merged-coverage.json",
     "coverage:report": "nyc report --reporter=lcov --reporter=html --reporter=text-summary",
-    "coverage:all": "npm run test:coverage && npm run test:e2e:coverage && npm run coverage:merge && npm run coverage:report"
+    "coverage:all": "npm run test:e2e:coverage && npm run coverage:merge && npm run coverage:report"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.8.0",
@@ -46,10 +42,6 @@
   "devDependencies": {
     "@cypress/code-coverage": "^4.0.3",
     "@eslint/js": "^10.0.1",
-    "@swc/core": "^1.15.32",
-    "@swc/jest": "^0.2.39",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.3.0",
@@ -57,11 +49,7 @@
     "cypress": "^15.14.1",
     "cypress-wait-until": "^3.0.2",
     "globals": "^17.5.0",
-    "identity-obj-proxy": "^3.0.0",
     "istanbul-lib-coverage": "^3.2.2",
-    "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0",
-    "jest-preview": "^0.3.3",
     "nyc": "^18.0.0",
     "start-server-and-test": "^3.0.2",
     "vite": "^8.0.10",
