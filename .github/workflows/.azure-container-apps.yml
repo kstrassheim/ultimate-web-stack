@@ -1,0 +1,95 @@
+# Deploy Frontend to Azure Container Apps
+#
+# Builds the React frontend Docker image and deploys it to Azure Container Apps
+# on every merge to main. Uses OIDC federated auth — no service principal secrets.
+#
+# PREREQUISITES (must be configured in the repository + Azure):
+#  1. AZURE_CLIENT_ID    — App Registration client ID (federated identity credential)
+#  2. AZURE_TENANT_ID    — Azure tenant ID
+#  3. AZURE_SUBSCRIPTION — Azure subscription ID
+#  4. ACR_LOGIN_SERVER    — Full ACR login server (e.g. myregistry.azurecr.io)
+#  5. Container Apps environment + ACA app must exist (provisioned separately via Terraform)
+#
+# Azure-side setup for OIDC:
+#  - Create a Federated Identity Credential on the App Registration used for CI/CD:
+#    Subject: api://AzureADTokenExchange
+#    Issuer:  https://token.actions.githubusercontent.com
+#    Audience: api://AzureADTokenExchange
+name: Container Apps Frontend Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/.azure-container-apps.yml'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: ''
+
+env:
+  FRONTEND_DIR: frontend
+  IMAGE_NAME: ultimate-web-stack-frontend
+  ACR_REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_REGISTRY }}
+
+      - name: Extract metadata (Docker labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,suffix=,format=short
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.FRONTEND_DIR }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update \
+            --name "${{ vars.ACA_APP_NAME }}" \
+            --resource-group "${{ vars.ACA_RESOURCE_GROUP }}" \
+            --image "${{ env.ACR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --set-env-vars "VITE_APP_TITLE=${{ vars.APP_NAME }}" \
+            --output none
+
+      - name: Logout from Azure
+        if: always()
+        run: az logout
