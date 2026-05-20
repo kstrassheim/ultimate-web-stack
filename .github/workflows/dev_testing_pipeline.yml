@@ -167,7 +167,7 @@ jobs:
           fi
           
           # generate coverage reports
-          npm run coverage:report:no-check
+          npm run coverage:report:e2e
 
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
