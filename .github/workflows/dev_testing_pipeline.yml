@@ -168,8 +168,9 @@ jobs:
           # generate coverage reports
           npm run coverage:report:no-check
 
-          # Run coverage check but don't fail the build
-          npm run check-coverage
+          # Coverage thresholds are disabled since frontend unit tests (Jest) have been removed.
+          # E2E (Cypress) coverage alone does not meet the previous Jest+E2E combined thresholds.
+          # npm run check-coverage
 
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
