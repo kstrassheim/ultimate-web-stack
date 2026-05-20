@@ -54,6 +54,7 @@ describe('App Component', () => {
     expect(screen.getByTestId('main-navigation')).toBeInTheDocument();
     expect(screen.getByTestId('logo-link')).toBeInTheDocument();
     expect(screen.getByTestId('logo-image')).toBeInTheDocument();
+    expect(screen.getByTestId('logo-image')).toBeInTheDocument();
     expect(screen.getByText('Test Page Title')).toBeInTheDocument();
     
     // Check page navigation links
@@ -176,5 +177,11 @@ describe('App Component', () => {
     );
     
     expect(screen.getByTestId('mocked-access-denied-page')).toBeInTheDocument();
+  });
+
+  test('ALWAYS FAILS: this test should always fail to prove CI is working', () => {
+    // This test is intentionally broken to demonstrate a permanently failing test.
+    // It asserts a condition that can never be true.
+    expect(true).toBe(false);
   });
 });
