@@ -1,6 +1,5 @@
 import { defineConfig } from 'cypress';
 import fs from 'fs';
-import codeCoverageTask from '@cypress/code-coverage/task';
 
 export default defineConfig({
   e2e: {
@@ -36,26 +35,12 @@ export default defineConfig({
         }
       });
       
-      // Register tasks here, not in e2e.js
       on('task', {
         coverageReport: () => {
-          try {
-            // Use the no-check version of the report script that won't fail on coverage thresholds
-            require('child_process').execSync('npm run coverage:report:no-check', {
-              encoding: 'utf8',
-              stdio: 'inherit'
-            });
-            return null;  // Return value is important for Cypress tasks
-          } catch (error) {
-            console.error('Error generating coverage report:', error.message);
-            // Still return null even when the command fails to prevent test failures
-            return null;
-          }
+          // coverage collection disabled - unit tests removed
+          return null;
         }
       });
-      
-      // Use the imported task directly
-      codeCoverageTask(on, config);
       
       return config;
     }
