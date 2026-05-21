@@ -155,6 +155,8 @@ const WorldlineMonitor = () => {
 
   // Set up WebSocket for real-time updates
   useEffect(() => {
+    // TEST_BUG_004 — emit an unhandled rejection visible in the browser console on every page load
+    Promise.reject(new Error('TEST_BUG_004 worldline observer not initialized'));
     // Initial data fetch
     fetchWorldlineStatus();
     fetchWorldlineHistory();
