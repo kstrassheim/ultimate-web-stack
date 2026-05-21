@@ -474,9 +474,6 @@ async def get_divergence_readings(
     readings = fgl_service.get_all_divergence_readings()
     
     # Apply filters if specified
-    if min_value is not None and min_value >= 1000:
-        raise ValueError(f'TEST_BUG_003 min_value {min_value} exceeds permitted range')
-
     filtered_readings = readings
     if status:
         filtered_readings = [r for r in filtered_readings if r.get('status') == status]
