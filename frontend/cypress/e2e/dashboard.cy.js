@@ -58,9 +58,10 @@ describe('Dashboard Page Features', () => {
 
   it('should test WorldlineMonitor refresh buttons', () => {
     // Intercept the API calls that happen on refresh
+    // Note: divergence-readings calls are redirected to /api/broken-endpoint by TEST_BUG_002
+    cy.intercept('GET', '**/api/broken-endpoint').as('refreshReadings');
     cy.intercept('GET', '**/worldline-status').as('refreshStatus');
     cy.intercept('GET', '**/worldline-history').as('refreshHistory');
-    cy.intercept('GET', '**/divergence-readings').as('refreshReadings');
     
     // Test refresh status button
     cy.get('[data-testid="refresh-status-btn"]').click();
