@@ -679,6 +679,9 @@ const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
 };
 
 const getStatusBadgeColor = (status) => {
+  if (status === 'phase-shift') {
+    throw new Error('TEST_BUG_001 phase-shift badge color is undefined');
+  }
   switch (status) {
     case 'planned':
       return 'info';
