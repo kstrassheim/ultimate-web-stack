@@ -38,3 +38,22 @@ class MockFutureGadgetLabDataService(FutureGadgetLabDataService):
         self.storage_backend = "tinydb"
         self.db = TinyDB(storage=MemoryStorage)  # type: ignore[assignment]
         self._initialize_tinydb_tables()
+        self._seed_dev_phase_shift_experiment()
+
+    def _seed_dev_phase_shift_experiment(self) -> None:
+        """Seed a 'phase-shift' status experiment for dev runtime bug validation."""
+        import datetime
+
+        phase_shift_exp = {
+            "name": "Phase Shift Validation Test",
+            "description": "Artificial experiment with phase-shift status for bug validation",
+            "status": "phase-shift",
+            "creator_id": "Tester",
+            "collaborators": [],
+            "results": "Bug validation experiment",
+            "world_line_change": 0.0,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.%f"
+            )[:-3] + "Z"
+        }
+        self.experiments_table.insert(phase_shift_exp)  # type: ignore[union-attr]
