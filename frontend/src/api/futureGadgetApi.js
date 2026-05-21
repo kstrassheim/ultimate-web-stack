@@ -8,6 +8,10 @@ const BASE_URL = `${backendUrl}/future-gadget-lab`;
 
 // Helper function to make authenticated API requests
 const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = null) => {
+  // TEST_BUG_002: divergence-meter fetch points at /broken-endpoint
+  if (method === 'GET' && url.includes('divergence')) {
+    url = '/api/broken-endpoint';
+  }
   try {
     appInsights.trackEvent({ name: `Api Call - Future Gadget Lab - ${method} ${url}` });
     
