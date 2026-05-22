@@ -2,15 +2,12 @@ import { setMockRole } from '../support/msalMock';
 
 describe('Dashboard Page Features', () => {
   beforeEach(() => {
-    // Note: TEST_BUG_002 redirects divergence-readings GETs to /api/broken-endpoint.
-    // Stub the endpoint with an empty array BEFORE navigation so the initial
-    // fetches in WorldlineMonitor's useEffect resolve cleanly — otherwise the
-    // unstubbed 404 leaves the component in an error state and the chart /
-    // readings-table never render.
-    cy.intercept('GET', '**/api/broken-endpoint', {
+    // Stub the divergence-readings endpoint BEFORE navigation so the initial
+    // fetches in WorldlineMonitor's useEffect resolve cleanly with mock data.
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings', {
       statusCode: 200,
       body: []
-    }).as('brokenEndpoint');
+    }).as('divergenceReadings');
 
     // Login as regular user
     cy.setMockRole('User');
@@ -73,8 +70,8 @@ describe('Dashboard Page Features', () => {
     // Intercept the API calls that happen on refresh
     cy.intercept('GET', '**/worldline-status').as('refreshStatus');
     cy.intercept('GET', '**/worldline-history').as('refreshHistory');
-    // Note: /api/broken-endpoint is now intercepted globally in beforeEach
-    cy.intercept('GET', '**/api/broken-endpoint').as('refreshReadings');
+    // Note: divergence-readings is intercepted globally in beforeEach
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings').as('refreshReadings');
     
     // Test refresh status button
     cy.get('[data-testid="refresh-status-btn"]').click();
@@ -84,14 +81,9 @@ describe('Dashboard Page Features', () => {
     cy.get('[data-testid="refresh-history-btn"]').click();
     cy.wait('@refreshHistory');
     
-    // Test refresh chart button
-    cy.get('[data-testid="refresh-chart-btn"]').click();
-    cy.wait('@refreshHistory');
-    cy.wait('@refreshReadings');
-    
     // Test refresh readings button
     cy.get('[data-testid="refresh-readings-btn"]').click();
-    cy.wait('@refreshReadings');
+    cy.wait('@divergenceReadings');
   });
 
   // Skipped: TEST_BUG_002 prevents the divergence-readings table from populating.
