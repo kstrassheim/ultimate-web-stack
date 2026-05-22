@@ -2,13 +2,6 @@ import { setMockRole } from '../support/msalMock';
 
 describe('Dashboard Page Features', () => {
   beforeEach(() => {
-    // Stub the divergence-readings endpoint BEFORE navigation so the initial
-    // fetches in WorldlineMonitor's useEffect resolve cleanly with mock data.
-    cy.intercept('GET', '**/future-gadget-lab/divergence-readings', {
-      statusCode: 200,
-      body: []
-    }).as('divergenceReadings');
-
     // Login as regular user
     cy.setMockRole('User');
     cy.visit('/');
@@ -67,20 +60,19 @@ describe('Dashboard Page Features', () => {
     // Intercept the API calls that happen on refresh
     cy.intercept('GET', '**/worldline-status').as('refreshStatus');
     cy.intercept('GET', '**/worldline-history').as('refreshHistory');
-    // Note: divergence-readings is intercepted globally in beforeEach
     cy.intercept('GET', '**/future-gadget-lab/divergence-readings').as('refreshReadings');
-    
+
     // Test refresh status button
     cy.get('[data-testid="refresh-status-btn"]').click();
     cy.wait('@refreshStatus');
-    
+
     // Test refresh history button
     cy.get('[data-testid="refresh-history-btn"]').click();
     cy.wait('@refreshHistory');
-    
+
     // Test refresh readings button
     cy.get('[data-testid="refresh-readings-btn"]').click();
-    cy.wait('@divergenceReadings');
+    cy.wait('@refreshReadings');
   });
 
   it('should filter divergence readings correctly', () => {
