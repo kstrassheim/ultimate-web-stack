@@ -40,10 +40,7 @@ describe('Dashboard Page Features', () => {
     cy.get('[data-testid="dashboard-page"] > :nth-child(1)').should('have.attr', 'data-testid', 'worldline-container');
   });
 
-  // Skipped: depends on worldline-chart + readings-table rendering, which
-  // requires divergence-readings data — broken by TEST_BUG_002 on this branch.
-  // Restore the `.skip` removal once TEST_BUG_002 is reverted on main.
-  it.skip('should load and display the WorldlineMonitor component correctly', () => {
+  it('should load and display the WorldlineMonitor component correctly', () => {
     // Check WorldlineMonitor title and sections
     cy.get('[data-testid="worldline-monitor"]').within(() => {
       cy.contains('h1', 'Divergence Meter').should('be.visible');
@@ -86,8 +83,7 @@ describe('Dashboard Page Features', () => {
     cy.wait('@divergenceReadings');
   });
 
-  // Skipped: TEST_BUG_002 prevents the divergence-readings table from populating.
-  it.skip('should filter divergence readings correctly', () => {
+  it('should filter divergence readings correctly', () => {
     // First verify the table has rows before filtering
     cy.get('[data-testid="readings-table"] tbody tr')
       .should('have.length.at.least', 1);
@@ -142,8 +138,7 @@ describe('Dashboard Page Features', () => {
     cy.get('[data-testid="readings-table"] tbody tr').should('have.length.at.least', 1);
   });
 
-  // Skipped: chart not rendered while TEST_BUG_002 is active.
-  it.skip('should show experiment details in chart tooltips', () => {
+  it('should show experiment details in chart tooltips', () => {
     // Find the chart and trigger hover on a data point
     cy.get('[data-testid="worldline-chart"]').should('be.visible');
     
@@ -339,8 +334,7 @@ describe('Dashboard Page Features', () => {
     });
   });
 
-  // Skipped: readings table requires divergence-readings (blocked by TEST_BUG_002).
-  it.skip('should test pagination in divergence readings table', () => {
+  it('should test pagination in divergence readings table', () => {
     // Check pagination exists (if it doesn't, the test will automatically skip)
     cy.get('body').then($body => {
       if ($body.find('[data-testid="readings-pagination"]').length) {
@@ -366,8 +360,7 @@ describe('Dashboard Page Features', () => {
     });
   });
 
-  // Skipped: readings table requires divergence-readings (blocked by TEST_BUG_002).
-  it.skip('should test sorting in divergence readings table', () => {
+  it('should test sorting in divergence readings table', () => {
     // First verify table exists
     cy.get('[data-testid="readings-table"]').should('be.visible');
     
@@ -395,8 +388,7 @@ describe('Dashboard Page Features', () => {
     });
   });
 
-  // Skipped: numeric filters operate on the readings table (blocked by TEST_BUG_002).
-  it.skip('should test numeric filters with boundary values', () => {
+  it('should test numeric filters with boundary values', () => {
     // Input minimum value
     cy.get('[data-testid="min-value-filter"]').type('0.5');
     
@@ -537,8 +529,7 @@ describe('Dashboard Page Features', () => {
     });
   });
 
-  // Skipped: combined filters target the readings table (blocked by TEST_BUG_002).
-  it.skip('should test combination of multiple filters', () => {
+  it('should test combination of multiple filters', () => {
     // Set up multiple filters simultaneously
     cy.get('[data-testid="status-filter"]').select('steins_gate');
     cy.get('[data-testid="recorded-by-filter"]').clear().type('Okabe');

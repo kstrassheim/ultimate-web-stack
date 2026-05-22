@@ -208,8 +208,8 @@ jobs:
           # generate coverage reports
           npm run coverage:report:no-check
 
-          # Check coverage but don't fail the build (coverage is informational for e2e)
-          npx nyc check-coverage --check-coverage=false || true
+          # Run coverage check
+          npm run check-coverage
 
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
