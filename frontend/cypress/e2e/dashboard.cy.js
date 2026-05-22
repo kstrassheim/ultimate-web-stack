@@ -2,6 +2,16 @@ import { setMockRole } from '../support/msalMock';
 
 describe('Dashboard Page Features', () => {
   beforeEach(() => {
+    // Note: TEST_BUG_002 redirects divergence-readings GETs to /api/broken-endpoint.
+    // Stub the endpoint with an empty array BEFORE navigation so the initial
+    // fetches in WorldlineMonitor's useEffect resolve cleanly — otherwise the
+    // unstubbed 404 leaves the component in an error state and the chart /
+    // readings-table never render.
+    cy.intercept('GET', '**/api/broken-endpoint', {
+      statusCode: 200,
+      body: []
+    }).as('brokenEndpoint');
+
     // Login as regular user
     cy.setMockRole('User');
     cy.visit('/');
@@ -16,13 +26,6 @@ describe('Dashboard Page Features', () => {
 
     // Wait for loading states to resolve
     cy.get('[data-testid="loading-overlay"]').should('not.exist', { timeout: 10000 });
-
-    // Note: divergence-readings calls are redirected to /api/broken-endpoint by TEST_BUG_002
-    // Provide a mock response so Cypress doesn't leak the real 404 into test results
-    cy.intercept('GET', '**/api/broken-endpoint', {
-      statusCode: 200,
-      body: []
-    }).as('brokenEndpoint');
   });
 
   it('should have the correct overall layout with WorldlineMonitor at the top', () => {
