@@ -6,16 +6,23 @@ describe('Dashboard Page Features', () => {
     cy.setMockRole('User');
     cy.visit('/');
     cy.get('[data-testid="sign-in-button"]').click();
-    
+
     // Navigate to dashboard
     cy.get('[data-testid="nav-dashboard"]').click();
-    
+
     // Wait for the dashboard page to load fully
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="worldline-container"]', { timeout: 15000 }).should('be.visible');
-    
+
     // Wait for loading states to resolve
     cy.get('[data-testid="loading-overlay"]').should('not.exist', { timeout: 10000 });
+
+    // Note: divergence-readings calls are redirected to /api/broken-endpoint by TEST_BUG_002
+    // Provide a mock response so Cypress doesn't leak the real 404 into test results
+    cy.intercept('GET', '**/api/broken-endpoint', {
+      statusCode: 200,
+      body: []
+    }).as('brokenEndpoint');
   });
 
   it('should have the correct overall layout with WorldlineMonitor at the top', () => {
@@ -58,14 +65,10 @@ describe('Dashboard Page Features', () => {
 
   it('should test WorldlineMonitor refresh buttons', () => {
     // Intercept the API calls that happen on refresh
-    // Note: divergence-readings calls are redirected to /api/broken-endpoint by TEST_BUG_002
-    // Provide a mock response so Cypress doesn't leak the real 404 into test results
-    cy.intercept('GET', '**/api/broken-endpoint', {
-      statusCode: 200,
-      body: []
-    }).as('refreshReadings');
     cy.intercept('GET', '**/worldline-status').as('refreshStatus');
     cy.intercept('GET', '**/worldline-history').as('refreshHistory');
+    // Note: /api/broken-endpoint is now intercepted globally in beforeEach
+    cy.intercept('GET', '**/api/broken-endpoint').as('refreshReadings');
     
     // Test refresh status button
     cy.get('[data-testid="refresh-status-btn"]').click();
