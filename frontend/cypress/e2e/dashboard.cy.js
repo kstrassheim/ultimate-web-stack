@@ -59,7 +59,11 @@ describe('Dashboard Page Features', () => {
   it('should test WorldlineMonitor refresh buttons', () => {
     // Intercept the API calls that happen on refresh
     // Note: divergence-readings calls are redirected to /api/broken-endpoint by TEST_BUG_002
-    cy.intercept('GET', '**/api/broken-endpoint').as('refreshReadings');
+    // Provide a mock response so Cypress doesn't leak the real 404 into test results
+    cy.intercept('GET', '**/api/broken-endpoint', {
+      statusCode: 200,
+      body: []
+    }).as('refreshReadings');
     cy.intercept('GET', '**/worldline-status').as('refreshStatus');
     cy.intercept('GET', '**/worldline-history').as('refreshHistory');
     
