@@ -138,13 +138,19 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org/'
       
-      # Set up Python for backend
+      # Set up Python for backend.
+      #
+      # We do NOT ask setup-python to cache the pip cache folder: this job
+      # installs the backend with `uv pip sync` (PEP 668 externally-managed
+      # on the Debian image), so /home/runner/.cache/pip is never populated.
+      # The `actions/setup-python` post-action then fails with
+      # "Cache folder path is retrieved for pip but doesn't exist on disk",
+      # which fails the job even though every actual step succeeded. See the
+      # Install backend dependencies step for the uv install command.
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'backend/requirements.txt'
       
       # Install backend dependencies (modified)
       - name: Install backend dependencies
