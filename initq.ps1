@@ -10,8 +10,18 @@ Pop-Location
 
 Write-Host "Initializing Backend"
 Push-Location .\backend
-python -m venv venv
-& .\venv\Scripts\pip.exe install -r requirements.txt
+# Ensure uv is available
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+    $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+}
+# requirements.txt is the generated, hashed lock produced by
+#     uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+# (see requirements.in for the hand-edited direct-dependency selector).
+uv venv venv --python 3.12
+$env:VIRTUAL_ENV = "$PWD\venv"
+uv pip sync requirements.txt
+Remove-Item Env:\VIRTUAL_ENV
 Pop-Location
 
 # Check if the virtual environment exists

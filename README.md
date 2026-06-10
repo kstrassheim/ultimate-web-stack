@@ -83,6 +83,23 @@ on Linux or
 on Windows.
 It will set up the web applications to be runnable in __Mocked__ Debug mode without touching terraform.
 
+### Dependency locking (uv)
+The backend Python dependencies are locked with [uv](https://docs.astral.sh/uv/) into a fully pinned, hash-verified, cross-platform lock:
+
+- `backend/requirements.in` — hand-edited **selector** of direct/top-level packages.
+- `backend/requirements.txt` — **generated lock**: every transitive dependency pinned with hashes, resolved across all target platforms (`--universal`). This is what every setup script, CI job, and the Azure App Service deploy installs.
+
+The setup scripts (`init.sh`, `initq.sh`, `init.ps1`, `initq.ps1`) install `uv` automatically and use `uv pip sync` to install the lock; the same lock is also installed by stock `pip install -r requirements.txt` in deploy (Azure App Service / Oryx auto-detects the `requirements.txt` filename, which is why the lock keeps that name instead of being renamed to `*.lock`).
+
+To change a dependency, edit `backend/requirements.in` and re-lock:
+
+```bash
+uv pip compile backend/requirements.in --universal --generate-hashes \
+    --python-version 3.12 -o backend/requirements.txt
+```
+
+Review the diff, run the test suite, and commit both files. Never hand-edit `backend/requirements.txt`.
+
 ### Terraform Local Setup
 You have to set the following variables in the terraform var and tfvar files to attach the terraform installation to your project.
 

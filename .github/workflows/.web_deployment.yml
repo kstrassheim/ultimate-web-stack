@@ -155,16 +155,20 @@ jobs:
         with:
           registry-url: 'https://registry.npmjs.org/'
           
-      - name: Create and start virtual environment
+      - name: Install backend dependencies with uv
         run: |
           cd backend
-          python -m venv venv
+          # Install uv via the standalone installer (Debian's system pip is
+          # externally-managed under PEP 668, so `pip install uv` is blocked).
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          # backend/requirements.txt is the generated, hashed lock produced by
+          #     uv pip compile requirements.in --universal --generate-hashes \
+          #         --python-version 3.12 -o requirements.txt
+          # (see backend/requirements.in for the hand-edited direct-dependency selector).
+          uv venv venv --python ${{ inputs.python_version }}
           source venv/bin/activate
-      
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt
+          uv pip sync requirements.txt
           
       # Install frontend dependencies with retry logic
       - name: Install frontend dependencies

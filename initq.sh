@@ -5,8 +5,17 @@ cd frontend
 npm install
 echo -e "\033[34mInitializing Backend\033[0m"
 cd ../
-python3.12 -m venv backend/venv
-backend/venv/bin/pip install -r ./backend/requirements.txt
+# Ensure uv is available
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+# backend/requirements.txt is the generated, hashed lock produced by
+#     uv pip compile requirements.in --universal --generate-hashes \
+#         --python-version 3.12 -o requirements.txt
+# (see backend/requirements.in for the hand-edited direct-dependency selector).
+uv venv backend/venv --python 3.12
+VIRTUAL_ENV="$PWD/backend/venv" uv pip sync ./backend/requirements.txt
 
 # Activate the virtual environment
 cd backend
