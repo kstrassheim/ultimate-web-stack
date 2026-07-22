@@ -22,6 +22,16 @@ In the following is a description of the provided features. **(please leave a st
 - Running on Free Plan F1 of Azure App Service to avoid any unnecessary costs
 
 ## Prerequisites
+Before running `init.sh` / terraform, make sure these tools are installed:
+
+- **Terraform** (>= 1.x) — infrastructure provisioning
+- **Azure CLI** (`az login`) — Azure authentication and resource access
+- **Node.js + npm** — frontend
+- **Python 3.12 + pip/venv** — backend
+- **Git** — source control
+
+Once these are in place, continue with `init.sh` as described below.
+
 In the following is a guide on how to set up the prerequisites for this project.
 
 ### Installation on Windows
