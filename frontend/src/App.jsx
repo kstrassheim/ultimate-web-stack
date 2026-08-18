@@ -7,6 +7,7 @@ import EntraProfile from '@/components/EntraProfile';
 import AccessDenied from '@/pages/AccessDenied';
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ProtectedLink from "@/components/ProtectedLink";
+import SessionRecoveryGuard from "@/components/SessionRecoveryGuard";
 // get the pages
 import Home from '@/pages/Home';
 import Dashboard from '@/pages/Dashboard';
@@ -76,6 +77,10 @@ function ThemedNavbar() {
 function App() {
   return (
     <ThemeProvider>
+      {/* Session-expiry recovery (issue #86): subscribes to the API layer's
+          "session expired" event bus and triggers a re-login popup with
+          route-restore. Mounted once near the top of the tree. */}
+      <SessionRecoveryGuard />
       <ThemedNavbar />
       <Container className="mt-4" data-testid="main-content">
         <Routes>

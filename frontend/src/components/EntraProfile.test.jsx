@@ -148,9 +148,12 @@ describe('EntraProfile Component', () => {
     const signInButton = screen.getByTestId('sign-in-button');
     fireEvent.click(signInButton);
     
-    // Verify login was attempted
+    // Verify login was attempted. The shared authFlow now tracks the
+    // round-trip under the unified "Session Recovery - Reauth started"
+    // event name — the same event the SessionRecoveryGuard fires when
+    // a session-expiry is detected.
     expect(msalInstance.loginPopup).toHaveBeenCalled();
-    expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Logon started' });
+    expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Session Recovery - Reauth started' });
     
     // Wait for login to complete
     await waitFor(() => {

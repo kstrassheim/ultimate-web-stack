@@ -34,6 +34,7 @@ import {
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 import { WebSocketClient } from './socket';
+import { ApiError, SessionExpiredError, onSessionExpired } from './errors';
 
 // Mock global fetch
 global.fetch = jest.fn();
@@ -455,5 +456,151 @@ describe('WorldlineSocketClient', () => {
   it('should be a different instance than the experiments socket', () => {
     expect(worldlineSocket).not.toBe(experimentsSocket);
     expect(worldlineSocket.endpoint).not.toBe(experimentsSocket.endpoint);
+  });
+});
+
+// -------------------------------------------------------------------
+// Session expiry behaviour for issue #86 (mirrors the api.js tests)
+// -------------------------------------------------------------------
+describe('Session expiry detection on Future Gadget Lab API (issue #86)', () => {
+  const mockInstance = { name: 'mockInstance' };
+  let originalConsoleError;
+
+  beforeAll(() => {
+    originalConsoleError = console.error;
+    console.error = jest.fn();
+  });
+
+  afterAll(() => {
+    console.error = originalConsoleError;
+  });
+  const fakeResponse = ({
+    status = 200,
+    contentType = 'application/json',
+    bodyText = '',
+    redirected = false,
+    url = 'https://test.example.com/future-gadget-lab/lab-experiments',
+  } = {}) => ({
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    ok: status >= 200 && status < 300,
+    redirected,
+    url,
+    headers: { get: (name) => (name && name.toLowerCase() === 'content-type') ? contentType : null },
+    text: async () => bodyText,
+  });
+
+  let onExpiryCalls;
+  let unsubscribe;
+
+  beforeEach(() => {
+    onExpiryCalls = [];
+    unsubscribe = onSessionExpired((payload) => onExpiryCalls.push(payload));
+  });
+  afterEach(() => {
+    unsubscribe();
+    unsubscribe = null;
+  });
+
+  it('detects HTML body with login marker and rethrows SessionExpiredError', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        bodyText: '<html>Sign in to your account</html>',
+      })
+    );
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(onExpiryCalls).toHaveLength(1);
+  });
+
+  it('emits SessionExpiredError when MSAL acquireTokenSilent rejects with InteractionRequiredAuthError', async () => {
+    const interactionError = Object.assign(new Error('interaction_required'), {
+      name: 'InteractionRequiredAuthError',
+      errorCode: 'interaction_required',
+    });
+    retrieveTokenForBackend.mockRejectedValueOnce(interactionError);
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(onExpiryCalls).toHaveLength(1);
+  });
+
+  it('surfaces a genuine 500 as ApiError (does not trigger re-login)', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 500,
+        contentType: 'text/html',
+        bodyText: '<html>500 server error</html>',
+      })
+    );
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(ApiError);
+    expect(onExpiryCalls).toHaveLength(0);
+  });
+
+  it('surfaces a genuine 403 as ApiError (does not trigger re-login)', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 403,
+        contentType: 'application/json',
+        bodyText: '{"error":"forbidden"}',
+      })
+    );
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(ApiError);
+    expect(onExpiryCalls).toHaveLength(0);
+  });
+
+  it('surfaces non-auth network failures as ApiError (does not trigger re-login)', async () => {
+    retrieveTokenForBackend.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockReset();
+    global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(getAllExperiments(mockInstance)).rejects.toThrow();
+    expect(onExpiryCalls).toHaveLength(0);
+  });
+
+  it('DELETE ignores JSON parsing failures and returns { success: true } when status is 204', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 204,
+        contentType: 'text/plain',
+        bodyText: '',
+      })
+    );
+    const result = await deleteExperiment(mockInstance, 'id-1');
+    expect(result).toEqual({ success: true });
+  });
+
+  it('DELETE on a 500 surfaces ApiError', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 500,
+        contentType: 'application/json',
+        bodyText: '{"error":"oops"}',
+      })
+    );
+    await expect(deleteExperiment(mockInstance, 'id-1')).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('parses successful JSON via the inspection body and returns the data', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({
+        status: 200,
+        contentType: 'application/json',
+        bodyText: JSON.stringify([{ id: 'a' }, { id: 'b' }]),
+      })
+    );
+    const result = await getAllExperiments(mockInstance);
+    expect(result).toEqual([{ id: 'a' }, { id: 'b' }]);
   });
 });
