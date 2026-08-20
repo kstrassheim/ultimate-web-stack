@@ -6,6 +6,40 @@
     <link rel="manifest" href="site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>%VITE_APP_TITLE%</title>
+    <!--
+      Synchronous theme bootstrap for issue #85.
+      Runs before <body> renders so the first paint already uses the
+      correct Bootstrap 5.3 theme (`data-bs-theme` cascades from <html>
+      to every child, including navbar, cards, forms, and dropdowns).
+
+      Resolution order, in lockstep with ThemeProvider.jsx:
+        1. localStorage["theme-mode"] if it is 'light' or 'dark'.
+        2. Otherwise OS prefers-color-scheme.
+        3. Otherwise 'light' as a safe default.
+      The theme-mode='os' value is only meaningful at runtime — at boot
+      we just need the resolved theme token.
+    -->
+    <script>
+      (function () {
+        try {
+          var KEY = 'theme-mode';
+          var stored = null;
+          try { stored = window.localStorage.getItem(KEY); } catch (_) { stored = null; }
+          var theme;
+          if (stored === 'light' || stored === 'dark') {
+            theme = stored;
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            theme = 'dark';
+          } else {
+            theme = 'light';
+          }
+          document.documentElement.setAttribute('data-bs-theme', theme);
+        } catch (_) {
+          // If anything explodes (very old browsers), default to light.
+          document.documentElement.setAttribute('data-bs-theme', 'light');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

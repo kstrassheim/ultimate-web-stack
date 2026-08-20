@@ -1,1 +1,18 @@
-/* fill in your css code for the application */
+/* App-level styles. */
+
+/* The hamburger button on the navbar used to carry hardcoded dark-mode
+   inline styles (white-on-translucent). Pull those into a CSS class so
+   they adapt to the active theme via [data-bs-theme]. Bootstrap 5.3
+   picks up the theme from <html data-bs-theme>, so this is enough. */
+.navbar-hamburger {
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+[data-bs-theme="dark"] .navbar-hamburger {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+[data-bs-theme="light"] .navbar-hamburger {
+  border-color: rgba(0, 0, 0, 0.2) !important;
+}

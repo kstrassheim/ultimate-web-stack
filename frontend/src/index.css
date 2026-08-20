@@ -1,1 +1,93 @@
-/* Add your custom CSS styles here */
+/* Global styles + theme-aware overrides for #85 (dark-mode toggle). */
+
+/* Smooth theme transitions on the body so the toggle feels responsive
+   rather than jumpy. Kept short enough to not interfere with tests. */
+body {
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+/* ----- Theme-aware overrides for custom CSS that hardcoded colors -----
+   Bootstrap 5.3 cascades the right palette for stock components via
+   `<html data-bs-theme>`, but the project's own .css files (Chat.css,
+   Home.css, ...) bake in light-mode values. Override them per theme. */
+
+/* Home feature cards: in dark mode the card titles (#007bff) and body
+   text (#6c757d) need brighter equivalents. */
+[data-bs-theme="dark"] .feature-card .card-title {
+  color: #66b3ff;
+}
+
+[data-bs-theme="dark"] .feature-card .card-text {
+  color: #adb5bd;
+}
+
+/* Chat surface: chat container and message bubbles use explicit
+   near-white backgrounds that disappear on a dark canvas. */
+[data-bs-theme="dark"] .chat-container {
+  background-color: #212529;
+  border-color: #343a40;
+}
+
+[data-bs-theme="dark"] .chat-container h2 {
+  background-color: #1c1f23;
+  border-bottom-color: #343a40;
+}
+
+[data-bs-theme="dark"] .status-indicator {
+  background-color: #1c1f23;
+  border-bottom-color: #343a40;
+}
+
+[data-bs-theme="dark"] .chat-input {
+  background-color: #1c1f23;
+}
+
+[data-bs-theme="dark"] .chat-input input {
+  background-color: #2b3035;
+  color: #f8f9fa;
+  border-color: #495057;
+}
+
+[data-bs-theme="dark"] .message.sent {
+  background-color: #056162;
+  color: #f8f9fa;
+}
+
+[data-bs-theme="dark"] .message.received {
+  background-color: #2b3035;
+  color: #f8f9fa;
+  border-color: #3a3f44;
+}
+
+[data-bs-theme="dark"] .chat-input button {
+  background-color: #2d6a4f;
+}
+
+[data-bs-theme="dark"] .chat-input button:hover {
+  background-color: #40916c;
+}
+
+/* Dashboard cards: original CSS hardcodes a transparent surface. In
+   dark mode it blends with the page background; give the card a
+   subtle outline. */
+[data-bs-theme="dark"] .card {
+  background-color: #212529;
+  border-color: #343a40;
+}
+
+/* EntraProfile dropdown menu items: the menu uses variant="dark" only
+   in dark mode — make the light variant readable too. */
+[data-bs-theme="light"] .dropdown-menu {
+  background-color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-bs-theme="light"] .dropdown-item {
+  color: #212529;
+}
+
+[data-bs-theme="light"] .dropdown-item:hover,
+[data-bs-theme="light"] .dropdown-item:focus {
+  background-color: #f8f9fa;
+  color: #1a1a1a;
+}

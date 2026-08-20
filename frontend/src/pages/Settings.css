@@ -1,0 +1,5 @@
+/* Settings page — currently relies on Bootstrap 5.3 tokens
+   (`data-bs-theme` cascades from <html>) so no per-mode overrides are
+   needed here. Kept as a separate file to match the per-page style
+   convention used by Home.css, Chat.css, etc., so any future
+   theme-specific tweaks have an obvious home. */

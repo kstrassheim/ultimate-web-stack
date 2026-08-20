@@ -181,10 +181,23 @@ describe('Navigation Tests with Admin Role', () => {
   it('should have working bootstrap navigation components', () => {
     // Test bootstrap navigation structure
     cy.get('[data-testid="main-navigation"]').should('have.class', 'navbar');
-    cy.get('[data-testid="main-navigation"]').should('have.class', 'bg-dark');
+    // The navbar palette now follows the dark-mode toggle (issue #85);
+    // it can be either bg-dark or bg-light depending on the active
+    // theme. Make sure one of them is set, and that the navbar's
+    // data-bs-theme attribute matches.
+    cy.get('[data-testid="main-navigation"]').then(($nav) => {
+      const isDark = $nav.hasClass('bg-dark');
+      const isLight = $nav.hasClass('bg-light');
+      expect(isDark || isLight, 'navbar should be either bg-dark or bg-light').to.equal(true);
+      if (isDark) {
+        expect($nav.attr('data-bs-theme')).to.equal('dark');
+      } else {
+        expect($nav.attr('data-bs-theme')).to.equal('light');
+      }
+    });
     cy.get('.navbar-toggler').should('exist'); // Hamburger menu
     cy.get('.navbar-collapse').should('exist'); // Collapsible content
-    
+
     // Mobile view: Test hamburger menu opens and closes
     cy.viewport('iphone-x');
     cy.get('.navbar-collapse').should('not.be.visible');
@@ -192,7 +205,7 @@ describe('Navigation Tests with Admin Role', () => {
     cy.get('.navbar-collapse').should('be.visible');
     cy.get('.navbar-toggler').click();
     cy.get('.navbar-collapse').should('not.be.visible');
-    
+
     // Reset viewport
     cy.viewport(1000, 660);
   });
@@ -380,10 +393,23 @@ describe('Navigation Tests with Bootstrap Components', () => {
   it('should have working bootstrap navigation components', () => {
     // Test bootstrap navigation structure
     cy.get('[data-testid="main-navigation"]').should('have.class', 'navbar');
-    cy.get('[data-testid="main-navigation"]').should('have.class', 'bg-dark');
+    // The navbar palette now follows the dark-mode toggle (issue #85);
+    // it can be either bg-dark or bg-light depending on the active
+    // theme. Make sure one of them is set, and that the navbar's
+    // data-bs-theme attribute matches.
+    cy.get('[data-testid="main-navigation"]').then(($nav) => {
+      const isDark = $nav.hasClass('bg-dark');
+      const isLight = $nav.hasClass('bg-light');
+      expect(isDark || isLight, 'navbar should be either bg-dark or bg-light').to.equal(true);
+      if (isDark) {
+        expect($nav.attr('data-bs-theme')).to.equal('dark');
+      } else {
+        expect($nav.attr('data-bs-theme')).to.equal('light');
+      }
+    });
     cy.get('.navbar-toggler').should('exist'); // Hamburger menu
     cy.get('.navbar-collapse').should('exist'); // Collapsible content
-    
+
     // Mobile view: Test hamburger menu opens and closes
     cy.viewport('iphone-x');
     cy.get('.navbar-collapse').should('not.be.visible');
@@ -391,7 +417,7 @@ describe('Navigation Tests with Bootstrap Components', () => {
     cy.get('.navbar-collapse').should('be.visible');
     cy.get('.navbar-toggler').click();
     cy.get('.navbar-collapse').should('not.be.visible');
-    
+
     // Reset viewport
     cy.viewport(1000, 660);
   });
