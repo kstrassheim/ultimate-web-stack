@@ -337,23 +337,48 @@ class TestSecurityHeadersMiddleware:
 
     def test_csp_includes_required_origins(self, mock_psutil):
         """The CSP must allow the origins the SPA actually talks to:
-        login.microsoftonline.com (MSAL), App Insights ingest + SDK,
-        graph.microsoft.com (profile photo)."""
-        response = client.get("/health")
-        csp = response.headers["content-security-policy"]
-        assert "default-src 'self'" in csp
-        assert "script-src 'self'" in csp
-        assert "connect-src 'self'" in csp
-        assert "https://login.microsoftonline.com" in csp
-        assert "https://*.in.applicationinsights.azure.com" in csp
-        assert "https://js.monitor.azure.com" in csp
-        assert "img-src 'self' data: https://graph.microsoft.com" in csp
+        MSAL (``login.microsoftonline.com``), App Insights ingest + SDK,
+        and Microsoft Graph (``graph.microsoft.com`` profile photo).
+
+        Assertions parse the CSP into per-directive source lists via
+        :func:`_csp_sources` rather than doing ``"https://..." in csp``
+        substring checks. The substring form is a false-positive for
+        CodeQL ``py/incomplete-url-substring-sanitization`` (the CSP is
+        server-controlled, not user input, but the rule can't tell that
+        from the pattern), so the legacy CodeQL default-setup check
+        failed with two alerts on the substring form. Parsing into a
+        structured list sidesteps that and also yields tighter
+        assertions — exact equality on directives that should be locked
+        down, subset checks only where the SPA genuinely needs to
+        extend the source list over time.
+        """
+        csp = client.get("/health").headers["content-security-policy"]
+
+        # Locked-down directives — exact equality keeps accidental
+        # widening (e.g. ``default-src *``) visible in code review.
+        assert _csp_sources(csp, "default-src") == ["'self'"]
+        assert _csp_sources(csp, "script-src") == ["'self'"]
         # 'unsafe-inline' is needed for React / JSX inline style attributes
         # and React-Bootstrap. Revisit if the frontend moves to a CSS-in-JS
         # or component-library setup that doesn't need it.
-        assert "style-src 'self' 'unsafe-inline'" in csp
+        assert _csp_sources(csp, "style-src") == ["'self'", "'unsafe-inline'"]
         # frame-ancestors 'none' is the CSP equivalent of X-Frame-Options: DENY
-        assert "frame-ancestors 'none'" in csp
+        assert _csp_sources(csp, "frame-ancestors") == ["'none'"]
+
+        # Open directives — subset checks. The order of ``connect-src``
+        # is not asserted because the middleware defines it once and
+        # future operational changes (new telemetry sink, new auth
+        # redirect) append to the existing list rather than reorder it.
+        connect_src = _csp_sources(csp, "connect-src")
+        assert "'self'" in connect_src
+        assert "https://login.microsoftonline.com" in connect_src
+        assert "https://*.in.applicationinsights.azure.com" in connect_src
+        assert "https://js.monitor.azure.com" in connect_src
+
+        img_src = _csp_sources(csp, "img-src")
+        assert "'self'" in img_src
+        assert "data:" in img_src
+        assert "https://graph.microsoft.com" in img_src
 
     def test_hsts_policy(self, mock_psutil):
         """HSTS must be set for two years (63072000s) including subdomains."""
@@ -437,3 +462,30 @@ def _mock_psutil():
         memory_mock.free = 8000000000
         mock.virtual_memory.return_value = memory_mock
         yield mock
+
+
+def _csp_sources(csp: str, directive: str) -> list[str]:
+    """Return the source tokens for ``directive`` parsed out of a CSP header.
+
+    A ``Content-Security-Policy`` header value looks like::
+
+        default-src 'self'; script-src 'self'; connect-src 'self' https://x.com
+
+    For ``directive='connect-src'`` this returns
+    ``["'self'", "https://x.com"]``; for ``directive='frame-ancestors'``
+    it returns ``["'none']``; if the directive is absent the return
+    value is ``[]``.
+
+    Parsing into a structured list (rather than checking substrings
+    like ``"https://x.com" in csp``) sidesteps a CodeQL
+    ``py/incomplete-url-substring-sanitization`` false positive: the
+    CSP is server-controlled, but the rule can't tell that from the
+    substring-in-string pattern alone.
+    """
+    for raw in csp.split(";"):
+        parts = raw.strip().split(maxsplit=1)
+        if parts and parts[0] == directive:
+            if len(parts) == 1:
+                return []
+            return parts[1].split()
+    return []
