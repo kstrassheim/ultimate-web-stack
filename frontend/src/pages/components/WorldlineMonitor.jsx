@@ -13,6 +13,11 @@ import {
 import appInsights from '@/log/appInsights';
 import Loading from '@/components/Loading';
 import notyfService from '@/log/notyfService';
+import { downloadCsv } from '@/utils/csvExport';
+import {
+  divergenceReadingsToCsv,
+  divergenceReadingsCsvFilename
+} from '@/utils/divergenceReadingsCsv';
 
 // Helper function to get status color
 const getStatusColor = (status) => {
@@ -151,6 +156,22 @@ const WorldlineMonitor = () => {
       maxValue: ''
     });
     setFilteredReadings(readings);
+  };
+
+  // Export the currently visible readings (post-filter, in their
+  // current on-screen order) as a CSV file. The button is disabled
+  // when there is nothing to export, so the click handler can
+  // assume filteredReadings is non-empty.
+  const handleExportReadingsCsv = () => {
+    try {
+      appInsights.trackEvent({ name: 'Worldline - Exporting divergence readings CSV' });
+      const csv = divergenceReadingsToCsv(filteredReadings);
+      downloadCsv(divergenceReadingsCsvFilename(), csv);
+      notyfService.success('Divergence readings exported');
+    } catch (err) {
+      notyfService.error(`Failed to export readings: ${err.message}`);
+      appInsights.trackException({ error: err });
+    }
   };
 
   // Set up WebSocket for real-time updates
@@ -673,15 +694,26 @@ const WorldlineMonitor = () => {
       <Card className="mb-4" data-testid="divergence-readings-card">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <span>Divergence Meter Readings</span>
-          <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={fetchDivergenceReadings}
-            disabled={loading.readings}
-            data-testid="refresh-readings-btn"
-          >
-            Refresh
-          </Button>
+          <div className="d-flex gap-2">
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={handleExportReadingsCsv}
+              disabled={loading.readings || filteredReadings.length === 0}
+              data-testid="export-readings-csv-btn"
+            >
+              Export CSV
+            </Button>
+            <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={fetchDivergenceReadings}
+              disabled={loading.readings}
+              data-testid="refresh-readings-btn"
+            >
+              Refresh
+            </Button>
+          </div>
         </Card.Header>
         <Card.Body>
           {/* Filters */}

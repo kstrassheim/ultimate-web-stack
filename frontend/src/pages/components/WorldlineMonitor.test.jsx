@@ -13,12 +13,26 @@ import {
 } from '@/api/futureGadgetApi';
 import appInsights from '@/log/appInsights';
 import notyfService from '@/log/notyfService';
+import { downloadCsv } from '@/utils/csvExport';
+import {
+  divergenceReadingsToCsv,
+  divergenceReadingsCsvFilename
+} from '@/utils/divergenceReadingsCsv';
 
 // Mock the dependencies
 jest.mock('@azure/msal-react');
 jest.mock('@/api/futureGadgetApi');
 jest.mock('@/log/appInsights');
 jest.mock('@/log/notyfService');
+jest.mock('@/utils/csvExport', () => ({
+  __esModule: true,
+  downloadCsv: jest.fn()
+}));
+jest.mock('@/utils/divergenceReadingsCsv', () => ({
+  __esModule: true,
+  divergenceReadingsToCsv: jest.fn(() => 'Reading,Status,Recorded By,Notes\r\n1,alpha,X,Y\r\n'),
+  divergenceReadingsCsvFilename: jest.fn(() => 'divergence-readings-test.csv')
+}));
 
 // Improved mock for react-apexcharts to test annotations (horizontal lines)
 jest.mock('react-apexcharts', () => {
@@ -439,4 +453,137 @@ describe('WorldlineMonitor', () => {
     expect(unsubscribeStatusMock).toHaveBeenCalled();
     expect(worldlineSocket.disconnect).toHaveBeenCalled();
   });
+
+  // -------- CSV export of divergence readings --------
+
+  // Helper: render the component and wait for the readings table to
+  // be populated. Returns the rendered instance so individual tests
+  // can poke at it.
+  const renderAndLoadReadings = async () => {
+    const utils = render(<WorldlineMonitor />);
+    await waitFor(() => {
+      expect(screen.getByTestId('readings-table')).toBeInTheDocument();
+    });
+    return utils;
+  };
+
+  test('renders an Export CSV button on the readings card', async () => {
+    await renderAndLoadReadings();
+    const button = screen.getByTestId('export-readings-csv-btn');
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveTextContent(/export.*csv/i);
+  });
+
+  test('clicking Export CSV serialises the currently visible rows and triggers a download', async () => {
+    await renderAndLoadReadings();
+
+    // Sanity: the export was built from the post-filter row list, in
+    // the same order the user sees them. The mock readings happen to
+    // come back in the mock fetch order; assert that the helper is
+    // called with that exact list (not a re-sorted / re-filtered
+    // copy).
+    fireEvent.click(screen.getByTestId('export-readings-csv-btn'));
+
+    expect(divergenceReadingsToCsv).toHaveBeenCalledTimes(1);
+    expect(divergenceReadingsToCsv).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'DR-001' }),
+        expect.objectContaining({ id: 'DR-002' }),
+        expect.objectContaining({ id: 'DR-003' })
+      ])
+    );
+
+    expect(divergenceReadingsCsvFilename).toHaveBeenCalledTimes(1);
+    expect(downloadCsv).toHaveBeenCalledTimes(1);
+    expect(downloadCsv).toHaveBeenCalledWith(
+      'divergence-readings-test.csv',
+      'Reading,Status,Recorded By,Notes\r\n1,alpha,X,Y\r\n'
+    );
+
+    // Success notification for the user.
+    expect(notyfService.success).toHaveBeenCalledWith('Divergence readings exported');
+    // Telemetry for the export action.
+    expect(appInsights.trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Worldline - Exporting divergence readings CSV'
+      })
+    );
+  });
+
+  test('export honours an active status filter (only filtered rows are exported)', async () => {
+    await renderAndLoadReadings();
+
+    // Apply a filter that keeps only the steins_gate row.
+    fireEvent.change(screen.getByTestId('status-filter'), {
+      target: { name: 'status', value: 'steins_gate' }
+    });
+
+    // The filter is applied via useEffect on the [filters, readings]
+    // dependency — wait for the row count to drop.
+    await waitFor(() => {
+      const rows = screen.getAllByTestId(/^reading-row-/);
+      expect(rows).toHaveLength(1);
+    });
+
+    divergenceReadingsToCsv.mockClear();
+    downloadCsv.mockClear();
+    fireEvent.click(screen.getByTestId('export-readings-csv-btn'));
+
+    // Only the single matching reading should have been handed off
+    // to the serializer.
+    expect(divergenceReadingsToCsv).toHaveBeenCalledTimes(1);
+    const rowsArg = divergenceReadingsToCsv.mock.calls[0][0];
+    expect(rowsArg).toHaveLength(1);
+    expect(rowsArg[0]).toMatchObject({ id: 'DR-001', status: 'steins_gate' });
+    expect(downloadCsv).toHaveBeenCalledTimes(1);
+  });
+
+  test('export respects the order of currently visible rows (a sort / re-order input)', async () => {
+    // Customise the mock to return rows in a non-default order and
+    // make sure the export passes them through verbatim.
+    getDivergenceReadings.mockResolvedValueOnce([
+      { id: 'DR-003', reading: 1.382733, status: 'beta', recorded_by: 'Suzuha Amane', notes: 'Beta worldline variant' },
+      { id: 'DR-001', reading: 1.048596, status: 'steins_gate', recorded_by: 'Rintaro Okabe', notes: 'Steins;Gate worldline' },
+      { id: 'DR-002', reading: 0.571024, status: 'alpha', recorded_by: 'Rintaro Okabe', notes: 'Alpha worldline' }
+    ]);
+
+    await renderAndLoadReadings();
+
+    fireEvent.click(screen.getByTestId('export-readings-csv-btn'));
+
+    const rowsArg = divergenceReadingsToCsv.mock.calls[0][0];
+    // Order in the export matches the order the rows came back in.
+    expect(rowsArg.map((r) => r.id)).toEqual(['DR-003', 'DR-001', 'DR-002']);
+  });
+
+  test('export button is disabled when there are no visible readings', async () => {
+    getDivergenceReadings.mockResolvedValueOnce([]);
+    render(<WorldlineMonitor />);
+    await waitFor(() => {
+      expect(screen.queryByTestId('readings-table')).not.toBeInTheDocument();
+    });
+    // No readings → no readings table, but the export button is still
+    // rendered in the card header. The handler shouldn't fire.
+    const button = screen.getByTestId('export-readings-csv-btn');
+    expect(button).toBeInTheDocument();
+    expect(button).toBeDisabled();
+  });
+
+  test('export surfaces a user-visible error if the serializer throws', async () => {
+    await renderAndLoadReadings();
+
+    divergenceReadingsToCsv.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+
+    fireEvent.click(screen.getByTestId('export-readings-csv-btn'));
+
+    // No download should have been attempted.
+    expect(downloadCsv).not.toHaveBeenCalled();
+    expect(notyfService.error).toHaveBeenCalledWith(
+      'Failed to export readings: boom'
+    );
+    expect(appInsights.trackException).toHaveBeenCalled();
+  });
 });
+
