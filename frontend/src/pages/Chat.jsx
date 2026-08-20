@@ -9,8 +9,13 @@ const Chat = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [error, setError] = useState(null);
+  // Tracks whether a send is awaiting server acknowledgement. The Send
+  // button is disabled while this is set; the ref mirror blocks the
+  // double-click race before React renders the disabled state (see #84).
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef(null);
   const socketClientRef = useRef(null);
+  const isSendingRef = useRef(false);
 
 
   // Parse message content to avoid duplicated usernames
@@ -27,6 +32,14 @@ const Chat = () => {
     }
     
     return messageText;
+  };
+
+  // Release the in-flight guard. Called when the request settles —
+  // either the server acks the send (success) or the connection drops
+  // / the local send reports failure.
+  const clearInFlight = () => {
+    isSendingRef.current = false;
+    setIsSending(false);
   };
 
   useEffect(() => {
@@ -49,12 +62,29 @@ const Chat = () => {
     }
     
     const unsubscribe = messageMethod.call(socketClient, (message) => {
-
+      // The server echoes "You sent: <text>" via send_personal_message
+      // after accepting a message. The WebSocketClient tags the frame
+      // with type === 'sent' (see socket.js onmessage), which is the
+      // success signal that the request has settled — release the guard
+      // so the next send is allowed.
+      if (isSendingRef.current && message && message.type === 'sent') {
+        clearInFlight();
+      }
       setMessages(prevMessages => [...prevMessages, message]);
     });
     
     const unsubscribeStatus = socketClient.subscribeToStatus((status) => {
       setConnectionStatus(status);
+      if (status === 'error' || status === 'disconnected') {
+        // A pending ack cannot arrive once the connection is gone, and
+        // a fresh send would have been blocked by the guard anyway.
+        // Releasing here covers the failure path required by #84 (a
+        // failed request must re-enable the button so the user can
+        // retry without a refresh).
+        if (isSendingRef.current) {
+          clearInFlight();
+        }
+      }
       if (status === 'error') {
         setError("Failed to connect to chat server");
       } else {
@@ -78,11 +108,39 @@ const Chat = () => {
   }, [messages]);
 
   const sendMessage = () => {
-    if (inputMessage.trim() && connectionStatus === 'connected') {
-      // Use send method (previously sendMessage)
-      socketClientRef.current.send(inputMessage);
-      setInputMessage('');
+    // Synchronous guard against the double-click race: React batches
+    // state updates, so the disabled-button render lags the second
+    // click. This ref mirror blocks the second invocation before the
+    // render commits (issue #84).
+    if (isSendingRef.current) return;
+    if (!inputMessage.trim() || connectionStatus !== 'connected') return;
+    
+    isSendingRef.current = true;
+    setIsSending(true);
+    
+    let ok;
+    try {
+      ok = socketClientRef.current.send(inputMessage);
+    } catch (e) {
+      // WebSocket.send can throw synchronously on a half-closed socket;
+      // treat that as a send failure so the user can retry.
+      clearInFlight();
+      return;
     }
+    
+    setInputMessage('');
+    
+    if (ok === false) {
+      // WebSocketClient.send() returns false when there is no live socket
+      // (e.g. the connection dropped between the status check and the
+      // send call). The request has already failed — release the guard
+      // immediately rather than waiting for an ack that will never come.
+      clearInFlight();
+    }
+    // Success path: the guard stays held until either (a) the server
+    // acks via the "You sent:" message handled in the subscription
+    // above, or (b) the connection drops/errors and the status
+    // subscription releases the guard.
   };
 
   const handleKeyPress = (e) => {
@@ -130,7 +188,7 @@ const Chat = () => {
         />
         <button 
           onClick={sendMessage}
-          disabled={connectionStatus !== 'connected' || !inputMessage.trim()}
+          disabled={connectionStatus !== 'connected' || !inputMessage.trim() || isSending}
         >
           Send
         </button>

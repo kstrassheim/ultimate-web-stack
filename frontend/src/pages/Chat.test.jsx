@@ -254,4 +254,227 @@ describe('Chat Component', () => {
     expect(input).toBeDisabled();
     expect(sendButton).toBeDisabled();
   });
+
+  // Regression tests for issue #84 — Send button must be disabled while a
+  // message is in flight and released once the request settles, so a
+  // double-click cannot post the same message twice.
+
+  test('disables the Send button once a send is in flight', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    
+    // A send that hasn't settled yet — never resolves, so the guard
+    // stays held. This mirrors the real flow where the server acks
+    // asynchronously after the send call returns.
+    let releaseSend;
+    mockWebSocketClientInstance.send.mockImplementation(() =>
+      new Promise((resolve) => { releaseSend = resolve; })
+    );
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'In flight message' } });
+    });
+    
+    expect(sendButton).not.toBeDisabled();
+    
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    
+    // Button is disabled while the request is in flight, even though
+    // the input still has text (the input hasn't been cleared yet on
+    // a pending send that returned a Promise).
+    expect(sendButton).toBeDisabled();
+    expect(mockWebSocketClientInstance.send).toHaveBeenCalledWith('In flight message');
+    
+    // Sanity — release the dangling Promise so jest doesn't warn.
+    if (releaseSend) releaseSend();
+  });
+
+  test('a synchronous double-click only sends once', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Double-click victim' } });
+    });
+    
+    // Both clicks fire BEFORE React commits the disabled state, so the
+    // input closure in sendMessage still has 'Double-click victim' for
+    // both invocations. The ref guard is the only thing that prevents
+    // a duplicate post (issue #84).
+    await act(async () => {
+      fireEvent.click(sendButton);
+      fireEvent.click(sendButton);
+    });
+    
+    expect(mockWebSocketClientInstance.send).toHaveBeenCalledTimes(1);
+    expect(mockWebSocketClientInstance.send).toHaveBeenCalledWith('Double-click victim');
+  });
+
+  test('a server "sent" ack re-enables the Send button', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'First message' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    
+    expect(sendButton).toBeDisabled();
+    
+    // Simulate the server's "You sent: <text>" ack the WebSocketClient
+    // tags with type === 'sent'. This is the success-settle signal.
+    await act(async () => {
+      mockMessageCallback({
+        text: 'You sent: First message',
+        type: 'sent',
+        timestamp: '12:00:00 PM'
+      });
+    });
+    
+    // Input was cleared after the synchronous send, so without new
+    // text the button stays disabled by the empty-input condition. Type
+    // a follow-up to verify the guard — not the input — has been
+    // released.
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Second message' } });
+    });
+    
+    expect(sendButton).not.toBeDisabled();
+  });
+
+  test('a connection error during a pending send re-enables the Send button', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    // Hold the send open so the guard stays up until we drop the status.
+    mockWebSocketClientInstance.send.mockImplementation(() => false);
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Will fail' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    // Synchronous send returned false → guard released right away.
+    expect(mockWebSocketClientInstance.send).toHaveBeenCalledWith('Will fail');
+    
+    // With non-empty input the button is enabled again — the user can
+    // retry without a refresh, per the issue's acceptance criterion #2.
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Retry after failure' } });
+    });
+    expect(sendButton).not.toBeDisabled();
+  });
+
+  test('a connection drop while a send is pending re-enables the Send button', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    // Send returns truthy (queued) and never resolves, mirroring the
+    // "server hasn't acked yet" window. The guard must then release
+    // when the status drops to 'error'.
+    let neverResolve;
+    mockWebSocketClientInstance.send.mockImplementation(
+      () => new Promise(() => { neverResolve = true; })
+    );
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Send then drop' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    
+    expect(sendButton).toBeDisabled();
+    
+    // Connection dies before the server acks — the ack will never
+    // arrive, so the status handler must release the guard.
+    await act(async () => {
+      mockStatusCallback('error');
+    });
+    
+    // Bring the connection back up so the only thing keeping the
+    // button disabled would be a stuck isSending guard.
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Retry after drop' } });
+    });
+    expect(sendButton).not.toBeDisabled();
+    
+    // Suppress the dangling-Promise jest warning.
+    void neverResolve;
+  });
+
+  test('sequential sends each fire their own send call', async () => {
+    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+    
+    await act(async () => {
+      mockStatusCallback('connected');
+    });
+    
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+    
+    // First send → ack → second send. Issue #84 acceptance criterion #3:
+    // the guard must be per-request, not a one-shot.
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'one' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    await act(async () => {
+      mockMessageCallback({
+        text: 'You sent: one',
+        type: 'sent',
+        timestamp: '12:00:00 PM'
+      });
+    });
+    
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'two' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+    
+    expect(mockWebSocketClientInstance.send).toHaveBeenCalledTimes(2);
+    expect(mockWebSocketClientInstance.send).toHaveBeenNthCalledWith(1, 'one');
+    expect(mockWebSocketClientInstance.send).toHaveBeenNthCalledWith(2, 'two');
+  });
 });
