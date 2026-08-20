@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:check-console": "node scripts/check-no-console-in-build.mjs",
+    "build:verify": "npm run build && npm run build:check-console",
+    "test:build-guard": "node --test scripts/check-no-console-in-build.test.mjs",
     "test:e2e": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 cypress\"",
     "test:e2e:run": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser chrome --headed'\"",
     "test:e2e:headless": "start-server-and-test test:backend http://0.0.0.0:8000/health \"start-server-and-test test:frontend http://localhost:5173 'cypress run --browser chrome'\"",
