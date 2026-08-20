@@ -115,8 +115,40 @@ jestPreviewConfigure({
 
 global.debug = debug;
 
+// JSDOM does not implement window.matchMedia. The Settings/theme code
+// reads prefers-color-scheme to follow OS preference, so provide a
+// controllable stub. Default = light; tests that need dark override
+// via `window.__setMatchMediaDark(true)`.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  const OS_QUERY = '(prefers-color-scheme: dark)';
+  let currentMatches = false;
+  const listeners = new Set();
+  window.matchMedia = (query) => {
+    const mql = {
+      matches: currentMatches,
+      media: query,
+      onchange: null,
+      addListener: (cb) => listeners.add(cb),
+      removeListener: (cb) => listeners.delete(cb),
+      addEventListener: (_evt, cb) => listeners.add(cb),
+      removeEventListener: (_evt, cb) => listeners.delete(cb),
+      dispatchEvent: () => true,
+    };
+    return mql;
+  };
+  // Test-only escape hatch. Production code never touches this.
+  window.__setMatchMediaDark = (matches) => {
+    currentMatches = !!matches;
+    const evt = { matches: currentMatches, media: OS_QUERY };
+    listeners.forEach((cb) => { try { cb(evt); } catch (_) { /* ignore */ } });
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  if (typeof window !== 'undefined' && typeof window.__setMatchMediaDark === 'function') {
+    window.__setMatchMediaDark(false);
+  }
 });
 
 // Automatically open preview after each test

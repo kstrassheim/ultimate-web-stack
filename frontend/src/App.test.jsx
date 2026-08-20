@@ -26,12 +26,30 @@ jest.mock('@/components/ProtectedLink', () => {
   };
 });
 
+// Mock the theme system so the App's Navbar can use useTheme() without
+// bootstrapping a full provider + localStorage round-trip per test.
+jest.mock('@/theme/ThemeProvider', () => {
+  const React = require('react');
+  const useThemeMock = () => ({
+    theme: 'dark',
+    mode: 'dark',
+    setMode: jest.fn(),
+    toggleTheme: jest.fn(),
+    resetToOsPreference: jest.fn(),
+  });
+  return {
+    ThemeProvider: ({ children }) => children,
+    useTheme: useThemeMock,
+  };
+});
+
 jest.mock('@/pages/Home', () => () => <div data-testid="home-page">Home Page</div>);
 jest.mock('@/pages/Dashboard', () => () => <div data-testid="mocked-dashboard-page">Dashboard Page</div>);
 jest.mock('@/pages/Chat', () => () => <div data-testid="mocked-chat-page">Chat Page</div>);
 jest.mock('@/pages/404', () => () => <div data-testid="mocked-404-page">404 Page</div>);
 jest.mock('@/pages/AccessDenied', () => () => <div data-testid="mocked-access-denied-page">Access Denied Page</div>);
 jest.mock('@/pages/Experiments', () => () => <div data-testid="mocked-experiments-page">Experiments Page</div>);
+jest.mock('@/pages/Settings', () => () => <div data-testid="mocked-settings-page">Settings Page</div>);
 
 describe('App Component', () => {
   // Set document.title for testing
@@ -61,6 +79,7 @@ describe('App Component', () => {
     expect(screen.getByTestId('nav-home')).toBeInTheDocument();
     expect(screen.getByTestId('nav-dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('nav-chat')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
     
     // Check protected links
     const protectedLink = screen.getByTestId('mocked-protected-link');
@@ -176,5 +195,21 @@ describe('App Component', () => {
     );
     
     expect(screen.getByTestId('mocked-access-denied-page')).toBeInTheDocument();
+  });
+
+  test('renders settings page without role protection', () => {
+    render(
+      <MemoryRouter 
+        initialEntries={['/settings']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <App />
+      </MemoryRouter>
+    );
+
+    // Settings is intentionally public (theme is a user-preference
+    // concern, not a security one), so no ProtectedRoute wrapper.
+    expect(screen.queryByTestId('mocked-protected-route')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mocked-settings-page')).toBeInTheDocument();
   });
 });
