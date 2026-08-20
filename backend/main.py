@@ -12,9 +12,12 @@ from opencensus.trace.samplers import ProbabilitySampler
 # X-Content-Type-Options, Referrer-Policy, Permissions-Policy to every
 # HTTP response. The F1 (free) App Service tier does not inject these
 # by default, so the FastAPI app must emit them itself.
+import logging
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
+
+_logger = logging.getLogger(__name__)
 
 # load environment variables
 from os import environ as os_environ
@@ -54,13 +57,35 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     See issue #98. ``setdefault`` is used on every header so that
     downstream middleware (CORS, OpenCensus telemetry) can still emit
     their own headers without being clobbered by this layer.
+
+    The dispatch body is wrapped in ``try/except`` so that unhandled
+    exceptions raised by route handlers (or any inner middleware) still
+    produce a 500 response with the baseline security headers attached.
+    Starlette's ``ServerErrorMiddleware`` sits OUTSIDE the user
+    middleware stack and synthesizes a 500 response directly to the
+    client — bypassing this middleware — so without the explicit catch
+    any uncaught exception would produce a 500 with no security
+    headers. The exception is logged before the synthesized 500 is
+    returned so the traceback still reaches application log
+    aggregation (ServerErrorMiddleware would otherwise log it on its
+    own path, but we never reach that path).
     """
 
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
     async def dispatch(self, request, call_next):
-        resp: Response = await call_next(request)
+        try:
+            resp: Response = await call_next(request)
+        except Exception:
+            _logger.exception(
+                "Unhandled exception in request handler; returning 500 "
+                "with baseline security headers"
+            )
+            resp = JSONResponse(
+                {"detail": "Internal Server Error"},
+                status_code=500,
+            )
         resp.headers.setdefault("Content-Security-Policy", _SECURITY_HEADERS_CSP)
         resp.headers.setdefault("Strict-Transport-Security", _SECURITY_HEADERS_HSTS)
         resp.headers.setdefault("X-Frame-Options", "DENY")

@@ -433,6 +433,57 @@ class TestSecurityHeadersMiddleware:
         missing = self.REQUIRED_HEADERS - present
         assert not missing, f"Missing security headers: {missing}"
 
+    def test_security_headers_present_on_500(self):
+        """A 500 from an unhandled route-handler exception must still
+        carry the baseline security headers.
+
+        Starlette's ``ServerErrorMiddleware`` sits OUTSIDE the user
+        middleware stack and synthesizes a 500 response directly to the
+        client — bypassing ``SecurityHeadersMiddleware`` — so the
+        middleware's ``dispatch`` must catch the exception itself and
+        synthesize a 500 response (with the security headers attached)
+        before the exception escapes. ``/api/this-route-does-not-exist``
+        is NOT a valid proxy for this case because the frontend catch-all
+        router raises ``HTTPException``, which FastAPI converts to a
+        proper response upstream of the gap; only a non-``HTTPException``
+        (e.g. ``RuntimeError`` from a mistyped path inside a route)
+        exposes the gap.
+        """
+        # Register a throwaway route that raises a non-HTTPException.
+        # We attach it to the app directly so the test does not depend
+        # on a route that may move in future refactors.
+
+        async def _boom() -> None:
+            raise RuntimeError("simulated unhandled exception")
+
+        # ``raise_server_exceptions=False`` keeps the test client from
+        # re-raising the exception into the test process so we can
+        # inspect the synthesized 500 response.
+        local_client = TestClient(app, raise_server_exceptions=False)
+        app.add_api_route(
+            "/__test_500_security_headers__", _boom, methods=["GET"]
+        )
+        try:
+            response = local_client.get("/__test_500_security_headers__")
+            assert response.status_code == 500
+            present = {k.lower() for k in response.headers.keys()}
+            missing = self.REQUIRED_HEADERS - present
+            assert not missing, (
+                f"Missing security headers on 500 from unhandled exception: {missing}"
+            )
+            # The synthesized 500 body is JSON, not the Starlette default
+            # text/plain. Confirms the middleware synthesised the response
+            # (and confirms the traceback was logged, not propagated).
+            assert response.headers["content-type"].startswith("application/json")
+        finally:
+            # Drop the throwaway route so subsequent tests / re-imports
+            # don't see it. FastAPI's router supports removal via the
+            # underlying ``app.router.routes`` list.
+            app.router.routes = [
+                r for r in app.router.routes
+                if getattr(r, "path", None) != "/__test_500_security_headers__"
+            ]
+
 
 # Module-level fixture so the security header tests in
 # TestSecurityHeadersMiddleware can patch psutil for the /health endpoint
