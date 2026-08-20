@@ -156,7 +156,25 @@ export default defineConfig({
   },
   build: {
     outDir: '../backend/dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    // Vite 8 defaults to the oxc/rolldown minifier. `rolldownOptions.output.minify.compress`
+    // is the supported hook for oxc's dropConsole / dropDebugger flags,
+    // which strip every `console.*` call (and every `debugger;` statement)
+    // from the production bundle so a debug log cannot leak user-supplied
+    // values (usernames, account info, error payloads containing user
+    // data) to the browser console of deployed apps. Acceptance criterion
+    // #1 of issue #92 ("no user-supplied value is written to the console
+    // in a production build") is enforced here.
+    rolldownOptions: {
+      output: {
+        minify: {
+          compress: {
+            dropConsole: true,
+            dropDebugger: true,
+          },
+        },
+      },
+    },
   },
   server: {
     hmr: {

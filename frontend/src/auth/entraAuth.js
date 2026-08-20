@@ -5,7 +5,6 @@ import appInsights from '@/log/appInsights';
 
 
 export const msalConfig = () =>{
-  console.log("redirect uri:" + frontendUrl);
   return {
     auth: {
       clientId: tfconfig.client_id.value,
