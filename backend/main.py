@@ -154,16 +154,26 @@ async def health():
 
 
 # Frontend Router
+# Issue #99: cap on the captured path's length. The handler does
+# `dist / path` then `Path.exists()` (an `os.stat()` syscall); on Linux
+# that raises ``OSError(Errno 36, "File name too long")`` once the path
+# exceeds NAME_MAX (255 bytes per filesystem component), which bubbles
+# up as a 500. Short-circuit to the SPA shell for any path that long
+# — the path won't match a real file under dist/ anyway, so the SPA
+# fallback is the right thing to serve.
+MAX_PATH_LEN = 255
 dist = Path("./dist")
 frontend_router = APIRouter()
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
+    if len(path) > MAX_PATH_LEN:
+        return FileResponse(dist / "index.html", media_type="text/html")
 
     # Exclude API paths - prevent serving HTML for API routes
     if path.startswith('api/') or path.startswith('future-gadget-lab/'):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="API path not found")
-    
+
 
     fp = dist / path
     if path == '' or not fp.exists():

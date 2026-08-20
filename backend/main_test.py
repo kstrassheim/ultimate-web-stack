@@ -145,7 +145,108 @@ class TestMainModule:
             
             # Also verify FileResponse was called (don't assert on its arguments)
             mock_file_response.assert_called()
-    
+
+    def test_frontend_handler_long_path_falls_back_to_index(self):
+        """Regression coverage for issue #99: a captured path longer than
+        NAME_MAX (255 bytes) must short-circuit to index.html instead of
+        letting the handler reach ``dist / path`` / ``Path.exists()`` and
+        crash with ``OSError(Errno 36, "File name too long")`` on Linux
+        (the live dev deploy hits this for absolute paths under
+        ``/home/site/wwwroot/...``).
+
+        The test asserts the behavioural contract the guard exists to
+        enforce — the handler must never call ``dist / <long_path>`` for
+        an overlong captured path, because that ``__truediv__`` is the
+        step that turns into the ``os.stat()`` ENAMETOOLONG on the live
+        deploy. We assert on the path-routing choices the guard makes
+        rather than reproducing the OSError directly so the test stays
+        deterministic regardless of the filesystem underneath the test
+        runner (the OSError is only raised for absolute paths on some
+        filesystems, not for relative paths).
+        """
+        long_path = "a" * 256
+        with patch("main.dist") as mock_dist, \
+                patch("main.FileResponse") as mock_file_response:
+            mock_file_response.return_value = "INDEX"
+            # The handler must never call .exists() on the overlong path
+            # because the guard short-circuits before that. Setup a mock
+            # for the long-path lookup that would raise OSError if the
+            # guard let it through, so the test fails loudly and clearly
+            # if the guard is ever removed.
+            def lookup(path_str):
+                m = MagicMock(name=f"Path-mock-for-{path_str[:30]!r}")
+                if path_str == long_path:
+                    # The real OSError the live deploy hits. If the guard
+                    # is removed, this will raise out of the handler and
+                    # the test will fail with a 500 from the client.
+                    m.exists.side_effect = OSError(
+                        36, "File name too long"
+                    )
+                else:
+                    m.exists.return_value = False
+                return m
+            mock_dist.__truediv__.side_effect = lookup
+
+            response = client.get(f"/{long_path}")
+            assert response.status_code == 200, (
+                f"expected 200 for {len(long_path)}-char path, got "
+                f"{response.status_code} (issue #99 regression)"
+            )
+            mock_file_response.assert_called_once()
+            # The first positional arg is the path served — it must be
+            # the index.html fallback, not the overlong captured path.
+            # Use the lookup table directly rather than comparing the
+            # MagicMock's str() because the served_path is the
+            # MagicMock we built for `index.html` in `lookup()`.
+            div_calls = [
+                c.args[0] for c in mock_dist.__truediv__.call_args_list
+            ]
+            assert "index.html" in div_calls, (
+                f"handler did not look up dist / 'index.html' for "
+                f"overlong path; div calls were: {div_calls}"
+            )
+            # The handler must NOT have called ``dist / <long_path>``:
+            # the guard short-circuits before the path lookup that would
+            # raise OSError on the live deploy.
+            assert long_path not in div_calls, (
+                f"handler looked up overlong path through dist / {long_path!r}; "
+                f"the MAX_PATH_LEN guard should short-circuit before that. "
+                f"div calls were: {div_calls}"
+            )
+
+    def test_frontend_handler_max_path_len_boundary(self):
+        """Boundary check for issue #99: a path exactly 255 bytes long
+        must still be handled normally (the length guard is ``>``, not
+        ``>=``).
+
+        Pairs with ``test_frontend_handler_long_path_falls_back_to_index``
+        (which covers the 256-byte side of the boundary). Together they
+        pin the guard at ``len(path) > MAX_PATH_LEN`` — flip the
+        comparison to ``>=`` and the 255-byte path here would also
+        short-circuit, failing this test.
+        """
+        # 255-byte path: still routed through the normal handler path.
+        # We mock the filesystem so this doesn't need a real dist/.
+        with patch("main.dist") as mock_dist:
+            path_requests = []
+
+            def path_div_tracker(path_str):
+                path_requests.append(path_str)
+                result = MagicMock()
+                result.exists.return_value = False
+                return result
+
+            mock_dist.__truediv__.side_effect = path_div_tracker
+            with patch("main.FileResponse") as mock_file_response:
+                mock_file_response.return_value = "INDEX"
+                response = client.get("/" + "a" * 255)
+                assert response.status_code == 200
+                # The 255-byte path reaches the normal handler path
+                # (not the new short-circuit guard), so the file lookup
+                # is performed and the index.html fallback follows.
+                assert "a" * 255 in path_requests
+                assert "index.html" in path_requests
+
     def test_cors_middleware_configuration(self):
         """Test that CORS middleware is configured"""
         # Instead of checking specific headers, just verify CORS middleware is active
