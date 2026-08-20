@@ -8,6 +8,16 @@ import datetime
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
+# Security headers middleware (issue #98): adds CSP, HSTS, X-Frame-Options,
+# X-Content-Type-Options, Referrer-Policy, Permissions-Policy to every
+# HTTP response. The F1 (free) App Service tier does not inject these
+# by default, so the FastAPI app must emit them itself.
+import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
+
+_logger = logging.getLogger(__name__)
 
 # load environment variables
 from os import environ as os_environ
@@ -16,6 +26,75 @@ load_dotenv()
 # Import config early so we can gate /docs, /redoc, /openapi.json
 # in non-dev environments (see issue #95) at FastAPI construction time.
 from common.config import tfconfig, origins
+
+# Security headers applied to every HTTP response (issue #98).
+#
+# The CSP connect-src explicitly allows:
+#   - https://login.microsoftonline.com (MSAL / Entra ID auth redirect)
+#   - https://*.in.applicationinsights.azure.com (App Insights telemetry ingest)
+#   - https://js.monitor.azure.com (App Insights SDK CDN snippets)
+# The img-src allows https://graph.microsoft.com because the SPA fetches
+# the signed-in user's profile photo from Microsoft Graph. Add any new
+# external origin that the SPA or telemetry stack talks to here, otherwise
+# the browser will block the request after deployment.
+_SECURITY_HEADERS_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "connect-src 'self' https://login.microsoftonline.com "
+    "https://*.in.applicationinsights.azure.com https://js.monitor.azure.com; "
+    "img-src 'self' data: https://graph.microsoft.com; "
+    "style-src 'self' 'unsafe-inline'; "
+    "frame-ancestors 'none'"
+)
+_SECURITY_HEADERS_HSTS = "max-age=63072000; includeSubDomains"
+_SECURITY_HEADERS_REFERRER = "strict-origin-when-cross-origin"
+_SECURITY_HEADERS_PERMISSIONS = "camera=(), microphone=(), geolocation=()"
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds baseline security response headers to every HTTP response.
+
+    See issue #98. ``setdefault`` is used on every header so that
+    downstream middleware (CORS, OpenCensus telemetry) can still emit
+    their own headers without being clobbered by this layer.
+
+    The dispatch body is wrapped in ``try/except`` so that unhandled
+    exceptions raised by route handlers (or any inner middleware) still
+    produce a 500 response with the baseline security headers attached.
+    Starlette's ``ServerErrorMiddleware`` sits OUTSIDE the user
+    middleware stack and synthesizes a 500 response directly to the
+    client — bypassing this middleware — so without the explicit catch
+    any uncaught exception would produce a 500 with no security
+    headers. The exception is logged before the synthesized 500 is
+    returned so the traceback still reaches application log
+    aggregation (ServerErrorMiddleware would otherwise log it on its
+    own path, but we never reach that path).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request, call_next):
+        try:
+            resp: Response = await call_next(request)
+        except Exception:
+            _logger.exception(
+                "Unhandled exception in request handler; returning 500 "
+                "with baseline security headers"
+            )
+            resp = JSONResponse(
+                {"detail": "Internal Server Error"},
+                status_code=500,
+            )
+        resp.headers.setdefault("Content-Security-Policy", _SECURITY_HEADERS_CSP)
+        resp.headers.setdefault("Strict-Transport-Security", _SECURITY_HEADERS_HSTS)
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", _SECURITY_HEADERS_REFERRER)
+        resp.headers.setdefault("Permissions-Policy", _SECURITY_HEADERS_PERMISSIONS)
+        return resp
+
+
 # get routers
 from api.api import api_router
 from api.future_gadget_api import future_gadget_api_router
@@ -38,6 +117,11 @@ app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True,
 
 # Add OpenCensus middleware to capture request telemetry
 app.add_middleware( FastAPIMiddleware,  exporter=log_azure_exporter, sampler=ProbabilitySampler(1.0))
+
+# Security headers (issue #98). Added last so this middleware ends up
+# OUTERMOST in the stack and therefore sets headers on the final response
+# after CORS and OpenCensus have processed it.
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Register API Router
 app.include_router(api_router, prefix="/api")
