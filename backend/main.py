@@ -2,9 +2,6 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
-#for health check
-import psutil
-import datetime
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
@@ -142,15 +139,26 @@ if not fgl_service.get_all_experiments() and not fgl_service.get_all_divergence_
     print("===========================================")
 
 @app.get("/health")
-@app.head("/health") 
+@app.head("/health")
 async def health():
-    # Calculate uptime from system boot time
-    boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
-    uptime = datetime.datetime.now() - boot_time
-    # Gather CPU and memory metrics
-    cpu_percent = psutil.cpu_percent(interval=1)
-    memory_info = psutil.virtual_memory()
-    return {"status": "ok","uptime": str(uptime),"cpu_percent": cpu_percent,"memory": {"total": memory_info.total,"available": memory_info.available,"percent": memory_info.percent,"used": memory_info.used,"free": memory_info.free,}}
+    # Issue #100: minimal payload — only the status string is returned.
+    #
+    # The previous handler returned the host's CPU%, memory breakdown,
+    # and uptime to any anonymous caller. That disclosed the App Service
+    # SKU (CPU/memory totals fingerprint F1 vs B1 vs P1v3) and how
+    # stale the deployment is (uptime tracks the most recent App
+    # Service restart, which Azure triggers on every code change). Both
+    # signals were reaching attackers without an Authorization header.
+    #
+    # Azure App Service uses this path itself for its load-balancer
+    # health probe (see terraform.tf's ``health_check_path = "/health"``),
+    # so the endpoint must stay reachable — the fix is the *content* of
+    # the response, not the existence of the route.
+    #
+    # If detailed metrics are needed later, gate them behind an
+    # authenticated endpoint (e.g. ``/api/health/internal`` with
+    # ``@required_roles(["Admin"])``) rather than re-exposing them here.
+    return {"status": "ok"}
 
 
 # Frontend Router

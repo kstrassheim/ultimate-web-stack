@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, mock_open
 import pytest
 import json
-import datetime
 from pathlib import Path
 
 # Import the app to test
@@ -14,12 +13,6 @@ client = TestClient(app)
 
 class TestMainModule:
 
-    @pytest.fixture
-    def mock_psutil(self):
-        """Mock psutil for health checks (TestSecurityHeadersMiddleware
-        uses the module-level fixture of the same name)."""
-        yield from _mock_psutil()
-    
     @pytest.fixture
     def mock_file_response(self):
         """Mock FileResponse for frontend files"""
@@ -48,30 +41,48 @@ class TestMainModule:
             mock_dist.__truediv__.side_effect = mock_div
             yield mock_path
     
-    def test_health_endpoint(self, mock_psutil):
-        """Test the /health endpoint returns proper system information"""
+    def test_health_endpoint_minimal_payload(self):
+        """Issue #100: GET /health returns only ``{"status": "ok"}``.
+
+        The previous handler returned host CPU%, memory breakdown, and
+        uptime to any anonymous caller — fingerprintable App Service SKU
+        signals (F1 vs B1 vs P1v3) and how stale the deployment is.
+        Azure App Service's load-balancer health probe still reaches
+        the route (see terraform.tf ``health_check_path``), but the
+        response body must be minimal so the LB probe keeps working
+        while the leak is closed.
+        """
         response = client.get("/health")
-        
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_health_endpoint_does_not_leak_host_metrics(self):
+        """Regression coverage for issue #100: GET /health must not
+        include host CPU%, memory, or uptime.
+
+        Pins the *negative* side of the contract (the previously-leaked
+        fields are gone) so a future change that re-adds them — even
+        as "harmless" debug output — fails this test instead of
+        silently re-opening the leak. The exact fields asserted are
+        the ones called out in the issue body.
+        """
+        response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        
-        # Check expected fields
-        assert "status" in data
-        assert data["status"] == "ok"
-        assert "uptime" in data
-        assert "cpu_percent" in data
-        assert "memory" in data
-        
-        # Check memory details
-        memory = data["memory"]
-        assert "total" in memory
-        assert "available" in memory
-        assert "percent" in memory
-        assert "used" in memory
-        assert "free" in memory
-    
-    def test_head_health_endpoint(self, mock_psutil):
-        """Test the HEAD /health endpoint"""
+        assert "uptime" not in data, (
+            f"/health response leaked 'uptime'; full body: {data!r}"
+        )
+        assert "cpu_percent" not in data, (
+            f"/health response leaked 'cpu_percent'; full body: {data!r}"
+        )
+        assert "memory" not in data, (
+            f"/health response leaked 'memory'; full body: {data!r}"
+        )
+
+    def test_head_health_endpoint(self):
+        """Test the HEAD /health endpoint returns 200 with no body
+        (the Azure LB health probe hits this; issue #100)."""
         response = client.head("/health")
         assert response.status_code == 200
         # HEAD requests don't return a body
@@ -417,7 +428,7 @@ class TestSecurityHeadersMiddleware:
             f"found: {registered_names}"
         )
 
-    def test_security_headers_present_on_health(self, mock_psutil):
+    def test_security_headers_present_on_health(self):
         """GET /health must return all six baseline security headers."""
         response = client.get("/health")
         assert response.status_code == 200
@@ -436,7 +447,7 @@ class TestSecurityHeadersMiddleware:
         missing = self.REQUIRED_HEADERS - present
         assert not missing, f"Missing security headers on 404: {missing}"
 
-    def test_csp_includes_required_origins(self, mock_psutil):
+    def test_csp_includes_required_origins(self):
         """The CSP must allow the origins the SPA actually talks to:
         MSAL (``login.microsoftonline.com``), App Insights ingest + SDK,
         and Microsoft Graph (``graph.microsoft.com`` profile photo).
@@ -488,29 +499,29 @@ class TestSecurityHeadersMiddleware:
             "https://graph.microsoft.com",
         )
 
-    def test_hsts_policy(self, mock_psutil):
+    def test_hsts_policy(self):
         """HSTS must be set for two years (63072000s) including subdomains."""
         hsts = client.get("/health").headers["strict-transport-security"]
         assert "max-age=63072000" in hsts
         assert "includeSubDomains" in hsts
 
-    def test_x_frame_options_deny(self, mock_psutil):
+    def test_x_frame_options_deny(self):
         """X-Frame-Options must be DENY so the SPA cannot be framed."""
         xfo = client.get("/health").headers["x-frame-options"]
         assert xfo == "DENY"
 
-    def test_x_content_type_options_nosniff(self, mock_psutil):
+    def test_x_content_type_options_nosniff(self):
         """X-Content-Type-Options must be nosniff so the browser does not
         MIME-sniff index.html when served for unknown SPA routes."""
         xcto = client.get("/health").headers["x-content-type-options"]
         assert xcto == "nosniff"
 
-    def test_referrer_policy(self, mock_psutil):
+    def test_referrer_policy(self):
         """Referrer-Policy must be strict-origin-when-cross-origin."""
         rp = client.get("/health").headers["referrer-policy"]
         assert rp == "strict-origin-when-cross-origin"
 
-    def test_permissions_policy_disables_sensors(self, mock_psutil):
+    def test_permissions_policy_disables_sensors(self):
         """Permissions-Policy must turn off camera, microphone, geolocation
         because the SPA does not use any of these APIs."""
         pp = client.get("/health").headers["permissions-policy"]
@@ -586,41 +597,11 @@ class TestSecurityHeadersMiddleware:
             ]
 
 
-# Module-level fixture so the security header tests in
-# TestSecurityHeadersMiddleware can patch psutil for the /health endpoint
-# without re-defining the fixture inside that class. pytest class-scoped
-# fixtures are only visible to tests in the same class, hence the lift.
-@pytest.fixture
-def mock_psutil():
-    """Mock psutil for health checks (module-scope so it can be reused
-    across test classes)."""
-    with patch('main.psutil') as mock:
-        mock.boot_time.return_value = datetime.datetime.now().timestamp() - 3600
-        mock.cpu_percent.return_value = 25.5
-        memory_mock = MagicMock()
-        memory_mock.total = 16000000000
-        memory_mock.available = 8000000000
-        memory_mock.percent = 50.0
-        memory_mock.used = 8000000000
-        memory_mock.free = 8000000000
-        mock.virtual_memory.return_value = memory_mock
-        yield mock
-
-
-def _mock_psutil():
-    """Generator helper used by the class-scoped fixture in
-    TestMainModule so the two fixtures share the same patch definition."""
-    with patch('main.psutil') as mock:
-        mock.boot_time.return_value = datetime.datetime.now().timestamp() - 3600
-        mock.cpu_percent.return_value = 25.5
-        memory_mock = MagicMock()
-        memory_mock.total = 16000000000
-        memory_mock.available = 8000000000
-        memory_mock.percent = 50.0
-        memory_mock.used = 8000000000
-        memory_mock.free = 8000000000
-        mock.virtual_memory.return_value = memory_mock
-        yield mock
+# Module-level fixture for the /health endpoint is no longer needed:
+# the health handler now returns a static ``{"status": "ok"}`` payload
+# (issue #100) and no longer calls psutil, so there is nothing to mock.
+# /health is still used as the hit-or-miss surface for the security
+# header regression tests below.
 
 
 def _csp_sources(csp: str, directive: str) -> list[str]:
