@@ -340,17 +340,19 @@ class TestSecurityHeadersMiddleware:
         MSAL (``login.microsoftonline.com``), App Insights ingest + SDK,
         and Microsoft Graph (``graph.microsoft.com`` profile photo).
 
-        Assertions parse the CSP into per-directive source lists via
-        :func:`_csp_sources` rather than doing ``"https://..." in csp``
-        substring checks. The substring form is a false-positive for
-        CodeQL ``py/incomplete-url-substring-sanitization`` (the CSP is
-        server-controlled, not user input, but the rule can't tell that
-        from the pattern), so the legacy CodeQL default-setup check
-        failed with two alerts on the substring form. Parsing into a
-        structured list sidesteps that and also yields tighter
-        assertions — exact equality on directives that should be locked
-        down, subset checks only where the SPA genuinely needs to
-        extend the source list over time.
+        Assertions go through :func:`_csp_sources` (which parses the
+        CSP into per-directive source lists) and :func:`_directive_has_all`
+        (which checks the parsed list against an expected token set with
+        set arithmetic, never with ``"https://..." in <list>`` substring
+        checks). The substring form is a CodeQL
+        ``py/incomplete-url-substring-sanitization`` false positive (the
+        CSP is server-controlled, not user input, but the rule can't
+        tell that from the AST shape — it just sees a URL literal on
+        the left of ``in`` and flags it). The legacy CodeQL default-setup
+        check failed on this pattern even after the first refactor,
+        because the rule fires on ``"https://..." in <any-expression>``
+        regardless of whether the RHS is a list or a string. Removing
+        the ``in`` operator on URL literals clears the alerts.
         """
         csp = client.get("/health").headers["content-security-policy"]
 
@@ -365,20 +367,25 @@ class TestSecurityHeadersMiddleware:
         # frame-ancestors 'none' is the CSP equivalent of X-Frame-Options: DENY
         assert _csp_sources(csp, "frame-ancestors") == ["'none'"]
 
-        # Open directives — subset checks. The order of ``connect-src``
-        # is not asserted because the middleware defines it once and
-        # future operational changes (new telemetry sink, new auth
-        # redirect) append to the existing list rather than reorder it.
-        connect_src = _csp_sources(csp, "connect-src")
-        assert "'self'" in connect_src
-        assert "https://login.microsoftonline.com" in connect_src
-        assert "https://*.in.applicationinsights.azure.com" in connect_src
-        assert "https://js.monitor.azure.com" in connect_src
-
-        img_src = _csp_sources(csp, "img-src")
-        assert "'self'" in img_src
-        assert "data:" in img_src
-        assert "https://graph.microsoft.com" in img_src
+        # Open directives — set-based subset check. The order of sources
+        # inside a directive is not asserted because the middleware
+        # defines it once and future operational changes (new telemetry
+        # sink, new auth redirect) append to the existing list rather
+        # than reorder it. ``_directive_has_all`` uses set arithmetic
+        # so the URL literals never appear on the left of ``in``.
+        assert _directive_has_all(
+            csp, "connect-src",
+            "'self'",
+            "https://login.microsoftonline.com",
+            "https://*.in.applicationinsights.azure.com",
+            "https://js.monitor.azure.com",
+        )
+        assert _directive_has_all(
+            csp, "img-src",
+            "'self'",
+            "data:",
+            "https://graph.microsoft.com",
+        )
 
     def test_hsts_policy(self, mock_psutil):
         """HSTS must be set for two years (63072000s) including subdomains."""
@@ -489,3 +496,19 @@ def _csp_sources(csp: str, directive: str) -> list[str]:
                 return []
             return parts[1].split()
     return []
+
+
+def _directive_has_all(csp: str, directive: str, *expected: str) -> bool:
+    """Return ``True`` iff every token in ``expected`` appears in the parsed
+    source list of ``directive``.
+
+    Wraps a set-superset comparison so callers don't have to write
+    ``"https://..." in <list>`` membership checks. That pattern is a
+    CodeQL ``py/incomplete-url-substring-sanitization`` false positive
+    even when the right-hand side is a list — the rule pattern-matches
+    on ``<URL literal> in <expression>`` regardless of the RHS type —
+    so this helper exists purely to keep the URL literals off the left
+    of an ``in`` operator.
+    """
+    actual = set(_csp_sources(csp, directive))
+    return actual.issuperset(expected)
