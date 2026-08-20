@@ -13,25 +13,12 @@ from main import app
 client = TestClient(app)
 
 class TestMainModule:
-    
+
     @pytest.fixture
     def mock_psutil(self):
-        """Mock psutil for health checks"""
-        with patch('main.psutil') as mock:
-            # Configure mock returns
-            mock.boot_time.return_value = datetime.datetime.now().timestamp() - 3600  # 1 hour uptime
-            mock.cpu_percent.return_value = 25.5
-            
-            # Configure virtual memory mock
-            memory_mock = MagicMock()
-            memory_mock.total = 16000000000
-            memory_mock.available = 8000000000
-            memory_mock.percent = 50.0
-            memory_mock.used = 8000000000
-            memory_mock.free = 8000000000
-            mock.virtual_memory.return_value = memory_mock
-            
-            yield mock
+        """Mock psutil for health checks (TestSecurityHeadersMiddleware
+        uses the module-level fixture of the same name)."""
+        yield from _mock_psutil()
     
     @pytest.fixture
     def mock_file_response(self):
@@ -298,3 +285,155 @@ class TestApiDocsSurface:
                 if mod_name == "main" or mod_name.startswith("common."):
                     del sys.modules[mod_name]
             import main as fresh_main  # noqa: F401
+
+class TestSecurityHeadersMiddleware:
+    """Regression coverage for issue #98: every HTTP response must carry
+    baseline security headers (CSP, HSTS, X-Frame-Options,
+    X-Content-Type-Options, Referrer-Policy, Permissions-Policy)."""
+
+    REQUIRED_HEADERS = {
+        "content-security-policy",
+        "strict-transport-security",
+        "x-frame-options",
+        "x-content-type-options",
+        "referrer-policy",
+        "permissions-policy",
+    }
+
+    def test_security_headers_middleware_is_registered(self):
+        """The SecurityHeadersMiddleware class must be in the app's
+        middleware stack (issue #98)."""
+        # Compare by class name, not identity: TestApiDocsSurface reloads
+        # the main module to flip the env config, which replaces the
+        # SecurityHeadersMiddleware class object on the module but leaves
+        # the original reference in the local namespace stale.
+        registered_names = [
+            mw.cls.__name__ for mw in app.user_middleware
+            if isinstance(getattr(mw, "cls", None), type)
+        ]
+        assert "SecurityHeadersMiddleware" in registered_names, (
+            f"SecurityHeadersMiddleware not registered on the FastAPI app; "
+            f"found: {registered_names}"
+        )
+
+    def test_security_headers_present_on_health(self, mock_psutil):
+        """GET /health must return all six baseline security headers."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        # httpx/Starlette normalize response header names to lowercase.
+        present = {k.lower() for k in response.headers.keys()}
+        missing = self.REQUIRED_HEADERS - present
+        assert not missing, f"Missing security headers on /health: {missing}"
+
+    def test_security_headers_present_on_api_404(self):
+        """An API 404 response must also carry the security headers
+        (defense in depth — the SPA must not be allowed to load any
+        asset/response without them)."""
+        response = client.get("/api/this-route-does-not-exist")
+        assert response.status_code == 404
+        present = {k.lower() for k in response.headers.keys()}
+        missing = self.REQUIRED_HEADERS - present
+        assert not missing, f"Missing security headers on 404: {missing}"
+
+    def test_csp_includes_required_origins(self, mock_psutil):
+        """The CSP must allow the origins the SPA actually talks to:
+        login.microsoftonline.com (MSAL), App Insights ingest + SDK,
+        graph.microsoft.com (profile photo)."""
+        response = client.get("/health")
+        csp = response.headers["content-security-policy"]
+        assert "default-src 'self'" in csp
+        assert "script-src 'self'" in csp
+        assert "connect-src 'self'" in csp
+        assert "https://login.microsoftonline.com" in csp
+        assert "https://*.in.applicationinsights.azure.com" in csp
+        assert "https://js.monitor.azure.com" in csp
+        assert "img-src 'self' data: https://graph.microsoft.com" in csp
+        # 'unsafe-inline' is needed for React / JSX inline style attributes
+        # and React-Bootstrap. Revisit if the frontend moves to a CSS-in-JS
+        # or component-library setup that doesn't need it.
+        assert "style-src 'self' 'unsafe-inline'" in csp
+        # frame-ancestors 'none' is the CSP equivalent of X-Frame-Options: DENY
+        assert "frame-ancestors 'none'" in csp
+
+    def test_hsts_policy(self, mock_psutil):
+        """HSTS must be set for two years (63072000s) including subdomains."""
+        hsts = client.get("/health").headers["strict-transport-security"]
+        assert "max-age=63072000" in hsts
+        assert "includeSubDomains" in hsts
+
+    def test_x_frame_options_deny(self, mock_psutil):
+        """X-Frame-Options must be DENY so the SPA cannot be framed."""
+        xfo = client.get("/health").headers["x-frame-options"]
+        assert xfo == "DENY"
+
+    def test_x_content_type_options_nosniff(self, mock_psutil):
+        """X-Content-Type-Options must be nosniff so the browser does not
+        MIME-sniff index.html when served for unknown SPA routes."""
+        xcto = client.get("/health").headers["x-content-type-options"]
+        assert xcto == "nosniff"
+
+    def test_referrer_policy(self, mock_psutil):
+        """Referrer-Policy must be strict-origin-when-cross-origin."""
+        rp = client.get("/health").headers["referrer-policy"]
+        assert rp == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy_disables_sensors(self, mock_psutil):
+        """Permissions-Policy must turn off camera, microphone, geolocation
+        because the SPA does not use any of these APIs."""
+        pp = client.get("/health").headers["permissions-policy"]
+        assert "camera=()" in pp
+        assert "microphone=()" in pp
+        assert "geolocation=()" in pp
+
+    def test_security_headers_do_not_clobber_cors_headers(self):
+        """The middleware uses setdefault so CORS preflight headers
+        (Access-Control-Allow-Origin, Access-Control-Allow-Credentials)
+        must remain intact on cross-origin requests."""
+        response = client.get(
+            "/health",
+            headers={"Origin": "http://localhost:5173"},
+        )
+        assert response.status_code == 200
+        # CORS middleware is still active and emitting its own headers.
+        assert response.headers.get("access-control-allow-credentials") == "true"
+        # And the security headers are also present.
+        present = {k.lower() for k in response.headers.keys()}
+        missing = self.REQUIRED_HEADERS - present
+        assert not missing, f"Missing security headers: {missing}"
+
+
+# Module-level fixture so the security header tests in
+# TestSecurityHeadersMiddleware can patch psutil for the /health endpoint
+# without re-defining the fixture inside that class. pytest class-scoped
+# fixtures are only visible to tests in the same class, hence the lift.
+@pytest.fixture
+def mock_psutil():
+    """Mock psutil for health checks (module-scope so it can be reused
+    across test classes)."""
+    with patch('main.psutil') as mock:
+        mock.boot_time.return_value = datetime.datetime.now().timestamp() - 3600
+        mock.cpu_percent.return_value = 25.5
+        memory_mock = MagicMock()
+        memory_mock.total = 16000000000
+        memory_mock.available = 8000000000
+        memory_mock.percent = 50.0
+        memory_mock.used = 8000000000
+        memory_mock.free = 8000000000
+        mock.virtual_memory.return_value = memory_mock
+        yield mock
+
+
+def _mock_psutil():
+    """Generator helper used by the class-scoped fixture in
+    TestMainModule so the two fixtures share the same patch definition."""
+    with patch('main.psutil') as mock:
+        mock.boot_time.return_value = datetime.datetime.now().timestamp() - 3600
+        mock.cpu_percent.return_value = 25.5
+        memory_mock = MagicMock()
+        memory_mock.total = 16000000000
+        memory_mock.available = 8000000000
+        memory_mock.percent = 50.0
+        memory_mock.used = 8000000000
+        memory_mock.free = 8000000000
+        mock.virtual_memory.return_value = memory_mock
+        yield mock
