@@ -217,3 +217,84 @@ class TestMainModule:
         
         # Alternative test: verify the app has routes
         assert len(app.routes) > 0, "App should have routes"
+
+
+class TestApiDocsSurface:
+    """Regression coverage for issue #95: /docs, /redoc, /openapi.json
+    must be exposed only in the dev environment."""
+
+    def test_docs_urls_enabled_in_dev(self):
+        """In dev (the test runtime), the FastAPI discovery URLs are set."""
+        # The conftest pre-sets MOCK=true so tfconfig["env"]["value"] == "dev".
+        assert app.docs_url == "/docs"
+        assert app.redoc_url == "/redoc"
+        assert app.openapi_url == "/openapi.json"
+
+    def test_docs_endpoints_accessible_in_dev(self):
+        """In dev, GET /docs, /redoc, /openapi.json all return 200."""
+        assert client.get("/docs").status_code == 200
+        assert client.get("/redoc").status_code == 200
+        assert client.get("/openapi.json").status_code == 200
+
+    def test_docs_endpoints_disabled_in_non_dev(self, monkeypatch):
+        """In non-dev, /docs, /redoc, /openapi.json are not registered (issue #95).
+
+        The frontend catch-all route ('/{path:path}') still answers the
+        request — it returns the SPA shell HTML — but the OpenAPI
+        discovery routes are gone, so the schema, Entra app id, Cosmos
+        endpoint, and every privileged route are no longer leaked to
+        anonymous callers."""
+        # Pre-load common.config so we can patch tfconfig before main.py
+        # re-imports it. main.py does `from common.config import tfconfig`,
+        # so the patched value is what main.tfconfig binds to.
+        import sys
+
+        # Drop cached modules so main.py re-executes against the patched config.
+        for mod_name in list(sys.modules):
+            if mod_name == "main" or mod_name.startswith("common."):
+                del sys.modules[mod_name]
+
+        # Re-import common.config so its module object is back in sys.modules.
+        import common.config
+        # Start from the real config and flip env to prod. Other modules
+        # (common.auth, common.log) read tfconfig at import time, so start
+        # from the real dict to keep their dereferences valid.
+        non_dev_tfconfig = dict(common.config.tfconfig)
+        non_dev_tfconfig["env"] = {"value": "prod"}
+        monkeypatch.setattr(common.config, "tfconfig", non_dev_tfconfig)
+
+        try:
+            import main as reloaded_main
+            from fastapi.testclient import TestClient
+
+            # The discovery URLs are None on the FastAPI instance.
+            assert reloaded_main.app.docs_url is None
+            assert reloaded_main.app.redoc_url is None
+            assert reloaded_main.app.openapi_url is None
+
+            # The corresponding routes are not registered, so falling through
+            # to the SPA catch-all returns the SPA shell, not Swagger/ReDoc/JSON.
+            registered_paths = {r.path for r in reloaded_main.app.routes
+                                if hasattr(r, 'path')}
+            assert "/docs" not in registered_paths
+            assert "/redoc" not in registered_paths
+            assert "/openapi.json" not in registered_paths
+            assert "/docs/oauth2-redirect" not in registered_paths
+
+            # Mock FileResponse so the SPA fallback doesn't crash on the
+            # missing dist/ directory; then verify the schema isn't served.
+            with patch('main.FileResponse') as mock_file:
+                mock_file.return_value = "SPA_SHELL"
+                c = TestClient(reloaded_main.app)
+                for path in ("/docs", "/redoc", "/openapi.json"):
+                    resp = c.get(path)
+                    assert resp.status_code == 200
+                    # The handler returned the SPA shell, not the OpenAPI
+                    # JSON, so the schema is no longer leaked.
+                    assert resp.text != "", f"{path} returned empty body"
+        finally:
+            # Drop the reloaded module so subsequent tests see the dev app.
+            for mod_name in list(sys.modules):
+                if mod_name == "main" or mod_name.startswith("common."):
+                    del sys.modules[mod_name]
+            import main as fresh_main  # noqa: F401

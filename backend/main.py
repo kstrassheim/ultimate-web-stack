@@ -13,15 +13,24 @@ from opencensus.trace.samplers import ProbabilitySampler
 from os import environ as os_environ
 from dotenv import load_dotenv
 load_dotenv()
+# Import config early so we can gate /docs, /redoc, /openapi.json
+# in non-dev environments (see issue #95) at FastAPI construction time.
+from common.config import tfconfig, origins
 # get routers
 from api.api import api_router
 from api.future_gadget_api import future_gadget_api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
-# Init FastAPI
-app = FastAPI()
+# Init FastAPI - hide API discovery surface (/docs, /redoc, /openapi.json)
+# in non-dev environments so the schema, Entra app id, Cosmos endpoint,
+# and every privileged route are not exposed to anonymous callers (#95).
+is_dev = tfconfig["env"]["value"] == "dev"
+app = FastAPI(
+    docs_url="/docs" if is_dev else None,
+    redoc_url="/redoc" if is_dev else None,
+    openapi_url="/openapi.json" if is_dev else None,
+)
 
-from common.config import origins
 from common.log import log_azure_exporter
 
 # Only add custom CORS origins if in development
