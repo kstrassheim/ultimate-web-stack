@@ -2,7 +2,8 @@ from os import environ as os_environ, path as os_path
 from fastapi_azure_auth.auth import SingleTenantAzureAuthorizationCodeBearer
 from common.config import tfconfig, mock_enabled
 from common.log import logger
-from jose import JWTError, jwt  # Add JWTError import
+import jwt
+from jwt import InvalidTokenError  # base class for all PyJWT decode errors
 from fastapi import HTTPException, status
 import requests
 from typing import List
@@ -61,41 +62,35 @@ def verify_token(token: str, required_roles: List[str] = [], check_all: bool = F
             # For real Azure auth, manually verify the token
             # Get the JWKS URL for your tenant
             jwks_url = f"https://login.microsoftonline.com/{tfconfig['tenant_id']['value']}/discovery/v2.0/keys"
-            
-            # Extract unverified headers to get the kid
-            header = jwt.get_unverified_header(token)
-            kid = header.get("kid")
-            
-            # Get the JWKS
-            jwks_response = requests.get(jwks_url)
-            jwks = jwks_response.json()
-            
-            # Find the signing key
-            signing_key = None
-            for key in jwks["keys"]:
-                if key["kid"] == kid:
-                    signing_key = key
-                    break
-                    
-            if not signing_key:
+
+            # PyJWKClient handles the kid lookup + JWKS fetch + caching for us.
+            # cache_jwk_set=True (default) keeps the JWKS in-memory between calls
+            # so we don't re-fetch on every request.
+            jwks_client = jwt.PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=3600)
+
+            try:
+                # Resolves the token's `kid` header against the JWKS and returns
+                # a PyJWK with the constructed public key.
+                signing_key = jwks_client.get_signing_key_from_jwt(token)
+            except jwt.exceptions.PyJWKClientError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Unable to find appropriate key for token validation",
                     headers={"WWW-Authenticate": "Bearer"},
-                )
-                
+                ) from exc
+
             # Verify the token
             claims = jwt.decode(
                 token,
-                signing_key,
+                signing_key.key,
                 algorithms=["RS256"],
                 audience=tfconfig["client_id"]["value"]
             )
-            
+
             # Check roles if required_roles is not empty
             if required_roles:
                 _verify_roles(claims, required_roles, check_all)
-                
+
             return claims
         else:
             # Mock implementation
@@ -161,12 +156,17 @@ def verify_token(token: str, required_roles: List[str] = [], check_all: bool = F
                     
                 return default_claims
             
-    except JWTError as e:
+    except InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except HTTPException:
+        # Re-raise HTTPExceptions raised by role checks (403) or kid lookup (401)
+        # so the original status code and detail reach the caller instead of
+        # being swallowed by the catch-all below.
+        raise
     except Exception as e:
         logger.error(f"Token verification error: {str(e)}")
         raise HTTPException(

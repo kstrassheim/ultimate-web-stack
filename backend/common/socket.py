@@ -1,5 +1,5 @@
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
-from jose import JWTError 
+from jwt import InvalidTokenError
 from common.auth import verify_token
 from typing import List
 from common.log import logger
@@ -63,7 +63,7 @@ class ConnectionManager:
                 logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
                 await websocket.close(code=1008, reason=e.detail)
             return
-        except JWTError as e:
+        except InvalidTokenError as e:
             logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
             await websocket.close(code=1008, reason="Invalid authentication token")
             return
