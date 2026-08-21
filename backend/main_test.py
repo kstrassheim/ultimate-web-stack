@@ -57,6 +57,36 @@ class TestMainModule:
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
+    def test_uvicorn_imported_at_module_scope(self):
+        """Issue #107: ``uvicorn`` must be importable in ``main``'s module
+        namespace so that ``python backend/main.py`` (the ``__main__``
+        block) actually works.
+
+        The previous file called ``uvicorn.run(...)`` inside
+        ``if __name__ == '__main__':`` without ever importing the
+        module, so any user who ran the obvious ``python main.py``
+        invocation got ``NameError: name 'uvicorn' is not defined``.
+        The real entry points (``frontend/start-backend.js`` shells
+        out to ``python -m uvicorn``, ``.vscode/launch.json`` uses
+        ``"module": "uvicorn"``, and ``terraform.tf`` uses gunicorn)
+        all bypass the ``__main__`` block, which is why this never
+        tripped in CI — but ``python backend/main.py`` is the
+        acceptance criterion in the issue and is the natural thing
+        to try first.
+
+        Regression guard: assert ``main.uvicorn`` is the real uvicorn
+        module, not a name shadowed by something else.
+        """
+        import main as main_module
+
+        assert hasattr(main_module, "uvicorn"), (
+            "uvicorn must be imported at module scope so the "
+            "__main__ block works (issue #107)"
+        )
+        # Belt-and-braces: make sure the symbol is the real module.
+        import uvicorn as _real_uvicorn
+        assert main_module.uvicorn is _real_uvicorn
+
     def test_health_endpoint_does_not_leak_host_metrics(self):
         """Regression coverage for issue #100: GET /health must not
         include host CPU%, memory, or uptime.

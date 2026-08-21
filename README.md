@@ -161,6 +161,21 @@ This is a special debugger where you can debug the currently opened Jest test as
 ### Test Runs
 Here we will regard how to start the test runs locally.
 
+> **Note — running the backend outside the test suite.** Three entry points
+> are intentionally supported; please keep them in sync when you change
+> startup flags:
+> - **Dev (interactive):** `python -m uvicorn main:app --reload` from
+>   `./backend` — this is what `frontend/start-backend.js` and the
+>   `FastAPI` / `FastAPI - Mock` VSCode launch configs in
+>   `.vscode/launch.json` wrap.
+> - **Prod (Azure App Service):** `gunicorn --worker-class
+>   uvicorn.workers.UvicornWorker main:app` — set as `app_command_line`
+>   in `terraform.tf`.
+> - **Smoke-test fallback:** `python backend/main.py` — exists so the
+>   obvious `python main.py` invocation works (see issue #107); do not
+>   add startup flags here without mirroring them in the dev/prod
+>   entries, or the three ways of starting the app will drift again.
+
 #### Backend (PyTest)
 You can start all test runs by calling. You have to be in the ./backend folder.
 ```bash

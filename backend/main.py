@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 import os.path
 import re
+import uvicorn
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
@@ -251,5 +252,20 @@ app.include_router(frontend_router, prefix="")
 
 
 # Bootstrap the app
+#
+# Canonical entry points — keep these in sync when you change startup flags:
+#   - Dev (interactive):  ``python -m uvicorn main:app --reload``
+#                        (this is what ``frontend/start-backend.js`` and the
+#                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch
+#                        configs in ``.vscode/launch.json`` wrap.)
+#   - Prod (Azure App Service): ``gunicorn --worker-class
+#                        uvicorn.workers.UvicornWorker main:app``
+#                        (set as ``app_command_line`` in ``terraform.tf``).
+#   - Smoke-test fallback:  ``python main.py`` from this directory. This
+#                        ``__main__`` block exists so that path is usable
+#                        without shell gymnastics; do NOT add flags here
+#                        without mirroring them in the canonical entries
+#                        above, or the three ways of starting the app will
+#                        drift (see issue #107).
 if __name__ == '__main__':
     uvicorn.run('main:app', reload=True)
