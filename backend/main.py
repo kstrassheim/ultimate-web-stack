@@ -2,6 +2,8 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+import os.path
+import re
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
@@ -183,9 +185,51 @@ async def frontend_handler(path: str):
         raise HTTPException(status_code=404, detail="API path not found")
 
 
-    fp = dist / path
-    if path == '' or not fp.exists():
-        fp = dist / "index.html"
+    # Contain SPA catch-all paths to dist/ (issue #109). ``path`` is
+    # user-controlled; joining it straight onto ``dist/`` lets a
+    # request like ``GET /..%2fsecret.txt`` (URL-encoded ``..`` that
+    # survives httpx/Starlette URL normalization) resolve to a real
+    # file outside ./dist and serve it with 200.
+    #
+    # The pattern below is the CodeQL ``py/path-injection``
+    # recommended sanitizer shape (see
+    # https://codeql.github.com/codeql-query-help/python/py-path-injection/):
+    #
+    #  1. ``os.path.realpath`` is a recognized
+    #     ``Path::PathNormalization`` — collapses ``..`` and follows
+    #     symlinks so the candidate is canonical.
+    #  2. ``candidate.startswith(dist_realpath + os.sep)`` is a
+    #     recognized ``Path::SafeAccessCheck`` barrier guard that
+    #     sanitizes the candidate on its True branch. The trailing
+    #     ``os.sep`` is load-bearing — it stops
+    #     ``dist_realpath = /tmp/dist`` from matching a sibling
+    #     ``/tmp/dist_other/secret.txt``.
+    #  3. The filesystem access (``os.path.isfile``) MUST come after
+    #     the barrier guard so the candidate is already sanitized
+    #     when it reaches the sink — CodeQL evaluates ``and`` chains
+    #     left-to-right for data flow, so putting ``isfile`` first
+    #     re-opens the alert.
+    #
+    # The regex deny-list (literal ``..`` segments) is belt-and-
+    # suspenders: it short-circuits before any path operation runs.
+    # The regression tests in ``TestFrontendHandlerPathContainment``
+    # (main_test.py) exercise the same logic end-to-end against a
+    # real tmp_path dist tree to prove both layers reject path-
+    # traversal payloads.
+    dist_realpath = os.path.realpath(str(dist))
+    fp = os.path.join(dist_realpath, "index.html")
+    if path and not re.search(r'(^|/)\.\.($|/)', path):
+        candidate_realpath = os.path.realpath(
+            os.path.join(dist_realpath, path)
+        )
+        # ``startswith`` first (barrier guard), then ``isfile``
+        # (sink) — see comment block above for why the order is
+        # load-bearing for the CodeQL sanitizer model.
+        if (
+            candidate_realpath.startswith(dist_realpath + os.sep)
+            and os.path.isfile(candidate_realpath)
+        ):
+            fp = candidate_realpath
 
         # Set correct MIME types for JavaScript modules
     media_type = None
