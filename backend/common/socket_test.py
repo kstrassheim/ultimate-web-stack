@@ -578,3 +578,47 @@ async def test_auth_connect_rejects_non_dict_payload(manager, monkeypatch, fake_
     assert any("non-dict" in w for w in warnings), warnings
     assert any("list" in w for w in warnings), warnings
     assert any("str" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_rejects_invalid_json(manager, monkeypatch, fake_websocket):
+    """A client that opens the socket and sends a non-JSON blob (or an
+    ill-formed JSON value like a bare ``{``) used to make
+    ``receive_json()`` raise ``JSONDecodeError``, which escaped
+    ``auth_connect`` and surfaced to the outer endpoint handler — closing
+    the socket with code 1006 (abnormal closure) rather than 1008 (policy
+    violation). The auth flow must instead close with 1008 + a frame
+    rejection reason and stay out of ``active_connections``, so the
+    closing code matches what the client did wrong (bad frame, not a
+    transport failure)."""
+    import common.socket
+    import json as _json
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    # `receive_json()` should raise JSONDecodeError when the frame is not
+    # valid JSON. Wire that directly into the fake so we don't depend on
+    # starlette's JSON parser behaviour.
+    async def _raise_json_decode_error():
+        raise _json.JSONDecodeError("Expecting value", "", 0)
+
+    fake_websocket.receive_json = _raise_json_decode_error
+
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008, f"got close code {code}"
+    assert "invalid" in reason.lower(), f"got reason {reason!r}"
+    assert fake_websocket not in manager.active_connections
+
+    # Must be logged distinctly from missing-token / non-dict so a
+    # malformed-frame flood is observable in isolation.
+    assert any("invalid json" in w.lower() for w in warnings), warnings
