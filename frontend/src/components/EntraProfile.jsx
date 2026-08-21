@@ -15,7 +15,7 @@ const EntraProfile = () => {
   // useMsal() directly. The hook still ultimately calls useMsal(), so
   // the existing jest.mock('@azure/msal-react') setup in
   // EntraProfile.test.jsx keeps working without modification.
-  const { instance, account: authAccount } = useAuth();
+  const { instance } = useAuth();
   const navigate = useNavigate();
   const location = useLocation(); // Track location changes
   const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
