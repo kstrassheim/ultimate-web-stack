@@ -3,7 +3,15 @@ from jwt import InvalidTokenError
 from common.auth import verify_token
 from typing import List
 from common.log import logger
+import asyncio
 import datetime
+
+# Maximum time (seconds) to wait for the first message from a newly-opened
+# WebSocket before closing it. Bounds the resource usage of clients that
+# connect but never send credentials, so a malicious peer cannot pin a worker
+# task by spamming half-open sockets. Tune per environment if legitimate
+# clients need more headroom for their auth handshake.
+AUTH_HANDSHAKE_TIMEOUT_SECONDS = 5.0
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -34,9 +42,26 @@ class ConnectionManager:
     async def auth_connect(self, websocket: WebSocket):
         await websocket.accept()
 
-        # Wait for authentication message
-        auth_data = await websocket.receive_json()
-        
+        # Wait for the authentication message, but bound the wait so a peer
+        # that connects and then sends nothing cannot pin this worker task
+        # (or the accepted socket) indefinitely. See issue #111.
+        try:
+            auth_data = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "WebSocket authentication handshake timed out after "
+                f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message"
+            )
+            try:
+                await websocket.close(code=1008, reason="Authentication timeout")
+            except Exception:
+                # The peer may have closed the socket already; nothing to do.
+                pass
+            return
+
         if not auth_data.get("token"):
             logger.warning("WebSocket connection attempt with missing token")
             await websocket.close(code=1008, reason="Missing authentication token")
