@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+import os.path
 import re
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
@@ -191,31 +192,37 @@ async def frontend_handler(path: str):
     # file outside ./dist and serve it with 200.
     #
     # Two layers of defense:
-    #   1. ``..`` segment deny-list. ``re.search`` on path segments is
-    #      what CodeQL's ``py/path-injection`` query recognises as a
-    #      sanitizer for the user-controlled ``path`` value — without
-    #      it the static analyser flags the ``(dist / path)`` path
-    #      expression below as a path-injection sink even though the
-    #      containment check in layer 2 makes it safe.
-    #   2. ``Path.resolve()`` + ``is_relative_to(dist_resolved)``
-    #      containment check. ``resolve()`` collapses remaining
-    #      ``..`` segments, absolute paths, and symlinks pointing out
-    #      of dist/; ``is_relative_to`` confirms the result still lives
-    #      under ``dist_resolved``. This is the actual security
-    #      boundary and is what the regression tests in
-    #      ``TestFrontendHandlerPathContainment`` exercise end-to-end
-    #      against a real tmp_path dist tree. URL-decoded ``..``
-    #      (``%2e%2e``, ``%2f``) and symlink escapes are caught here,
-    #      not by the regex in layer 1, because the regex only
-    #      matches literal ``..`` segments.
-    #
-    # Either layer rejects the candidate; both fall back to
-    # ``index.html`` like any other unknown SPA route.
-    dist_resolved = dist.resolve()
-    fp = dist_resolved / "index.html"
+    #   1. ``..`` segment deny-list (regex on path segments) — belt-
+    #      and-suspenders. Catches literal ``..`` segments before
+    #      any ``Path(...)`` constructor runs.
+    #   2. ``os.path.realpath`` + ``startswith(base_dir)`` containment
+    #      check, the pattern CodeQL's ``py/path-injection`` query
+    #      recognises as a sanitizer for the user-controlled ``path``
+    #      value (see
+    #      https://codeql.github.com/codeql-query-help/python/py-path-injection/).
+    #      ``os.path.realpath`` collapses ``..`` segments, absolute
+    #      paths, and symlinks pointing out of dist/; ``startswith``
+    #      confirms the canonicalised candidate still lives under
+    #      ``dist_realpath``. The pathlib ``Path.resolve()`` +
+    #      ``is_relative_to()`` check on the right side of the
+    #      ``and`` is the strict-equivalent containment check and is
+    #      what the regression tests in
+    #      ``TestFrontendHandlerPathContainment`` pin end-to-end.
+    #      Both checks must pass before we serve; either failure
+    #      falls back to ``index.html`` like any other unknown SPA
+    #      route.
+    dist_realpath = os.path.realpath(str(dist))
+    fp = Path(dist_realpath) / "index.html"
     if path and not re.search(r'(^|/)\.\.($|/)', path):
-        candidate = (dist / path).resolve()
-        if candidate.is_file() and candidate.is_relative_to(dist_resolved):
+        candidate_realpath = os.path.realpath(
+            os.path.join(dist_realpath, path)
+        )
+        candidate = Path(candidate_realpath)
+        if (
+            candidate.is_file()
+            and candidate_realpath.startswith(dist_realpath + os.sep)
+            and candidate.is_relative_to(Path(dist_realpath))
+        ):
             fp = candidate
 
         # Set correct MIME types for JavaScript modules
