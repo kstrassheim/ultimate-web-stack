@@ -257,7 +257,9 @@ async def test_auth_connect_fail_missing_token(manager, monkeypatch, fake_websoc
     # Replace logger in common.socket with DummyLogger to avoid attribute errors.
     monkeypatch.setattr("common.socket.logger", DummyLogger())
 
-    # Simulate a receive_json with missing token.
+    # Simulate a receive_json with missing token. Start from a pre-existing
+    # tracking entry to verify every failed handshake path cleans it up.
+    manager.active_connections.append(fake_websocket)
     fake_websocket.received_json = {}
     await manager.auth_connect(fake_websocket)
     # Expect the websocket to be closed with code 1008 ("Missing authentication token").
