@@ -20,7 +20,14 @@ const shortLoginBody =
   '<body><form action="https://login.microsoftonline.com/x">' +
   '<input type="submit"/></form></body></html>';
 
-describe('Session-expiry / recovery branch coverage (issue #86)', () => {
+/**
+ * The two `/api/user-data` tests live in a `User`-role describe block:
+ * the navbar `nav-experiments` link is `ProtectedLink` wrapped to
+ * `["Admin"]`, so a `User`-role auth state hides the link and the
+ * `/lab-experiments` test below would time out looking for it. The
+ * `/lab-experiments` test runs in its own Admin-role block.
+ */
+describe('Session-expiry / recovery branch coverage (issue #86) — User role', () => {
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       // MSAL cross-origin noise during the recovery round-trip must not
@@ -98,6 +105,34 @@ describe('Session-expiry / recovery branch coverage (issue #86)', () => {
     // The recovery round-trip is fast in headless mode; URL stabilises
     // back on /dashboard once the mock loginPopup resolves.
     cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+});
+
+/**
+ * The `/lab-experiments` recovery test needs an `Admin` role because
+ * `nav-experiments` is wrapped in `ProtectedLink requiredRoles={["Admin"]}`
+ * (`App.jsx:65-67`). Running it from a `User`-role describe block leaves
+ * the link hidden and `cy.get('[data-testid="nav-experiments"]')` times
+ * out at Cypress's default 4s actionability window.
+ */
+describe('Session-expiry / recovery branch coverage (issue #86) — Admin role', () => {
+  beforeEach(() => {
+    cy.on('uncaught:exception', (err) => {
+      // MSAL cross-origin noise during the recovery round-trip must not
+      // fail the test. Mirrors the existing session-expiry specs.
+      console.error('Uncaught exception:', err);
+      return false;
+    });
+
+    cy.window().then((win) => {
+      win.localStorage.clear();
+      win.sessionStorage.clear();
+    });
+
+    cy.setMockRole('Admin');
+    cy.visit('/');
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="authenticated-container"]', { timeout: 10000 }).should('exist');
   });
 
   /**
