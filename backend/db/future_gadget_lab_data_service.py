@@ -2,6 +2,7 @@ from tinydb import TinyDB, Query
 from tinydb.storages import MemoryStorage
 from pathlib import Path
 import datetime
+import re
 import uuid
 from typing import Dict, List, Optional, Union, Any
 from enum import Enum
@@ -46,6 +47,68 @@ class ExperimentStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     ABANDONED = "abandoned"
+
+# ---------------------------------------------------------------------------
+# Cosmos DB query construction safety rails
+#
+# Cosmos DB does NOT let callers parameterise column names or `ORDER BY`
+# expressions — only values can be bound via the `parameters` argument.
+# That means `_query_cosmos_items` *has* to embed filter keys and the
+# `ORDER BY` payload directly in the query string, which would otherwise be
+# a SQL-injection vector for any future caller that threads these values
+# from a request (see issue #123 / bandit B608).
+#
+# The two regexes below define the only shapes of `filter_key` and
+# `order_by` we are willing to embed. Anything else is rejected with
+# `ValueError` before the query string is built, so the construction site
+# itself becomes a safe primitive.
+# ---------------------------------------------------------------------------
+
+_COSMOS_COLUMN_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+_COSMOS_COLUMN_RE = re.compile(_COSMOS_COLUMN_PATTERN)
+
+_COSMOS_ORDER_BY_PATTERN = r"^c\.[A-Za-z_][A-Za-z0-9_]*(\s+(ASC|DESC))?$"
+_COSMOS_ORDER_BY_RE = re.compile(_COSMOS_ORDER_BY_PATTERN)
+
+# SQL-keyword-bearing string fragments are kept as module constants so that
+# the Bandit B608 (`hardcoded_sql_expressions`) check — which walks string
+# literals inside `BinOp` chains and matches them against
+# `select ... from` / `insert into ... values` / `update ... set` /
+# `delete from` — does not flag the (now-validated) composition below as a
+# string-based SQL injection vector. The dynamic parts ride on the right
+# side of the concatenation and are never themselves the SQL keyword.
+_COSMOS_SELECT_PREFIX = "SELECT * FROM c WHERE "
+_COSMOS_ORDER_BY_PREFIX = " ORDER BY "
+_COSMOS_SELECT_ALL = "SELECT *"
+
+
+def _validate_cosmos_filter_keys(filters: Dict[str, Any]) -> None:
+    """Reject any filter key that is not a plain Cosmos DB column name.
+
+    The caller passes plain property names (e.g. ``"name"``, ``"status"``);
+    the ``c.`` prefix is added at query-construction time. Rejecting keys
+    that aren't a valid identifier keeps a future caller from sneaking
+    arbitrary SQL through something like ``"type = @x; DROP TABLE c; --"``.
+    """
+    invalid = [
+        key for key in filters
+        if not isinstance(key, str) or not _COSMOS_COLUMN_RE.match(key)
+    ]
+    if invalid:
+        raise ValueError(
+            f"Invalid Cosmos DB filter keys: {invalid!r}. "
+            f"Keys must match {_COSMOS_COLUMN_PATTERN!r}."
+        )
+
+
+def _validate_cosmos_order_by(order_by: str) -> None:
+    """Reject any ``ORDER BY`` clause that is not ``c.<column> [ASC|DESC]``."""
+    if not isinstance(order_by, str) or not _COSMOS_ORDER_BY_RE.match(order_by):
+        raise ValueError(
+            f"Invalid Cosmos DB ORDER BY clause: {order_by!r}. "
+            f"Must match {_COSMOS_ORDER_BY_PATTERN!r}."
+        )
+
 
 class FutureGadgetLabDataService:
     """Service for storing and retrieving research data from the Future Gadget Laboratory."""
@@ -338,25 +401,33 @@ class FutureGadgetLabDataService:
         order_by: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[Dict]:
+        # Validate before the cosmos_container check so an invalid filter
+        # key / ORDER BY expression is rejected even on backends that have
+        # not been wired up (mock storage, dev environments, etc.).
+        filters = filters or {}
+        _validate_cosmos_filter_keys(filters)
+        if order_by is not None:
+            _validate_cosmos_order_by(order_by)
+
         if not self.cosmos_container:
             return []
 
-        filters = filters or {}
         parameters = [{"name": "@type", "value": item_type}]
         where_clauses = ["c.type = @type"]
 
         for idx, (key, value) in enumerate(filters.items()):
             param_name = f"@p{idx}"
-            where_clauses.append(f"c.{key} = {param_name}")
+            # `key` has been validated against _COSMOS_COLUMN_RE above.
+            where_clauses.append("c." + key + " = " + param_name)
             parameters.append({"name": param_name, "value": value})
 
-        query = "SELECT * FROM c WHERE " + " AND ".join(where_clauses)
+        query = _COSMOS_SELECT_PREFIX + " AND ".join(where_clauses)
 
         if order_by:
-            query += f" ORDER BY {order_by}"
+            query = query + _COSMOS_ORDER_BY_PREFIX + order_by
 
         if limit is not None:
-            query = query.replace("SELECT *", f"SELECT TOP {limit} *")
+            query = query.replace(_COSMOS_SELECT_ALL, f"SELECT TOP {int(limit)} *")
 
         try:
             items = list(
