@@ -126,11 +126,22 @@ describe('Chat Page Functionality', () => {
   });
 
   it('should handle long messages', () => {
+    // Wait for connection to be established — match the pattern the
+    // other tests in this block use. Without this wait cy.type races
+    // the WebSocket handshake: it waits up to its default 4s for the
+    // input to become enabled, and the chat page only enables the
+    // input once the auth handshake completes on the server side. The
+    // backend's 5s AUTH_HANDSHAKE_TIMEOUT_SECONDS bound is a safety
+    // net, not a target — a legitimate happy-path auth handshake
+    // settles in single-digit milliseconds and the test just needs to
+    // wait for it before typing.
+    cy.get('.status-connected', { timeout: 10000 }).should('exist');
+
     // Test with a very long message
     const longMessage = 'A'.repeat(500);
     cy.get('.chat-input input').type(longMessage);
     cy.get('.chat-input button').click();
-    
+
     // Check message was sent
     cy.contains('.message', longMessage.substring(0, 50)).should('be.visible');
   });
