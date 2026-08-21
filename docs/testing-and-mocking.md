@@ -94,9 +94,7 @@ moduleNameMapper: {
 ```
 
 `mock/` is excluded from coverage (`coveragePathIgnorePatterns`,
-`collectCoverageFrom`). Coverage thresholds are enforced (80% statements/functions/
-lines, 70% branches). Backend coverage has its own gate: `fail_under = 80` in
-`backend/pyproject.toml`.
+`collectCoverageFrom`).
 
 ### Auth / identity mock
 
@@ -187,20 +185,18 @@ purely to *observe* a real request — `cy.intercept('GET', '**/x').as('x')` plu
 
 ### What actually runs during E2E
 
-`frontend/package.json` orchestrates a real backend + real frontend, then Cypress:
-
-```jsonc
-"test:backend":  "cross-env MOCK=true LOG_LEVEL=CRITICAL node start-backend.js --host 0.0.0.0",
-"test:frontend": "cross-env npm_config_mock=true vite --logLevel warn --port 5301 --host",
-"test:e2e":      "start-server-and-test test:backend http://0.0.0.0:8100/health \"start-server-and-test test:frontend http://localhost:5301 cypress\""
-```
+The `test:backend`, `test:frontend` and `test:e2e` scripts in
+`frontend/package.json` orchestrate a real backend + real frontend, then
+Cypress. Read them there for the exact commands, hosts and ports: this
+document describes the ARCHITECTURE, and values that live in configuration
+are not repeated here — a copy of them only goes stale.
 
 - The **backend** is a real FastAPI process (`MOCK=true`) serving real endpoints
   over HTTP/WebSocket, backed by the in-memory TinyDB.
 - The **frontend** is the real Vite app (`npm_config_mock=true`) with the mock
   aliases compiled in for MSAL/Graph/telemetry only.
-- Cypress (`cypress.config.js`) drives the browser at `baseUrl:
-  http://localhost:5301` and lets requests flow to `localhost:8100` for real.
+- Cypress (`cypress.config.js`) drives the browser at the `baseUrl` set
+  there, and lets requests through to the backend for real.
 
 So a click in the UI → real fetch/WebSocket → real FastAPI route → real service
 logic → in-memory TinyDB, and back. The only things not real are the identity
@@ -239,13 +235,6 @@ then it is a stop-gap: a backend-side fault-injection seam (mock-mode-only) is
 the better fix, because a stubbed `500` asserts against a fiction of the error
 body, not the one the app really receives. Do not extend this list; when you
 touch one of these specs, prefer removing the stub over copying it.
-
-### Coverage
-
-E2E coverage is collected with `vite-plugin-istanbul` instrumenting `src/`, and
-`@cypress/code-coverage` (registered in `cypress.config.js` and
-`cypress/support/e2e.js`) reports it via `nyc`. Frontend unit and E2E coverage can
-be merged (`coverage:merge` / `coverage:all`).
 
 ## How to run
 
