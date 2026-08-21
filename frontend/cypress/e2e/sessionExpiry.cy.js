@@ -32,6 +32,24 @@
 const loginHtmlBody =
   '<!DOCTYPE html><html><body><form action="https://login.microsoftonline.com/foo"><input type="submit"/></form></body></html>';
 
+// A verbose sign-in page. Real App Service Easy Auth responses are often
+// much longer than the placeholder above — they include embedded CSS,
+// ARIA markup, debug comment blocks, and the full Easy Auth script tag.
+// The recovery flow truncates the body for telemetry, so the body
+// summarizer must keep working when the body is much larger than 200
+// characters. Drives the `summarizeBody` long-body branch in
+// `api.js` / `futureGadgetApi.js` end-to-end.
+const verboseLoginHtmlBody =
+  '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Sign in to your account</title>\n' +
+  '<link rel="stylesheet" href="https://app.example.com/.auth/css/aad-login.css">\n' +
+  '<script src="https://login.microsoftonline.com/foo/sdk.js"></script>\n' +
+  '<!-- AAD SAML SSO bridge comment block that the Easy Auth proxy emits when ' +
+  'the App Service session has expired and the request is being redirected ' +
+  'through /.auth/login/aad for re-authentication. -->\n</head>\n' +
+  '<body class="aad-saml-sso"><div id="loginForm"><form action="https://login.microsoftonline.com/foo" method="POST">' +
+  '<input name="username" type="email"/><input name="password" type="password"/>' +
+  '<button type="submit">Sign in</button></form></div></body></html>';
+
 describe('Session expiry re-auth flow (issue #86)', () => {
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -283,5 +301,84 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     // replaces the Sign-In button.
     cy.get('[data-testid="sign-in-button"]').should('not.exist');
     cy.url({ timeout: 15000 }).should('include', '/dashboard');
+  });
+
+  // ---------------------------------------------------------------------
+  // Realistic Easy Auth payloads: the placeholder `loginHtmlBody` used
+  // above is intentionally short so the assertions stay readable. The
+  // actual Easy Auth responses that App Service returns when the session
+  // has expired are much longer — they include embedded CSS, the ARIA
+  // markup for the AAD login form, and the SAML SSO bridge script tag.
+  // The recovery flow truncates the body for AppInsights telemetry, and
+  // the truncation branch needs to be exercised end-to-end against the
+  // running UI.
+  // ---------------------------------------------------------------------
+
+  it('handles a verbose sign-in page body (>200 chars) on the dashboard reload', () => {
+    // The reload hits /api/user-data and gets back a verbose login page
+    // that is far longer than 200 characters. The recovery flow still
+    // detects the expiry and the body summarizer takes the long-body
+    // path (slicing to 200 + ellipsis) rather than the short-body
+    // short-circuit.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: verboseLoginHtmlBody,
+    }).as('expiredVerboseBody');
+
+    cy.get('[data-testid="reload-button"]').click();
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+
+  it('re-authenticates when an Admin POSTs a new experiment against an expired session', () => {
+    // The Admin opens the new-experiment form, fills it in, and submits
+    // while their App Service session has expired. The POST that
+    // `createExperiment` issues returns the Easy Auth sign-in HTML.
+    // The recovery flow treats the POST the same way it treats a GET
+    // (SessionExpiredError → reauth → land back on /experiments), and
+    // the user keeps their place. This is the POST-equivalent of the
+    // existing DELETE-expired test and exercises the POST branch in
+    // `futureGadgetApi.js` that no other e2e spec reaches.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    // Seed an empty list so the "Create your first experiment" empty
+    // state button appears; that is the test affordance for opening the
+    // create form without a table row to click.
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [],
+    }).as('emptyListForCreate');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="no-experiments"]', { timeout: 10000 }).should('be.visible');
+    cy.get('[data-testid="create-first-experiment-btn"]').click();
+
+    // Fill the create form. The required fields (name, description,
+    // status, creator) must be filled or the form fails HTML5 validation
+    // and the submit handler returns without firing createExperiment.
+    cy.get('[data-testid="experiment-form-modal"]', { timeout: 10000 }).should('be.visible');
+    cy.get('#experiment-name').type('Probe experiment');
+    cy.get('#experiment-description').type('Created during an expired-session e2e test');
+    cy.get('#experiment-status').select('planned');
+    cy.get('#experiment-creator').clear().type('probe-creator');
+
+    cy.intercept('POST', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: verboseLoginHtmlBody,
+    }).as('createExpired');
+
+    cy.get('[data-testid="experiment-form-submit"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
   });
 });
