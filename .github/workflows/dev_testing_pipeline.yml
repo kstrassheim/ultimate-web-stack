@@ -107,7 +107,17 @@ jobs:
           npm ci || npm install
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
+      # Regression gate for production-reachable HIGH+ CVEs.
+      # `--omit=dev` matches what ships in the deployed bundle (see
+      # issue #122 — @nevware21/ts-utils prototype pollution was
+      # previously reachable from appInsights on every page load).
+      # Exits non-zero if any high/critical vuln remains.
+      - name: Audit production dependencies for HIGH+ vulnerabilities
+        run: |
+          cd frontend
+          npm audit --omit=dev --audit-level=high
+
       # Run Jest tests
       - name: Run Jest tests
         run: |
