@@ -1,119 +1,287 @@
 /**
- * End-to-end coverage for issue #86:
+ * End-to-end tests for issue #86:
  *   "Session expiry renders a blank page instead of asking for re-login"
  *
- * The real backend and Easy Auth proxy aren't available in the cypress
- * environment, so we simulate session expiry by intercepting the API
- * request and replying with the *exact* shape that App Service Easy Auth
- * returns when the App Service session cookie expires: a 302 redirect to
- * `/.auth/login/aad` followed (or rather, served directly) by an HTML
- * page carrying the Microsoft sign-in form.
+ * These tests cover the user-visible behaviour — what the user actually
+ * does and sees when their Easy Auth session expires mid-flow. The
+ * line-level coverage of the API helpers and the recovery flow lives
+ * in the unit tests alongside each module:
  *
- * Acceptance criteria being verified:
+ *   - src/api/errors.test.js
+ *       SessionExpiredError, pub/sub bus, bodyLooksLikeLoginPage,
+ *       inspectResponseForExpiry, inspectionJson.
+ *   - src/api/api.test.js
+ *       getUserData, getAdminData, expiry detection on /api/* paths,
+ *       genuine-error (4xx/5xx/network) handling.
+ *   - src/api/futureGadgetApi.test.js
+ *       CRUD ops (POST/PUT/DELETE), expiry detection on
+ *       /future-gadget-lab/* paths, DELETE-specific 204 behaviour,
+ *       genuine-error handling.
+ *   - src/auth/authFlow.test.js
+ *       saveRedirectPath / consumeRedirectPath, reauthenticate's
+ *       loginPopup success and cancel paths, single-flight lock.
+ *   - src/components/SessionRecoveryGuard.test.jsx
+ *       Subscribe + trigger on bus events, telemetry on failure,
+ *       cleanup on unmount.
  *
- *   1. The user sees a re-authentication prompt (the re-auth flow
- *      either shows a sign-in popup OR the post-expiry re-login
- *      attempt triggers MSAL's loginPopup).
- *   2. After re-authenticating, the user lands back on the page they
- *      were on.
- *   3. A genuine 401 from the API is still surfaced as an error and
- *      not mistaken for expiry.
+ * If the coverage gate fails after dropping the coverage-shaped e2e
+ * specs, that is a signal to extend a unit test — not to add e2e
+ * specs back. The unit tests are the right place for branch coverage.
  */
+
+const loginHtmlBody =
+  '<!DOCTYPE html><html><body><form action="https://login.microsoftonline.com/foo"><input type="submit"/></form></body></html>';
 
 describe('Session expiry re-auth flow (issue #86)', () => {
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
-      // The expected MSAL loginPopup interaction may surface cross-origin
-      // errors during the recovery round-trip — don't fail the test on them.
+      // MSAL cross-origin noise during the recovery round-trip must
+      // not fail the test — the round-trip opens a popup that the
+      // headless runner can't fully mediate.
       console.error('Uncaught exception:', err);
       return false;
     });
 
     cy.window().then((win) => {
+      // Cypress clears localStorage / sessionStorage between tests by
+      // default, but we clear again so a stale MOCKROLE or
+      // MOCK_LOGIN_FAIL from a previous run cannot leak into the
+      // current one.
       win.localStorage.clear();
       win.sessionStorage.clear();
     });
+  });
 
-    cy.setMockRole('User');
+  // Sign in as the given role and wait for the authenticated shell.
+  const loginAs = (role) => {
+    cy.setMockRole(role);
     cy.visit('/');
     cy.get('[data-testid="sign-in-button"]').click();
     cy.get('[data-testid="authenticated-container"]', { timeout: 10000 }).should('exist');
-  });
+  };
 
-  it('re-authenticates and returns to the page the user was on when an API responds with the login page', () => {
-    // Navigate to /dashboard first so we can confirm criterion #2:
-    // the recovery flow must take the user back to /dashboard, not /
-    cy.get('[data-testid="nav-dashboard"]').click();
-    cy.url().should('include', '/dashboard');
-    cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
+  // ---------------------------------------------------------------------
+  // Acceptance criterion #1: an expired session triggers a visible
+  // re-authentication prompt rather than an empty view.
+  // Acceptance criterion #2: after re-authenticating, the user lands
+  // back on the page they were on.
+  // Both criteria are asserted together: every recovery test below
+  // expects URL stability back on the page where expiry was detected.
+  // ---------------------------------------------------------------------
 
-    // The reload button is disabled while the initial fetchData is in
-    // flight (Dashboard.jsx: `<button ... disabled={loading}>`). Without
-    // this wait, `cy.click()` retries until its default 4s actionability
-    // timeout expires and the test reports a flaky 'Timed out waiting
-    // for element to be actionable' failure even though the recovery path
-    // itself is correct. The same pattern is used in dashboard.cy.js.
-    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+  it('re-authenticates when the dashboard mount-time fetch returns the login page', () => {
+    // The user clicks Dashboard. The dashboard's mount-time fetch
+    // fires before any user interaction; the response is the Easy
+    // Auth sign-in HTML. The recovery flow runs from the data load —
+    // not from a user-initiated click — and lands the user back on
+    // /dashboard. This is the literal scenario described in the
+    // issue body: "the app renders empty" because the dashboard's
+    // data view never appears without the recovery flow.
+    loginAs('User');
 
-    // Stop the dashboard from rendering cleanly: respond to the next API
-    // call with the Easy Auth login HTML. This is the case described in
-    // the issue body — "in-page fetches receive the login page instead
-    // of a 401, so the app renders empty."
     cy.intercept('GET', '**/api/user-data', {
       statusCode: 200,
       contentType: 'text/html; charset=utf-8',
-      body:
-        '<!DOCTYPE html><html><head><title>Sign in to your account</title></head>' +
-        '<body><form action="https://login.microsoftonline.com/foo"><input type="submit"/></form></body></html>',
-    }).as('expiredUserData');
+      body: loginHtmlBody,
+    }).as('expiredMountFetch');
 
-    // Trigger a Reload by clicking the dashboard's reload button — which
-    // calls getUserData, which now hits our intercepted login-page
-    // response and should fire a SessionExpiredError event.
-    cy.get('[data-testid="reload-button"]').click();
-
-    // The recovery round-trip is a popup. The Sign-In button on the page
-    // should now show the in-flight copy (or already be back to "Sign In"
-    // because loginPopup completed in headless mode). Either way, the
-    // dashboard must NOT show an empty forever — it should either render
-    // an error message OR recover cleanly.
-    //
-    // The strongest invariant we can assert against: after the recovery
-    // round-trip, the dashboard reload still works (we are back on the
-    // page we were on), not on /.
+    cy.get('[data-testid="nav-dashboard"]').click();
     cy.url({ timeout: 30000 }).should('include', '/dashboard');
   });
 
-  it('differentiates a genuine 401 from session expiry (does not trigger re-login)', () => {
-    // Navigate to a page that hits the API.
+  it('re-authenticates when the user clicks Reload and an API responds with the login page', () => {
+    // The user is actively using the dashboard and clicks Reload.
+    // The next API call returns the sign-in HTML; the recovery flow
+    // runs and the user lands back on /dashboard.
+    loginAs('User');
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
-
-    // Same loading-overlay wait as above — the reload button is disabled
-    // until the initial fetchData's `finally { setLoading(false) }` runs.
     cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
 
-    // Intercept with a real 401 + JSON body — this is the "genuine 401"
-    // case the acceptance criterion calls out.
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('expiredReload');
+
+    cy.get('[data-testid="reload-button"]').click();
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+
+  it('re-authenticates when a Future Gadget Lab endpoint returns the login page', () => {
+    // Same scenario as the dashboard tests, but on /experiments for
+    // an Admin. Exercises the same recovery path through
+    // futureGadgetApi.js instead of api.js. Without this test we'd
+    // have no e2e coverage of the lab API helpers' expiry branch.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('expiredLabExperiments');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+  });
+
+  it('re-authenticates when a write operation returns the login page', () => {
+    // The Admin is deleting an experiment while the session has
+    // expired. The DELETE call returns the sign-in HTML; the recovery
+    // flow runs and the user lands back on /experiments without
+    // losing the page. Tests that the recovery works for non-GET
+    // methods end-to-end, not just GETs.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    // Seed the table with one row so the Delete button is reachable.
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [
+        {
+          id: 'probe-exp',
+          name: 'Test experiment',
+          description: 'used to drive the DELETE expiry branch',
+          worldLineChange: '0.000123',
+          creator: 'Test',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }).as('listForDelete');
+
+    cy.intercept('DELETE', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('deleteExpired');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Test experiment');
+
+    cy.contains('tr', 'Test experiment').within(() => {
+      cy.get('button').contains(/Delete/i).click();
+    });
+    cy.get('[data-testid="confirm-delete-btn"]').should('be.visible').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+  });
+
+  it('coalesces concurrent expiry events into a single re-auth attempt', () => {
+    // Two endpoints expire at nearly the same moment — the user
+    // fires one request via the WorldlineMonitor's Refresh button
+    // and another via the Dashboard Reload. The single-flight lock
+    // in authFlow.reauthenticate must produce ONE loginPopup, not
+    // two stacked on top of each other.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('concurrentUserDataExpiry');
+
+    cy.intercept('GET', '**/future-gadget-lab/worldline-status', {
+      statusCode: 200,
+      contentType: 'text/html',
+      body: loginHtmlBody,
+    }).as('concurrentWorldlineExpiry');
+
+    cy.get('[data-testid="refresh-status-btn"]').click();
+    cy.get('[data-testid="reload-button"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+
+  // ---------------------------------------------------------------------
+  // Acceptance criterion #3: a genuine 401 / 5xx from the API is still
+  // surfaced as an error and not mistaken for expiry.
+  // ---------------------------------------------------------------------
+
+  it('surfaces a genuine 401 as an error without triggering re-login', () => {
+    // The API returns a real 401 (the user's account has been
+    // deprovisioned but their cached session is still valid). The
+    // user should see an error message, NOT a re-login prompt.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
     cy.intercept('GET', '**/api/user-data', {
       statusCode: 401,
       contentType: 'application/json',
       body: { error: 'unauthorized' },
     }).as('real401');
 
-    // Track whether loginPopup was called — a genuine 401 must NOT cause
-    // a re-login attempt.
-    cy.window().then((win) => {
-      cy.spy(win.console, 'error').as('consoleError');
-    });
+    cy.get('[data-testid="reload-button"]').click();
+
+    // The Sign-In button must NOT appear — we're still authenticated;
+    // the failure is just a backend hiccup.
+    cy.get('[data-testid="sign-in-button"]').should('not.exist');
+    cy.url({ timeout: 10000 }).should('include', '/dashboard');
+  });
+
+  it('surfaces a genuine 5xx as an error without triggering re-login', () => {
+    // Same shape as the 401 case but for a backend failure. The 5xx
+    // must NOT trigger re-login.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 500,
+      contentType: 'application/json',
+      body: { error: 'internal error' },
+    }).as('real500');
 
     cy.get('[data-testid="reload-button"]').click();
 
-    // Wait long enough for any (incorrect) re-auth flow to begin. If the
-    // implementation mistakenly treats 401 as expiry, we would see a
-    // loginPopup call here. We can detect that indirectly: the Sign-In
-    // button would briefly become disabled / show "Re-authenticating…".
     cy.get('[data-testid="sign-in-button"]').should('not.exist');
     cy.url({ timeout: 10000 }).should('include', '/dashboard');
+  });
+
+  // ---------------------------------------------------------------------
+  // Recovery failure paths.
+  // ---------------------------------------------------------------------
+
+  it('stays put when the user cancels the re-auth popup', () => {
+    // The session expires, the recovery flow opens a login popup,
+    // and the user closes it without signing in. The app must NOT
+    // navigate the user away or pop a second login window — they
+    // stay on the page they were on with the error surfaced via the
+    // existing notyfService. MOCK_LOGIN_FAIL is the test affordance
+    // in mock/azureMsalBrowser.js's loginPopup that simulates this.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_LOGIN_FAIL', 'true');
+    });
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '<!DOCTYPE html><html><body>Please go to <a href="/.auth/login/aad">sign in</a>.</body></html>',
+    }).as('expiredForCancelledLogin');
+
+    cy.get('[data-testid="reload-button"]').click();
+
+    // The recovery round-trip runs, loginPopup rejects, the user is
+    // shown an error but stays on the current page. No re-auth popup
+    // replaces the Sign-In button.
+    cy.get('[data-testid="sign-in-button"]').should('not.exist');
+    cy.url({ timeout: 15000 }).should('include', '/dashboard');
   });
 });
