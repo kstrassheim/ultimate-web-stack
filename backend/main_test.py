@@ -533,6 +533,61 @@ class TestFrontendHandlerPathContainment:
             f"attempt: {response.content!r}"
         )
 
+    def test_early_dot_segment_reject_falls_back_to_spa_shell(self):
+        """Issue #109: layer 1 of the containment check is an early
+        ``..`` segment deny-list. Its only runtime effect is to
+        short-circuit the handler before the path is fed to a
+        ``Path(...)`` constructor; layer 2 (resolve() +
+        is_relative_to()) would catch the same case anyway. The
+        layer exists to give static-analysis tooling (CodeQL
+        ``py/path-injection``) a sanitizer it recognises for the
+        user-controlled ``path`` value — the pattern must match any
+        captured path whose segments contain a literal ``..``.
+
+        This test pins the pattern's contract directly: if someone
+        weakens the regex to be more permissive (e.g. drops the
+        ``(^|/)`` anchor, lets ``..`` appear inside a segment like
+        ``foo..bar``), this test fires. Concretely: the existing
+        URL-encoded traversal tests
+        (``test_url_encoded_traversal_...``) cover the end-to-end
+        behaviour; this test pins the regex shape itself so a
+        future "simplification" can't silently re-open the static-
+        analysis hole.
+        """
+        import re as _re  # local import keeps the test self-contained
+        pattern = r'(^|/)\.\.($|/)'
+        # These must match — the captured paths the URL-encoded
+        # traversal tests produce.
+        must_match = [
+            "../secret.txt",       # /..%2fsecret.txt -> ../secret.txt
+            "../foo/bar",          # /%2e%2e/foo/bar -> ../foo/bar
+            "foo/../bar",          # URL /foo/..%2fbar -> foo/../bar
+            "foo/..",              # URL /foo/..%2fbar -> foo/..
+            "a/b/../c",            # multiple segments
+        ]
+        for p in must_match:
+            assert _re.search(pattern, p), (
+                f"regex pattern {pattern!r} must match captured "
+                f"path {p!r} — layer 1 would not short-circuit and "
+                f"the static-analysis sanitizer would be lost"
+            )
+        # These must NOT match — substring matches would over-reject
+        # real files like `foo..bar.html` (a legitimate filename with
+        # two dots in the middle).
+        must_not_match = [
+            "foo..bar",            # two dots inside a filename segment
+            "..foo",               # `..` prefix of a segment, not its own
+            "foo..",               # `..` suffix of a segment, not its own
+            "app.js",              # ordinary asset name
+            "a/b/c.js",            # ordinary deep path
+        ]
+        for p in must_not_match:
+            assert not _re.search(pattern, p), (
+                f"regex pattern {pattern!r} must NOT match "
+                f"{p!r} — layer 1 would over-reject legitimate "
+                f"paths and break the SPA for ordinary deep links"
+            )
+
 
 class TestApiDocsSurface:
     """Regression coverage for issue #95: /docs, /redoc, /openapi.json

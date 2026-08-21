@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+import re
 # for Application Insights
 from opencensus.ext.fastapi.fastapi_middleware import FastAPIMiddleware
 from opencensus.trace.samplers import ProbabilitySampler
@@ -183,22 +184,39 @@ async def frontend_handler(path: str):
         raise HTTPException(status_code=404, detail="API path not found")
 
 
-    # Resolve the candidate and confirm it stays inside dist (issue
-    # #109). Without this guard, joining ``path`` straight onto
-    # ``dist/`` lets a request like ``GET /..%2fsecret.txt`` (URL-
-    # encoded ``..`` that survives httpx/Starlette URL normalization)
-    # resolve to a real file outside ./dist and serve it with 200. The
-    # ``api/`` and ``future-gadget-lab/`` prefix checks above only
-    # guard those two prefixes — they don't defend against ``..``
-    # segments, absolute paths, or symlinks pointing out of dist.
-    # ``Path.resolve()`` collapses ``..`` and follows symlinks, so the
-    # containment check (``fp`` must live under ``dist_resolved``)
-    # closes all three holes. Anything that lands outside dist falls
-    # back to index.html like any other unknown route.
+    # Contain SPA catch-all paths to dist/ (issue #109). ``path`` is
+    # user-controlled; joining it straight onto ``dist/`` lets a
+    # request like ``GET /..%2fsecret.txt`` (URL-encoded ``..`` that
+    # survives httpx/Starlette URL normalization) resolve to a real
+    # file outside ./dist and serve it with 200.
+    #
+    # Two layers of defense:
+    #   1. ``..`` segment deny-list. ``re.search`` on path segments is
+    #      what CodeQL's ``py/path-injection`` query recognises as a
+    #      sanitizer for the user-controlled ``path`` value — without
+    #      it the static analyser flags the ``(dist / path)`` path
+    #      expression below as a path-injection sink even though the
+    #      containment check in layer 2 makes it safe.
+    #   2. ``Path.resolve()`` + ``is_relative_to(dist_resolved)``
+    #      containment check. ``resolve()`` collapses remaining
+    #      ``..`` segments, absolute paths, and symlinks pointing out
+    #      of dist/; ``is_relative_to`` confirms the result still lives
+    #      under ``dist_resolved``. This is the actual security
+    #      boundary and is what the regression tests in
+    #      ``TestFrontendHandlerPathContainment`` exercise end-to-end
+    #      against a real tmp_path dist tree. URL-decoded ``..``
+    #      (``%2e%2e``, ``%2f``) and symlink escapes are caught here,
+    #      not by the regex in layer 1, because the regex only
+    #      matches literal ``..`` segments.
+    #
+    # Either layer rejects the candidate; both fall back to
+    # ``index.html`` like any other unknown SPA route.
     dist_resolved = dist.resolve()
-    fp = (dist / path).resolve()
-    if path == '' or not fp.is_file() or not fp.is_relative_to(dist_resolved):
-        fp = dist_resolved / "index.html"
+    fp = dist_resolved / "index.html"
+    if path and not re.search(r'(^|/)\.\.($|/)', path):
+        candidate = (dist / path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(dist_resolved):
+            fp = candidate
 
         # Set correct MIME types for JavaScript modules
     media_type = None
