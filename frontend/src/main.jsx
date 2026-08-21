@@ -6,6 +6,7 @@ import msalInstance, { msalInitialization } from '@/auth/msalInstance';
 import 'bootstrap/dist/css/bootstrap.min.css';  // Add this line
 
 import App from './App';
+import { AuthProvider } from '@/auth/AuthContext';
 import './index.css';
 
 // MSAL v5 popup redirect bridge: any URL carrying an auth response
@@ -30,7 +31,9 @@ if (isAuthRedirectFrame) {
       <React.StrictMode>
         <BrowserRouter>
           <MsalProvider instance={msalInstance}>
-            <App />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
           </MsalProvider>
         </BrowserRouter>
       </React.StrictMode>
