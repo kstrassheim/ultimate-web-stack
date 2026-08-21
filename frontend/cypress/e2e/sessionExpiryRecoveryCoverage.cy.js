@@ -3,23 +3,22 @@
  *
  * Targets specific code paths the existing session-expiry specs do not hit:
  *
- *   - the `summarizeBody` empty-body branch in `api.js` /
- *     `futureGadgetApi.js` (the response body is the empty string —
- *     triggered by a backend that returns a 200 + Content-Type without
- *     any payload).
- *   - the `appInsights.trackException` + `notyfService.error` failure
- *     branch in `SessionRecoveryGuard.jsx` (the SessionRecoveryGuard's
- *     `.then(result => ...)` handler when `result.success === false`).
- *   - the `consumeRedirectPath()` on-failure branch in `authFlow.js`.
- *   - the JSON parse-error branch for the admin-data endpoint
- *     (`api.js`'s `await response.json()` / `inspectionJson` throw
- *     path).
+ *   - the `await response.json()` branch in `api.js`'s parse-error
+ *     path (the existing JSON-parse test uses a non-empty body, which
+ *     routes through `inspectionJson`; this spec exercises the path
+ *     taken when the body is empty).
+ *   - the `summarizeBody` short-body (≤200 char) arm on both
+ *     `/api/user-data` and `/lab-experiments` (the long-body case
+ *     was already covered by the existing specs).
+ *   - the SessionRecoveryGuard .then(result => ...) failure branch
+ *     and the authFlow.js catch block, by routing loginPopup through
+ *     a new test-only MOCK_LOGIN_FAIL hook in the mock MSAL so we
+ *     can simulate the user closing the popup.
  *
  * Each test drives exactly one of these paths so coverage gaps are
  * attributable to specific lines / branches without ambiguity.
  */
 
-const emptyLoginBody = '';
 const shortLoginBody =
   '<!DOCTYPE html><html><head><title>Sign in</title></head>' +
   '<body><form action="https://login.microsoftonline.com/x">' +
@@ -46,15 +45,20 @@ describe('Session-expiry / recovery branch coverage (issue #86)', () => {
   });
 
   /**
-   * The `summarizeBody` helper in api.js / futureGadgetApi.js returns the
-   * empty string when the body is empty (`if (!bodyText) return '';`).
-   * Without an explicit empty-body test, that branch is never reached
-   * because every existing test sends a non-empty body. The session
-   * expiry must still fire even when the body is empty (the inspect
-   * path does not look at the body content for the html-body
-   * detection — it looks at content-type and detection helpers).
+   * The `await response.json()` branch in `api.js`'s parse-error path is
+   * reached only when `inspection.bodyText === ''`. The existing JSON
+   * parse-error test in `sessionExpiryApiCoverage.cy.js` uses a
+   * non-empty body so it routes through `inspectionJson` instead.
+   * Here, we send a 200 + `application/json` with an empty body: the
+   * bodyText falls through to '' (so the `bodyText !== ''` guard in
+   * `api.js` is false), then `typeof response.json !== 'function'` is
+   * also false, so `api.js` actually calls `await response.json()`.
+   * That call throws because the body is empty, the catch block runs
+   * (returning undefined for the non-admin `/user-data` path) — and
+   * importantly, NO session-expiry recovery is triggered because the
+   * content-type is JSON, not HTML.
    */
-  it('triggers the recovery flow when /api/user-data returns a 200 + text/html with an empty body', () => {
+  it('exercises the response.json() parse-error branch on /api/user-data with an empty body', () => {
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
@@ -62,22 +66,24 @@ describe('Session-expiry / recovery branch coverage (issue #86)', () => {
 
     cy.intercept('GET', '**/api/user-data', {
       statusCode: 200,
-      contentType: 'text/html',
-      body: emptyLoginBody,
-    }).as('userDataEmptyBody');
+      contentType: 'application/json',
+      body: '',
+    }).as('userDataEmptyJsonBody');
 
     cy.get('[data-testid="reload-button"]').click();
 
-    // The recovery round-trip is fast in headless mode; URL stabilises
-    // back on /dashboard once the mock loginPopup resolves.
-    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+    // The Sign-In button must NEVER appear — this is a genuine parse
+    // error on /user-data, not a session expiry, so the recovery flow
+    // must not fire.
+    cy.get('[data-testid="sign-in-button"]', { timeout: 10000 }).should('not.exist');
+    cy.url({ timeout: 10000 }).should('include', '/dashboard');
   });
 
   /**
    * `summarizeBody` short-body branch (the body fits inside the 200-char
-   * preview window without `…` truncation). The first-time login body is
-   * already exercised by the long-body tests; this test pins the short
-   * path on /api/user-data so both summarizeBody branches are covered.
+   * preview window without `…` truncation). The long-body case was
+   * already covered by the existing specs; this test pins the short
+   * path on /api/user-data so both summarizeBody branches are hit.
    */
   it('triggers the recovery flow on a short (≤200 char) HTML body on /api/user-data', () => {
     cy.get('[data-testid="nav-dashboard"]').click();
@@ -93,6 +99,8 @@ describe('Session-expiry / recovery branch coverage (issue #86)', () => {
 
     cy.get('[data-testid="reload-button"]').click();
 
+    // The recovery round-trip is fast in headless mode; URL stabilises
+    // back on /dashboard once the mock loginPopup resolves.
     cy.url({ timeout: 30000 }).should('include', '/dashboard');
   });
 
