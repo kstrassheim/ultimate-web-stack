@@ -5,6 +5,7 @@ from typing import List
 from common.log import logger
 import asyncio
 import datetime
+import json
 
 # Maximum time (seconds) to wait for the first message from a newly-opened
 # WebSocket before closing it. Bounds the resource usage of clients that
@@ -73,6 +74,25 @@ class ConnectionManager:
                     await websocket.close(code=1008, reason="Authentication timeout")
                 except Exception:
                     # The peer may have closed the socket already; nothing to do.
+                    pass
+                return
+            except json.JSONDecodeError:
+                # The first frame wasn't valid JSON at all. Treat it the same
+                # as a missing-token payload: close with 1008 (policy
+                # violation), do not register, log so a malformed-frame flood
+                # is distinguishable from a missing-token flood. Without this
+                # branch the JSONDecodeError escapes auth_connect and the
+                # outer endpoint handler closes the socket with 1006
+                # (abnormal closure), which clients may interpret as a
+                # transport failure rather than an auth rejection.
+                logger.warning(
+                    "WebSocket connection attempt with invalid JSON in first frame"
+                )
+                try:
+                    await websocket.close(
+                        code=1008, reason="Invalid authentication frame"
+                    )
+                except Exception:
                     pass
                 return
 
