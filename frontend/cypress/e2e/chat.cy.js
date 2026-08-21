@@ -135,7 +135,13 @@ describe('Chat Page Functionality', () => {
     // net, not a target — a legitimate happy-path auth handshake
     // settles in single-digit milliseconds and the test just needs to
     // wait for it before typing.
+    //
+    // Also explicitly assert the input is enabled (not just the visual
+    // status indicator) to match the check the first test in this
+    // describe block uses — that's the strongest signal the cypress
+    // actionability check will pass.
     cy.get('.status-connected', { timeout: 10000 }).should('exist');
+    cy.get('.chat-input input').should('be.enabled');
 
     // Test with a very long message
     const longMessage = 'A'.repeat(500);
