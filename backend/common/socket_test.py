@@ -536,3 +536,45 @@ async def test_auth_connect_timeout(manager, monkeypatch, fake_websocket):
     # actionable (issue #111 acceptance criterion).
     assert any("timed out" in w for w in warnings), warnings
     assert any("203.0.113.7:54321" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_rejects_non_dict_payload(manager, monkeypatch, fake_websocket):
+    """`receive_json()` returns whatever JSON the client sent — a list, a
+    number, a string, null, a boolean — so the first frame may not be a
+    dict at all. The auth flow must reject those shapes the same way it
+    rejects a missing `token` field, instead of crashing on the
+    `auth_data.get('token')` AttributeError that would otherwise escape
+    `auth_connect` and leave the socket in an undefined state."""
+    import common.socket
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    # Try every JSON shape that is not a dict. Each one must close the
+    # socket with 1008 and never enter active_connections.
+    for payload in [[1, 2, 3], "not-a-dict", 42, None, True, {"token": None}]:
+        fake_websocket.received_json = payload
+        manager.active_connections.clear()
+        fake_websocket.closed = None
+        await manager.auth_connect(fake_websocket)
+
+        assert fake_websocket.closed is not None, f"payload {payload!r} was not closed"
+        code, reason = fake_websocket.closed
+        assert code == 1008, f"payload {payload!r} got close code {code}"
+        assert "token" in reason.lower(), f"payload {payload!r} got reason {reason!r}"
+        assert fake_websocket not in manager.active_connections, (
+            f"payload {payload!r} leaked into active_connections"
+        )
+
+    # The non-dict payloads must be logged with the type name so an
+    # operator can tell a malformed-frame flood apart from a missing-
+    # token flood.
+    assert any("non-dict" in w for w in warnings), warnings
+    assert any("list" in w for w in warnings), warnings
+    assert any("str" in w for w in warnings), warnings
