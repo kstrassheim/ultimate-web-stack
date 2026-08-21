@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { Button, Dropdown } from 'react-bootstrap';
-import { useMsal } from '@azure/msal-react';
+import { useAuth } from '@/auth/AuthContext';
 import { useNavigate, useLocation } from 'react-router';
 import { loginRequest } from '@/auth/entraAuth';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
@@ -10,7 +10,12 @@ import { getProfilePhoto } from '@/api/graphApi';
 import './EntraProfile.css'; // Create this file for custom tooltip styles
 
 const EntraProfile = () => {
-  const { instance } = useMsal();
+  // Centralised auth state (issue #87) — pulls the MSAL instance and
+  // the active account out of the AuthContext instead of reaching into
+  // useMsal() directly. The hook still ultimately calls useMsal(), so
+  // the existing jest.mock('@azure/msal-react') setup in
+  // EntraProfile.test.jsx keeps working without modification.
+  const { instance, account: authAccount } = useAuth();
   const navigate = useNavigate();
   const location = useLocation(); // Track location changes
   const [photoUrl, setPhotoUrl] = useState(dummy_avatar);
