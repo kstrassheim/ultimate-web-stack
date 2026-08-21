@@ -5,13 +5,24 @@
  *
  * Goals:
  *   - exercise more branches in `getWorldlineStatus` / `getDivergenceReadings`
- *     via the real UI (Dashboard's WorldlineMonitor);
+ *     via the real UI (Dashboard's WorldlineMonitor's refresh buttons);
  *   - drive the single-flight lock in `authFlow.reauthenticate` by firing
  *     multiple expiry events from different endpoints at the same time;
  *   - cover additional `api.js` / `futureGadgetApi.js` defensive branches
  *     (e.g. the `inspection.bodyText !== '' || typeof response.json !==
  *     'function'` short-circuit, the genuine-error return-undefined path
  *     for non-admin URLs that wasn't hit by the earlier specs).
+ *
+ * IMPORTANT: the Dashboard's `[data-testid="reload-button"]` only triggers
+ * `getUserData` + `getAllGroups` — it does NOT reach the
+ * `/future-gadget-lab/worldline-status` or `/divergence-readings` endpoints.
+ * Those endpoints are fetched by the WorldlineMonitor component, so the
+ * spec drives them through its dedicated refresh buttons
+ * (`[data-testid="refresh-status-btn"]`,
+ * `[data-testid="refresh-readings-btn"]`). The previous version of this
+ * file clicked `reload-button` for those endpoints, which silently left
+ * the intercepts un-matched and kept the branches under coverage:
+ * `nyc check-coverage` then failed the e2e-tests job.
  */
 
 const loginHtmlBody = (marker = 'login.microsoftonline.com') =>
@@ -42,15 +53,20 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
 
+    // The Dashboard's reload button only fires /api/user-data + /api/groups;
+    // `/worldline-status` is owned by the WorldlineMonitor component, so we
+    // drive it through the dedicated refresh button. Without this, the
+    // intercept never matches and the genuine-error branch in
+    // `getWorldlineStatus` stays uncovered.
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/worldline-status', {
       statusCode: 401,
       contentType: 'application/json',
       body: { error: 'unauthorized' },
     }).as('worldlineStatus401');
 
-    // The dashboard triggers getWorldlineStatus as part of its initial fetch
-    // and on refresh. The reload button re-runs the data fetches.
-    cy.get('[data-testid="reload-button"]').click();
+    cy.get('[data-testid="refresh-status-btn"]').click();
 
     cy.get('[data-testid="sign-in-button"]', { timeout: 10000 }).should('not.exist');
     cy.url({ timeout: 10000 }).should('include', '/dashboard');
@@ -62,13 +78,17 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
 
+    // As above: the refresh button is the only way to trigger a fresh
+    // /worldline-status fetch from the UI without re-mounting the page.
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/worldline-status', {
       statusCode: 200,
       contentType: 'application/json',
       body: 'definitely not JSON',
     }).as('worldlineStatusParseError');
 
-    cy.get('[data-testid="reload-button"]').click();
+    cy.get('[data-testid="refresh-status-btn"]').click();
 
     cy.get('[data-testid="sign-in-button"]', { timeout: 10000 }).should('not.exist');
     cy.url({ timeout: 10000 }).should('include', '/dashboard');
@@ -80,13 +100,17 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
 
+    // /divergence-readings is owned by the WorldlineMonitor; the Dashboard
+    // reload button does not reach it. Use the readings refresh button.
+    cy.get('[data-testid="divergence-readings-card"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/divergence-readings**', {
       statusCode: 200,
       contentType: 'text/html; charset=utf-8',
       body: loginHtmlBody(),
     }).as('divergenceReadingsExpiry');
 
-    cy.get('[data-testid="reload-button"]').click();
+    cy.get('[data-testid="refresh-readings-btn"]').click();
     cy.url({ timeout: 30000 }).should('include', '/dashboard');
   });
 
@@ -117,6 +141,9 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
       body: longHtmlBody,
     }).as('userDataLongExpiry');
 
+    // /api/user-data IS reached by the Dashboard reload button, so this
+    // test keeps using `reload-button` (changing it would not exercise the
+    // intended branch and would just add a no-op click).
     cy.get('[data-testid="reload-button"]').click();
     cy.url({ timeout: 30000 }).should('include', '/dashboard');
   });
@@ -126,6 +153,15 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
     cy.url().should('include', '/dashboard');
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    // The concurrent-expiry test needs BOTH endpoints to fire close enough
+    // together that the single-flight lock in `reauthenticate` can coalesce
+    // them. The Dashboard reload button only triggers /api/user-data, so we
+    // also need the refresh button that actually lives on the
+    // WorldlineMonitor to drive /worldline-status. Without both clicks the
+    // /worldline-status intercept would never match and the single-flight
+    // lock would not be exercised.
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
 
     cy.intercept('GET', '**/api/user-data', {
       statusCode: 200,
@@ -139,6 +175,9 @@ describe('Session-expiry / Dashboard additional coverage (issue #86)', () => {
       body: loginHtmlBody(),
     }).as('concurrentWorldlineStatusExpiry');
 
+    // Fire both endpoints in the same tick. The two expiry events hit
+    // `reauthenticate` and the second one is coalesced by `_inFlight`.
+    cy.get('[data-testid="refresh-status-btn"]').click();
     cy.get('[data-testid="reload-button"]').click();
 
     // Two overlapping expiry events land on the same dashboard reload;

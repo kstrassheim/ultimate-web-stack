@@ -76,6 +76,15 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
 
+    // /worldline-status is owned by the WorldlineMonitor component; the
+    // Dashboard's reload button does not reach it. Drive it through the
+    // dedicated refresh button so the intercept actually matches a request
+    // (the original spec relied on the initial fetch, which already
+    // finishes before the intercept is registered — so the genuine-error
+    // branch in `getWorldlineStatus` was leaving the `looksLikeExpiry`
+    // short-circuit uncovered).
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
     // A real 500 + JSON body must NOT trigger re-login. The dashboard must
     // still be the page we're on, and the Sign-In button must not appear
     // (we're authenticated; the failure is just a backend hiccup).
@@ -85,8 +94,8 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
       body: { error: 'internal error' },
     }).as('worldlineStatus500');
 
-    // The worldline monitor refresh button (when present) triggers the
-    // call; otherwise the initial fetch on dashboard mount does.
+    cy.get('[data-testid="refresh-status-btn"]').click();
+
     cy.get('[data-testid="sign-in-button"]').should('not.exist');
     cy.url({ timeout: 10000 }).should('include', '/dashboard');
   });
@@ -95,11 +104,17 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
 
+    // As above: drive /divergence-readings through the readings refresh
+    // button so the intercept matches the new request.
+    cy.get('[data-testid="divergence-readings-card"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/divergence-readings**', {
       statusCode: 404,
       contentType: 'application/json',
       body: { error: 'not found' },
     }).as('divergenceReadings404');
+
+    cy.get('[data-testid="refresh-readings-btn"]').click();
 
     cy.get('[data-testid="sign-in-button"]').should('not.exist');
     cy.url({ timeout: 10000 }).should('include', '/dashboard');
@@ -130,44 +145,59 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
 
+    // Drive /worldline-status through the dedicated refresh button so
+    // the login-marker detection branch in `inspectResponseForExpiry`
+    // is actually exercised on this endpoint.
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/worldline-status', {
       statusCode: 200,
       contentType: 'text/html',
       body: '<!DOCTYPE html><html><body>Please go to <a href="/.auth/login/aad">sign in</a>.</body></html>',
     }).as('worldlineStatusAuthMarker');
 
+    cy.get('[data-testid="refresh-status-btn"]').click();
+
     cy.get('[data-testid="sign-in-button"]').should('not.exist');
     cy.url({ timeout: 15000 }).should('include', '/dashboard');
   });
 
   it('coalesces concurrent expiry-triggering fetches into a single re-auth attempt', () => {
-    cy.get('[data-testid="nav-experiments"]').click();
-    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
 
-    // Wait for the initial fetch to settle before clicking reload.
-    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+    // We need both /worldline-status AND /worldline-history (or any two
+    // endpoints) to expire at the same time so the single-flight lock in
+    // `authFlow.reauthenticate` coalesces them. Triggering the
+    // WorldlineMonitor's mount-time fetch ALONE would only generate one
+    // expiry event; we need to issue a second concurrent call before the
+    // first loginPopup resolves. Drive the second one through the reload
+    // button (which hits /api/user-data) and the first through the
+    // status refresh button.
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
 
     // Make BOTH endpoints serve the Easy Auth login HTML. With the
     // single-flight lock in `authFlow.reauthenticate`, both failures
     // share one loginPopup.
-    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
-      statusCode: 200,
-      contentType: 'text/html',
-      body: loginHtmlBody(),
-    }).as('concurrentLabExpiry');
     cy.intercept('GET', '**/future-gadget-lab/worldline-status', {
       statusCode: 200,
       contentType: 'text/html',
       body: loginHtmlBody(),
     }).as('concurrentWorldlineExpiry');
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody(),
+    }).as('concurrentUserDataExpiry');
 
-    // The experiments page itself calls getAllExperiments. To trigger
-    // worldline-status as well we'd need both pages rendered, but a single
-    // page mount + reload is enough to prove the single-flight path runs
-    // without throwing.
-    cy.get('[data-testid="reload-experiments-btn"]').click();
+    // Fire both endpoints in the same tick: the refresh button triggers
+    // /worldline-status, the reload button triggers /api/user-data. Both
+    // notification events hit `reauthenticate` and the second one is
+    // coalesced by `_inFlight`.
+    cy.get('[data-testid="refresh-status-btn"]').click();
+    cy.get('[data-testid="reload-button"]').click();
 
-    cy.url({ timeout: 30000 }).should('include', '/experiments');
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
   });
 
   it('treats a redirected response to /\\.auth/login/aad as session expiry', () => {
