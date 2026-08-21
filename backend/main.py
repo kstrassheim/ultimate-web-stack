@@ -183,9 +183,22 @@ async def frontend_handler(path: str):
         raise HTTPException(status_code=404, detail="API path not found")
 
 
-    fp = dist / path
-    if path == '' or not fp.exists():
-        fp = dist / "index.html"
+    # Resolve the candidate and confirm it stays inside dist (issue
+    # #109). Without this guard, joining ``path`` straight onto
+    # ``dist/`` lets a request like ``GET /..%2fsecret.txt`` (URL-
+    # encoded ``..`` that survives httpx/Starlette URL normalization)
+    # resolve to a real file outside ./dist and serve it with 200. The
+    # ``api/`` and ``future-gadget-lab/`` prefix checks above only
+    # guard those two prefixes — they don't defend against ``..``
+    # segments, absolute paths, or symlinks pointing out of dist.
+    # ``Path.resolve()`` collapses ``..`` and follows symlinks, so the
+    # containment check (``fp`` must live under ``dist_resolved``)
+    # closes all three holes. Anything that lands outside dist falls
+    # back to index.html like any other unknown route.
+    dist_resolved = dist.resolve()
+    fp = (dist / path).resolve()
+    if path == '' or not fp.is_file() or not fp.is_relative_to(dist_resolved):
+        fp = dist_resolved / "index.html"
 
         # Set correct MIME types for JavaScript modules
     media_type = None

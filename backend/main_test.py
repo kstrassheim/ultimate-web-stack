@@ -124,38 +124,21 @@ class TestMainModule:
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "application/json"
     
-    def test_frontend_handler_fallback_to_index(self, mock_file_response):
-        """Test the frontend handler falls back to index.html when path doesn't exist"""
-        # Instead of mocking Path globally, we'll mock dist directly
-        with patch('main.dist') as mock_dist:
-            # Create a more sophisticated tracking mechanism
-            path_requests = []
-            
-            def path_div_tracker(path_str):
-                path_requests.append(path_str)
-                result = MagicMock()
-                # Make nonexistent-path not exist, but index.html exist
-                if path_str == 'nonexistent-path':
-                    result.exists.return_value = False
-                else:
-                    result.exists.return_value = True
-                return result
-                
-            # Set up the side effect
-            mock_dist.__truediv__.side_effect = path_div_tracker
-            
-            # Make the request to the handler
+    def test_frontend_handler_fallback_to_index(self, tmp_path):
+        """Unknown routes under dist/ (e.g. a deep link whose path
+        doesn't correspond to a real file) must fall back to the SPA
+        shell. This is the same fallback path the traversal guard in
+        issue #109 relies on — the handler falls back whenever the
+        resolved candidate isn't a real file under dist/."""
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        with patch("main.dist", dist_dir):
             response = client.get("/nonexistent-path")
-            
-            # Debug output
-            print(f"Path requests: {path_requests}")
-            
-            # Since path_requests is working correctly, assert on that
-            assert 'nonexistent-path' in path_requests, "Should have checked nonexistent-path"
-            assert 'index.html' in path_requests, "Should have fallen back to index.html"
-            
-            # Also verify FileResponse was called (don't assert on its arguments)
-            mock_file_response.assert_called()
+            assert response.status_code == 200
+            assert response.text == "<html>SPA_SHELL</html>", (
+                f"unknown route did not serve SPA shell: {response.text!r}"
+            )
 
     def test_frontend_handler_long_path_falls_back_to_index(self):
         """Regression coverage for issue #99: a captured path longer than
@@ -225,7 +208,7 @@ class TestMainModule:
                 f"div calls were: {div_calls}"
             )
 
-    def test_frontend_handler_max_path_len_boundary(self):
+    def test_frontend_handler_max_path_len_boundary(self, tmp_path):
         """Boundary check for issue #99: a path exactly 255 bytes long
         must still be handled normally (the length guard is ``>``, not
         ``>=``).
@@ -235,28 +218,24 @@ class TestMainModule:
         pin the guard at ``len(path) > MAX_PATH_LEN`` — flip the
         comparison to ``>=`` and the 255-byte path here would also
         short-circuit, failing this test.
+
+        The handler treats an overlong path as if the SPA shell were
+        requested, so the response body must be the SPA shell for a
+        255-byte path that doesn't correspond to a real file under
+        dist/. The containment check added for issue #109 is the same
+        code path that fires for any unknown route, which is what this
+        test exercises end-to-end.
         """
-        # 255-byte path: still routed through the normal handler path.
-        # We mock the filesystem so this doesn't need a real dist/.
-        with patch("main.dist") as mock_dist:
-            path_requests = []
-
-            def path_div_tracker(path_str):
-                path_requests.append(path_str)
-                result = MagicMock()
-                result.exists.return_value = False
-                return result
-
-            mock_dist.__truediv__.side_effect = path_div_tracker
-            with patch("main.FileResponse") as mock_file_response:
-                mock_file_response.return_value = "INDEX"
-                response = client.get("/" + "a" * 255)
-                assert response.status_code == 200
-                # The 255-byte path reaches the normal handler path
-                # (not the new short-circuit guard), so the file lookup
-                # is performed and the index.html fallback follows.
-                assert "a" * 255 in path_requests
-                assert "index.html" in path_requests
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        with patch("main.dist", dist_dir):
+            response = client.get("/" + "a" * 255)
+            assert response.status_code == 200
+            assert response.text == "<html>SPA_SHELL</html>", (
+                f"255-byte path did not fall back to SPA shell: "
+                f"{response.text!r}"
+            )
 
     def test_cors_middleware_configuration(self):
         """Test that CORS middleware is configured"""
@@ -313,9 +292,246 @@ class TestMainModule:
         # If we get here, no calls to include_router were found
         # Let's verify the router exists in a different way
         assert hasattr(main, 'api_router'), "API router should be defined"
-        
+
         # Alternative test: verify the app has routes
         assert len(app.routes) > 0, "App should have routes"
+
+
+class TestFrontendHandlerPathContainment:
+    """Regression coverage for issue #109: a captured path that resolves
+    outside ``./dist`` must fall back to the SPA shell instead of
+    being served.
+
+    Before the fix, ``frontend_handler`` did ``fp = dist / path`` and
+    ``fp.exists()`` (the existing api/future-gadget-lab prefix checks
+    only guard those two prefixes — they don't defend against ``..``
+    segments, absolute paths, or symlinks pointing out of dist). A
+    request whose path contains traversal segments that survive the
+    client and the proxy — e.g. URL-encoded ``..`` like
+    ``/..%2fsecret.txt`` (httpx + Starlette URL normalization leaves
+    ``%2f`` and ``%2e`` encoded, so the captured ``path`` is
+    ``../secret.txt``) — resolves ``dist / "../secret.txt"`` to a
+    sibling of dist and serves it with 200. The same hole covers
+    symlinks inside dist that point out of it, because
+    ``Path.exists()`` follows symlinks.
+
+    The fix is to call ``Path.resolve()`` on the candidate and confirm
+    ``dist_resolved`` is one of its ancestors before serving. These
+    tests pin both halves of the contract: a traversal attempt falls
+    back to the SPA shell, and a normal asset is still served with
+    its real content (the guard must not over-reach). They run against
+    a real ``tmp_path`` dist tree (not mocks) so the resolve() /
+    containment behavior is under test, not the mock plumbing.
+    """
+
+    def _build_dist(self, tmp_path):
+        """Build a tmp tree that looks like a deployed backend:
+        ``dist/index.html`` + ``dist/app.js`` are real assets; a
+        ``secret.txt`` sibling of dist/ is the out-of-tree file the
+        handler must never serve. Returns the ``dist/`` Path to patch
+        in as ``main.dist``.
+        """
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        (dist_dir / "app.js").write_text("// ASSET")
+        (dist_dir / "page.html").write_text("<html>DEEP_LINK</html>")
+        (tmp_path / "secret.txt").write_text("TOP_SECRET_DATA")
+        return dist_dir
+
+    def test_url_encoded_traversal_falls_back_to_spa_shell(self, tmp_path):
+        """Issue #109: ``GET /..%2fsecret.txt`` (URL-encoded ``..`` that
+        survives httpx/Starlette URL normalization) must return the
+        SPA shell, not ``secret.txt``.
+
+        Without the resolve()+containment guard, the captured ``path``
+        is ``../secret.txt`` and ``dist / "../secret.txt"`` resolves
+        to a real file outside ``./dist`` that the handler serves
+        with 200. With the fix, ``Path.resolve()`` makes the
+        out-of-tree nature of the target explicit and the
+        containment check (``fp.is_relative_to(dist_resolved)``)
+        rejects it — the handler falls back to ``index.html``.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        with patch("main.dist", dist_dir):
+            response = client.get("/..%2fsecret.txt")
+        assert response.status_code == 200
+        assert b"TOP_SECRET_DATA" not in response.content, (
+            f"handler leaked out-of-tree file via path traversal: "
+            f"{response.content!r}"
+        )
+        assert b"SPA_SHELL" in response.content, (
+            f"handler did not fall back to SPA shell on traversal: "
+            f"{response.content!r}"
+        )
+
+    def test_dot_segment_traversal_falls_back_to_spa_shell(self, tmp_path):
+        """Issue #109: variants like ``GET /.%2e/secret.txt`` and
+        ``GET /%2e%2e/secret.txt`` (URL-encoded ``..`` with the slash
+        left encoded) must also fall back to the SPA shell.
+
+        Some proxies normalize the slash but leave ``%2e`` encoded;
+        others do the opposite. The handler must defend against all
+        three spellings because the captured ``path`` is what reaches
+        ``dist / path``, not what the URL looked like at the edge.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        for traversal in ("/.%2e/secret.txt", "/%2e%2e/secret.txt"):
+            with patch("main.dist", dist_dir):
+                response = client.get(traversal)
+            assert response.status_code == 200, (
+                f"{traversal!r} returned {response.status_code}, "
+                f"expected 200 with SPA shell"
+            )
+            assert b"TOP_SECRET_DATA" not in response.content, (
+                f"{traversal!r} leaked out-of-tree file: "
+                f"{response.content!r}"
+            )
+            assert b"SPA_SHELL" in response.content, (
+                f"{traversal!r} did not fall back to SPA shell: "
+                f"{response.content!r}"
+            )
+
+    def test_normal_asset_still_served(self, tmp_path):
+        """Issue #109 (positive case): ``GET /app.js`` must serve the
+        real asset, not the SPA shell — the containment check must
+        not over-reach and start rejecting real assets under dist/.
+
+        Pairs with the traversal tests above. Together they pin the
+        containment check: it must reject paths resolving outside dist/
+        without rejecting paths that resolve inside dist/.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        with patch("main.dist", dist_dir):
+            response = client.get("/app.js")
+        assert response.status_code == 200
+        assert response.content == b"// ASSET", (
+            f"real asset under dist/ was not served: "
+            f"{response.content!r}"
+        )
+        assert "javascript" in response.headers["content-type"], (
+            f"JS asset served with wrong media type: "
+            f"{response.headers.get('content-type')!r}"
+        )
+
+    def test_unknown_route_falls_back_to_spa_shell(self, tmp_path):
+        """Issue #109 (positive control): a deep link whose path
+        doesn't correspond to any file under dist/ must still serve
+        the SPA shell — the resolve()+containment check must NOT
+        turn the SPA fallback into a 404.
+
+        This is the existing SPA fallback behaviour, exercised here
+        end-to-end against a real dist tree to confirm the new
+        containment code doesn't regress it.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        with patch("main.dist", dist_dir):
+            response = client.get("/some/deep/route/that/does/not/exist")
+        assert response.status_code == 200
+        assert response.text == "<html>SPA_SHELL</html>", (
+            f"unknown SPA route did not serve SPA shell: "
+            f"{response.text!r}"
+        )
+
+    def test_sibling_file_with_same_name_not_served(self, tmp_path):
+        """Issue #109 (negative case for absolute-looking paths): a
+        sibling of ``dist/`` that shares a name with a real dist
+        asset must not be served in its place.
+
+        Concretely: the fixture creates both ``dist/page.html``
+        (``<html>DEEP_LINK</html>``) and a sibling
+        ``tmp_path/page.html`` (``SIBLING_FILE``) at the same name.
+        A request for ``/page.html`` must serve the dist file (the
+        SPA route), not the sibling — if the containment check were
+        broken, the sibling could be served because ``dist / path``
+        resolves to a path under dist/ but the underlying file
+        could be anywhere on disk after symlink resolution. This test
+        exercises the ``fp = (dist / path).resolve()`` step that
+        canonicalises the path before the containment check runs.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        (tmp_path / "page.html").write_text("SIBLING_FILE")
+        with patch("main.dist", dist_dir):
+            response = client.get("/page.html")
+        assert response.status_code == 200
+        assert response.content == b"<html>DEEP_LINK</html>", (
+            f"handler served the sibling of dist/ instead of "
+            f"dist/page.html: {response.content!r}"
+        )
+        assert b"SIBLING_FILE" not in response.content, (
+            f"sibling file leaked into response: {response.content!r}"
+        )
+
+    def test_symlink_escape_falls_back_to_spa_shell(self, tmp_path):
+        """Issue #109 (negative case for symlinks): a symlink inside
+        ``dist/`` that points to a file outside it must not be served.
+
+        ``Path.resolve()`` follows symlinks, so the resolved
+        candidate lands outside ``dist_resolved`` and the containment
+        check rejects it — the handler falls back to the SPA shell
+        instead of serving the symlink target. On Windows symlinks
+        require elevated privileges; if ``symlink_to`` raises
+        ``OSError`` (e.g. on a CI runner without dev mode), the
+        test is skipped rather than failing.
+        """
+        dist_dir = self._build_dist(tmp_path)
+        try:
+            (dist_dir / "sneaky").symlink_to(tmp_path / "secret.txt")
+        except OSError:
+            pytest.skip("symlink creation not supported on this platform")
+        with patch("main.dist", dist_dir):
+            response = client.get("/sneaky")
+        assert response.status_code == 200
+        assert b"TOP_SECRET_DATA" not in response.content, (
+            f"symlink escape served out-of-tree file: "
+            f"{response.content!r}"
+        )
+        assert b"SPA_SHELL" in response.content, (
+            f"symlink escape did not fall back to SPA shell: "
+            f"{response.content!r}"
+        )
+
+    def test_containment_check_uses_resolve_not_string_prefix(self, tmp_path):
+        """Issue #109 acceptance criterion: the containment check must
+        use ``Path.resolve()``, not a string-prefix check on the raw
+        input.
+
+        This test pins the check method so a future "optimisation"
+        that swaps ``fp.is_relative_to(dist_resolved)`` for
+        ``dist_resolved.as_posix() in fp.as_posix()`` (a substring
+        check) fails this test instead of silently re-opening the
+        hole. Concretely: we set up ``dist_resolved`` as
+        ``tmp_path/dist`` and create a directory ``dist_other`` at
+        the same depth with the same name prefix. A string-prefix
+        check would let ``dist_other/secret.txt`` through; the
+        ``is_relative_to`` resolve()-based check rejects it because
+        ``dist_other/secret.txt`` is not under ``tmp_path/dist``.
+        """
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        # Sibling with a name that shares the prefix ``dist``: the
+        # classic string-prefix-bypass target.
+        sibling_dir = tmp_path / "dist_other"
+        sibling_dir.mkdir()
+        (sibling_dir / "secret.txt").write_text("PREFIX_BYPASS_SECRET")
+        with patch("main.dist", dist_dir):
+            # The captured path is ``dist_other/secret.txt`` — under
+            # a string-prefix check on ``dist/`` this would resolve
+            # to ``tmp_path/dist_other/secret.txt`` and be served.
+            # Under the resolve()-based containment check, the
+            # resolved path is not under ``dist_resolved`` and the
+            # handler must fall back to the SPA shell.
+            response = client.get("/dist_other/secret.txt")
+        assert response.status_code == 200
+        assert b"PREFIX_BYPASS_SECRET" not in response.content, (
+            f"string-prefix containment check served "
+            f"out-of-prefix file: {response.content!r}"
+        )
+        assert b"SPA_SHELL" in response.content, (
+            f"handler did not fall back to SPA shell on prefix-bypass "
+            f"attempt: {response.content!r}"
+        )
 
 
 class TestApiDocsSurface:
