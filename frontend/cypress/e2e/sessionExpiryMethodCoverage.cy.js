@@ -108,6 +108,24 @@ describe('Session-expiry / Future Gadget Lab method coverage (issue #86)', () =>
       ],
     }).as('listExperimentsForPut');
 
+    // The Edit button click triggers `fetchExperimentById(id)` which calls
+    // GET /lab-experiments/:id. The mock backend returns 404 for unknown
+    // ids, so the edit form would never open. Intercept the by-id URL
+    // explicitly so the populated single-experiment payload reaches the
+    // form and the PUT can be exercised.
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: {
+        id: 'probe-exp-1',
+        name: 'Existing experiment for PUT test',
+        description: 'used to drive the PUT branch',
+        worldLineChange: '0.000123',
+        creator: 'Coverage Probe',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    }).as('getExperimentByIdPut403');
+
     // Reload the page so the GET intercept fires and seeds the table.
     cy.get('[data-testid="reload-experiments-btn"]').click();
     cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Existing experiment for PUT test');
@@ -117,6 +135,10 @@ describe('Session-expiry / Future Gadget Lab method coverage (issue #86)', () =>
     cy.contains('tr', 'Existing experiment for PUT test').within(() => {
       cy.get('button').contains(/Edit/i).click();
     });
+
+    // The edit form must be visible — the by-id intercept above makes
+    // fetchExperimentById return the experiment so the form opens.
+    cy.get('[data-testid="experiment-form-modal"]', { timeout: 10000 }).should('be.visible');
 
     // Submit the edit form (PUT).
     cy.get('[data-testid="experiment-form-submit"]').click();
@@ -180,6 +202,24 @@ describe('Session-expiry / Future Gadget Lab method coverage (issue #86)', () =>
       ],
     }).as('listExperimentsForPutExpiry');
 
+    // The Edit button click triggers `fetchExperimentById(id)` which calls
+    // GET /lab-experiments/:id. Without this intercept, the mock backend
+    // returns 404 for the unknown id and the edit form never opens, so
+    // the submit button is never reachable. Intercept the by-id URL with
+    // the same experiment payload the list endpoint returns.
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: {
+        id: 'probe-exp-put',
+        name: 'Existing experiment for PUT-expiry test',
+        description: 'used to drive the PUT expiry branch',
+        worldLineChange: '0.000456',
+        creator: 'Coverage Probe',
+        timestamp: '2026-01-02T00:00:00.000Z',
+      },
+    }).as('getExperimentByIdPutExpiry');
+
     cy.intercept('PUT', '**/future-gadget-lab/lab-experiments/*', {
       statusCode: 200,
       contentType: 'text/html; charset=utf-8',
@@ -194,6 +234,10 @@ describe('Session-expiry / Future Gadget Lab method coverage (issue #86)', () =>
     cy.contains('tr', 'Existing experiment for PUT-expiry test').within(() => {
       cy.get('button').contains(/Edit/i).click();
     });
+    // The edit form must be visible here — the by-id intercept above
+    // makes fetchExperimentById return the experiment, so the form
+    // opens and the submit button is reachable.
+    cy.get('[data-testid="experiment-form-modal"]', { timeout: 10000 }).should('be.visible');
     cy.get('[data-testid="experiment-form-submit"]').click();
 
     cy.url({ timeout: 30000 }).should('include', '/experiments');
