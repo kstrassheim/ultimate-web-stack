@@ -504,9 +504,216 @@ def test_worldline_history_with_experiment_details():
                 assert result[1]["added_experiment"]["description"] == "First test experiment"
                 assert result[1]["added_experiment"]["creator_id"] == "Okabe Rintaro"
                 assert "Makise Kurisu" in result[1]["added_experiment"]["collaborators"]
-                
+
                 # Check experiment 2 details are included
                 assert result[2]["added_experiment"]["id"] == "EXP-002"
                 assert result[2]["added_experiment"]["name"] == "Test Experiment 2"
                 assert result[2]["added_experiment"]["status"] == "in_progress"
                 assert result[2]["added_experiment"]["world_line_change"] == -0.048256
+
+
+# ---------------------------------------------------------------------------
+# _query_cosmos_items defense-in-depth tests (issue #123)
+#
+# Cosmos DB doesn't support parameterised column references or `ORDER BY`
+# expressions, so the query has to embed them as raw strings. To keep
+# `_query_cosmos_items` safe for any future caller (a `search_*` endpoint
+# that passes `request.json()`, a `?order_by=` query string, etc.) we
+# validate every filter key and the order-by clause at construction time.
+# These tests pin that behaviour.
+# ---------------------------------------------------------------------------
+
+
+class _FakeCosmosQuery:
+    """Records the last query / parameters seen by the container stub."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, *, query, parameters, enable_cross_partition_query):
+        self.calls.append({"query": query, "parameters": parameters})
+        return iter(())
+
+
+def _cosmos_service():
+    """Return a service whose `storage_backend == "cosmos"` and whose
+    `cosmos_container.query_items` is a recording stub."""
+    service = MockFutureGadgetLabDataService()
+    service.storage_backend = "cosmos"
+    fake = _FakeCosmosQuery()
+    service.cosmos_container = MagicMock()
+    service.cosmos_container.query_items.side_effect = fake
+    service._cosmos_query_recorder = fake
+    return service
+
+
+# ---- validator unit tests ----------------------------------------------------
+
+
+def test_validate_cosmos_filter_keys_accepts_plain_identifier_keys():
+    from db.future_gadget_lab_data_service import _validate_cosmos_filter_keys
+
+    # Plain column names — what every current caller passes.
+    _validate_cosmos_filter_keys({})
+    _validate_cosmos_filter_keys({"name": "x"})
+    _validate_cosmos_filter_keys({"name": "x", "status": "planned"})
+    _validate_cosmos_filter_keys({"_internal": 1, "abc_123": 2, "CamelCase": 3})
+
+
+def test_validate_cosmos_filter_keys_rejects_c_prefixed_or_sql_payloads():
+    from db.future_gadget_lab_data_service import _validate_cosmos_filter_keys
+
+    # Keys that aren't plain identifiers must be rejected with ValueError so
+    # an attacker can't break out of the `c.<key>` reference or inject
+    # additional clauses.
+    bad = [
+        {"c.name": "x"},                     # caller passes plain names, not c.-prefixed
+        {"name; DROP TABLE c; --": "x"},     # raw SQL payload
+        {"name = @x OR 1=1": "x"},           # tautology injection
+        {"1bad": "x"},                       # starts with a digit
+        {"has space": "x"},                  # contains whitespace
+        {"": "x"},                           # empty
+        {"a.b": "x"},                        # dotted
+    ]
+    for filters in bad:
+        with pytest.raises(ValueError, match="Invalid Cosmos DB filter keys"):
+            _validate_cosmos_filter_keys(filters)
+
+
+def test_validate_cosmos_filter_keys_rejects_non_string_keys():
+    from db.future_gadget_lab_data_service import _validate_cosmos_filter_keys
+
+    # Defensive: even if a future caller passes a non-string key (e.g. an
+    # int) we refuse rather than silently coerce it into the query.
+    with pytest.raises(ValueError, match="Invalid Cosmos DB filter keys"):
+        _validate_cosmos_filter_keys({1: "x"})
+    with pytest.raises(ValueError, match="Invalid Cosmos DB filter keys"):
+        _validate_cosmos_filter_keys({None: "x"})
+
+
+def test_validate_cosmos_order_by_accepts_valid_clauses():
+    from db.future_gadget_lab_data_service import _validate_cosmos_order_by
+
+    # The shapes the issue explicitly allows.
+    _validate_cosmos_order_by("c.timestamp")
+    _validate_cosmos_order_by("c.timestamp DESC")
+    _validate_cosmos_order_by("c.timestamp ASC")
+    _validate_cosmos_order_by("c._internal")
+    _validate_cosmos_order_by("c.column_123")
+
+
+def test_validate_cosmos_order_by_rejects_sql_payloads_and_other_clauses():
+    from db.future_gadget_lab_data_service import _validate_cosmos_order_by
+
+    # The injection shapes the issue specifically warns about — `ORDER BY`
+    # is the most permissive slot in any SQL dialect, so the regex has to
+    # be tight.
+    bad = [
+        "",                                          # empty
+        "c.timestamp; DROP c; --",                   # raw SQL
+        "c.timestamp ASC LIMIT 10",                  # extra clause
+        "c.timestamp ASC; evil",                     # trailing junk
+        "c.timestamp DESC, c.id ASC",                # multi-column
+        "timestamp DESC",                            # missing `c.` prefix
+        "C.timestamp DESC",                          # wrong alias
+        "c.[timestamp]",                             # brackets
+        "c.`timestamp`",                             # backticks
+        "c.123",                                     # numeric column
+        None,                                        # wrong type
+        42,                                          # wrong type
+    ]
+    for order_by in bad:
+        with pytest.raises(ValueError, match="Invalid Cosmos DB ORDER BY clause"):
+            _validate_cosmos_order_by(order_by)
+
+
+# ---- _query_cosmos_items integration tests -----------------------------------
+
+
+def test_query_cosmos_items_uses_module_constants_and_emits_parameterised_values():
+    service = _cosmos_service()
+
+    items = service._query_cosmos_items(
+        "experiment",
+        filters={"name": "Phone Microwave", "status": "completed"},
+        order_by="c.timestamp DESC",
+        limit=5,
+    )
+
+    assert items == []
+    assert len(service._cosmos_query_recorder.calls) == 1
+    call = service._cosmos_query_recorder.calls[0]
+
+    # `c.` prefix on the filter keys, `c.` reference for `ORDER BY`.
+    assert "c.name = @p0" in call["query"]
+    assert "c.status = @p1" in call["query"]
+    assert " ORDER BY c.timestamp DESC" in call["query"]
+    # `limit` rewrites `SELECT *` -> `SELECT TOP 5 *` in the SQL prefix
+    # constant, but the rest of the template is untouched.
+    assert call["query"].startswith("SELECT TOP 5 * FROM c WHERE ")
+    assert call["query"].endswith("ORDER BY c.timestamp DESC")
+
+    # Values stay in `parameters`, never in the query string.
+    assert call["parameters"] == [
+        {"name": "@type", "value": "experiment"},
+        {"name": "@p0", "value": "Phone Microwave"},
+        {"name": "@p1", "value": "completed"},
+    ]
+    assert "Phone Microwave" not in call["query"]
+    assert "completed" not in call["query"]
+
+
+def test_query_cosmos_items_works_without_filters_or_order_by():
+    service = _cosmos_service()
+
+    items = service._query_cosmos_items("divergence_reading")
+
+    assert items == []
+    call = service._cosmos_query_recorder.calls[0]
+    assert call["query"] == "SELECT * FROM c WHERE c.type = @type"
+    assert call["parameters"] == [{"name": "@type", "value": "divergence_reading"}]
+
+
+def test_query_cosmos_items_rejects_malicious_filter_keys_before_querying_cosmos():
+    service = _cosmos_service()
+
+    # Mimic a future caller that forwards request.json() straight into the
+    # filter dict — without validation this would let `c.type = @type AND
+    # c.evilKey = @p1` work and `evilKey = @p1` break out of the column
+    # reference entirely.
+    with pytest.raises(ValueError, match="Invalid Cosmos DB filter keys"):
+        service._query_cosmos_items(
+            "experiment",
+            filters={"name": "x", "type = @type OR 1=1": "y"},
+        )
+
+    # Validation must run before we ever talk to Cosmos.
+    assert service._cosmos_query_recorder.calls == []
+
+
+def test_query_cosmos_items_rejects_malicious_order_by_before_querying_cosmos():
+    service = _cosmos_service()
+
+    # `ORDER BY` is the most permissive slot — a `?order_by=c.timestamp DESC;
+    # <attacker payload>` from a future sortable-table endpoint would
+    # otherwise execute as raw SQL.
+    with pytest.raises(ValueError, match="Invalid Cosmos DB ORDER BY clause"):
+        service._query_cosmos_items(
+            "divergence_reading",
+            order_by="c.timestamp DESC; DROP c; --",
+        )
+
+    assert service._cosmos_query_recorder.calls == []
+
+
+def test_query_cosmos_items_rejects_invalid_input_even_without_cosmos_container():
+    # Validation runs *before* the cosmos_container check so dev / mock
+    # environments get the same defence as production.
+    service = MockFutureGadgetLabDataService()
+    service.cosmos_container = None
+
+    with pytest.raises(ValueError, match="Invalid Cosmos DB filter keys"):
+        service._query_cosmos_items("experiment", filters={"c.evil": "x"})
+
+    with pytest.raises(ValueError, match="Invalid Cosmos DB ORDER BY clause"):
+        service._query_cosmos_items("experiment", order_by="evil")
