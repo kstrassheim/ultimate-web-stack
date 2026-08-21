@@ -622,3 +622,226 @@ async def test_auth_connect_rejects_invalid_json(manager, monkeypatch, fake_webs
     # Must be logged distinctly from missing-token / non-dict so a
     # malformed-frame flood is observable in isolation.
     assert any("invalid json" in w.lower() for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_closes_on_verify_token_no_claims(
+    manager, monkeypatch, fake_websocket
+):
+    """`verify_token` returning a falsy value (the mock path's empty
+    payload branch, or a future implementation that returns ``None``)
+    must close with 1008 ``Invalid authentication token`` and stay out
+    of ``active_connections``, matching the other failure paths. The
+    pre-fix code only checked ``not auth_data.get('token')`` on the
+    payload — a ``None`` from verify_token would have leaked the
+    socket past the ``if not claims`` guard on the original
+    implementation, and could regress if the guard is moved again."""
+    import common.socket
+    from fastapi import HTTPException
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    def _verify_returns_none(token, required_roles, check_all):
+        return None
+
+    monkeypatch.setattr(common.socket, "verify_token", _verify_returns_none)
+
+    fake_websocket.received_json = {"token": "any-token"}
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008
+    assert reason == "Invalid authentication token"
+    assert fake_websocket not in manager.active_connections
+    # Distinct log so a token-passing-but-falsy-claims flood stays
+    # observable alongside the missing-token and invalid-frame floods.
+    assert any("invalid token (no claims)" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "http_status,expected_close_reason,expected_log_substr",
+    [
+        (403, "Insufficient permissions to receive data", "Receiver role check"),
+        # Any non-403 HTTPException (e.g. 401 from a JWKS failure)
+        # takes the "HTTP error" branch with the exception detail as
+        # the close reason. The operator needs to see the original
+        # detail in the log, not just the close code.
+        (401, "kid lookup failed", "HTTP error"),
+    ],
+)
+async def test_auth_connect_closes_on_verify_token_http_exception(
+    manager,
+    monkeypatch,
+    fake_websocket,
+    http_status,
+    expected_close_reason,
+    expected_log_substr,
+):
+    """HTTPException raised from verify_token must close the socket
+    with 1008 and stay out of active_connections. The 403 path uses a
+    fixed close reason (``Insufficient permissions``); every other
+    status forwards the exception detail verbatim so a 401 from the
+    JWKS lookup is distinguishable in the client logs from a generic
+    auth failure."""
+    import common.socket
+    from fastapi import HTTPException
+
+    log_calls: list[tuple[str, str]] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            log_calls.append(("warning", message))
+
+        def error(self, message):
+            log_calls.append(("error", message))
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    def _raise_http(token, required_roles, check_all):
+        raise HTTPException(status_code=http_status, detail=expected_close_reason)
+
+    monkeypatch.setattr(common.socket, "verify_token", _raise_http)
+
+    fake_websocket.received_json = {"token": "any-token"}
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008
+    assert reason == expected_close_reason
+    assert fake_websocket not in manager.active_connections
+    # Logged as warning for 403 (an expected, action-able failure),
+    # error for everything else (a backend/server problem the operator
+    # needs to investigate).
+    expected_level = "warning" if http_status == 403 else "error"
+    assert any(
+        level == expected_level and expected_log_substr in message
+        for level, message in log_calls
+    ), log_calls
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_closes_on_invalid_token_error(
+    manager, monkeypatch, fake_websocket
+):
+    """PyJWT's ``InvalidTokenError`` (signature mismatch, expired
+    exp, bad audience, malformed payload) must close with 1008
+    ``Invalid authentication token`` and stay out of
+    ``active_connections``. Logged at ``error`` level since this
+    indicates a real (non-policy) JWT verification failure that the
+    operator should see in incident triage."""
+    import common.socket
+    from jwt import InvalidTokenError
+
+    error_messages: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def error(self, message):
+            error_messages.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    def _raise_invalid_token(token, required_roles, check_all):
+        raise InvalidTokenError("Signature verification failed")
+
+    monkeypatch.setattr(common.socket, "verify_token", _raise_invalid_token)
+
+    fake_websocket.received_json = {"token": "any-token"}
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008
+    assert reason == "Invalid authentication token"
+    assert fake_websocket not in manager.active_connections
+    assert any("JWT Error" in m for m in error_messages), error_messages
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_closes_on_verify_token_unexpected_exception(
+    manager, monkeypatch, fake_websocket
+):
+    """An unexpected non-HTTPException, non-InvalidTokenError from
+    verify_token must close with 1011 (``internal error``) rather
+    than 1008 so the close code signals a server-side problem rather
+    than a policy rejection. Logged at error level with the exception
+    text so the operator can find the underlying failure in their log
+    pipeline."""
+    import common.socket
+
+    error_messages: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def error(self, message):
+            error_messages.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    def _raise_unexpected(token, required_roles, check_all):
+        raise RuntimeError("JWKS fetch timed out")
+
+    monkeypatch.setattr(common.socket, "verify_token", _raise_unexpected)
+
+    fake_websocket.received_json = {"token": "any-token"}
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1011
+    assert reason == "Authentication server error"
+    assert fake_websocket not in manager.active_connections
+    assert any("JWKS fetch timed out" in m for m in error_messages), error_messages
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_closes_on_claims_missing_sub(
+    manager, monkeypatch, fake_websocket
+):
+    """A token that validates successfully but produces claims
+    without a ``sub`` field must close with 1008 ``Invalid token
+    claims`` and stay out of ``active_connections``. The
+    `websocket.state.user` dict is the source of truth for downstream
+    code (``send_personal_message``, ``broadcast``), and an
+    unset ``sub`` would propagate as a missing-key error the first
+    time a chat message is attributed."""
+    import common.socket
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    def _verify_no_sub(token, required_roles, check_all):
+        # No ``sub`` — everything else is fine.
+        return {"name": "Anonymous", "roles": ["User"]}
+
+    monkeypatch.setattr(common.socket, "verify_token", _verify_no_sub)
+
+    fake_websocket.received_json = {"token": "any-token"}
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008
+    assert reason == "Invalid token claims"
+    assert fake_websocket not in manager.active_connections
+    # ``state.user`` must NOT be populated when the handshake is
+    # rejected after the token was accepted.
+    assert not hasattr(fake_websocket.state, "user")
+    assert any("missing required 'sub' claim" in w for w in warnings), warnings
