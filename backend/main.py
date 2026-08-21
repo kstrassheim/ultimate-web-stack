@@ -191,28 +191,21 @@ async def frontend_handler(path: str):
     # survives httpx/Starlette URL normalization) resolve to a real
     # file outside ./dist and serve it with 200.
     #
-    # Two layers of defense:
-    #   1. ``..`` segment deny-list (regex on path segments) — belt-
-    #      and-suspenders. Catches literal ``..`` segments before
-    #      any path operation runs.
-    #   2. ``os.path.realpath`` + ``startswith(base_dir)`` containment
-    #      check, the pattern CodeQL's ``py/path-injection`` query
-    #      recognises as a sanitizer for the user-controlled ``path``
-    #      value (see
-    #      https://codeql.github.com/codeql-query-help/python/py-path-injection/).
-    #      ``os.path.realpath`` collapses ``..`` segments, absolute
-    #      paths, and symlinks pointing out of dist/; ``startswith``
-    #      confirms the canonicalised candidate still lives under
-    #      ``dist_realpath``. The pathlib ``Path.resolve()`` +
-    #      ``is_relative_to()`` check on the right side of the
-    #      ``and`` is the strict-equivalent containment check and is
-    #      what the regression tests in
-    #      ``TestFrontendHandlerPathContainment`` pin end-to-end.
-    #      Both checks must pass before we serve; either failure
-    #      falls back to ``index.html`` like any other unknown SPA
-    #      route. ``fp`` is kept as a string throughout so the path
-    #      value never flows through a ``Path(...)`` constructor
-    #      while still under the user-controlled ``path``'s taint.
+    # The pattern below is exactly what CodeQL's ``py/path-injection``
+    # docs recommend (see
+    # https://codeql.github.com/codeql-query-help/python/py-path-injection/):
+    # normalise the candidate with ``os.path.realpath`` and verify
+    # containment via ``startswith(base_dir + os.sep)`` BEFORE any
+    # filesystem access. The trailing ``os.sep`` is load-bearing —
+    # it stops ``dist_realpath = /tmp/dist`` from matching a sibling
+    # ``/tmp/dist_other/secret.txt``.
+    #
+    # The regex deny-list (literal ``..`` segments) is belt-and-
+    # suspenders: it short-circuits before any path operation runs.
+    # The pathlib-based regression tests in
+    # ``TestFrontendHandlerPathContainment`` (main_test.py) exercise
+    # the same logic end-to-end against a real tmp_path dist tree
+    # to prove both layers reject path-traversal payloads.
     dist_realpath = os.path.realpath(str(dist))
     fp = os.path.join(dist_realpath, "index.html")
     if path and not re.search(r'(^|/)\.\.($|/)', path):
@@ -222,7 +215,6 @@ async def frontend_handler(path: str):
         if (
             os.path.isfile(candidate_realpath)
             and candidate_realpath.startswith(dist_realpath + os.sep)
-            and Path(candidate_realpath).is_relative_to(Path(dist_realpath))
         ):
             fp = candidate_realpath
 
