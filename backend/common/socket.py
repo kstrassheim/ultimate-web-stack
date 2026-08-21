@@ -42,81 +42,95 @@ class ConnectionManager:
     async def auth_connect(self, websocket: WebSocket):
         await websocket.accept()
 
-        # Wait for the authentication message, but bound the wait so a peer
-        # that connects and then sends nothing cannot pin this worker task
-        # (or the accepted socket) indefinitely. See issue #111.
+        registered = False
         try:
-            auth_data = await asyncio.wait_for(
-                websocket.receive_json(),
-                timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            # Surface the peer host:port so a flood of these warnings can be
-            # tied back to a specific client (e.g. for rate-limiting or
-            # firewalling). websocket.client is None in some test harnesses,
-            # so guard the format call.
-            client = websocket.client
-            peer = "unknown" if client is None else f"{client[0]}:{client[1]}"
-            logger.warning(
-                "WebSocket authentication handshake timed out after "
-                f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message from "
-                f"peer {peer}"
-            )
+            # Wait for the authentication message, but bound the wait so a peer
+            # that connects and then sends nothing cannot pin this worker task
+            # (or the accepted socket) indefinitely. See issue #111.
             try:
-                await websocket.close(code=1008, reason="Authentication timeout")
-            except Exception:
-                # The peer may have closed the socket already; nothing to do.
-                pass
-            return
+                auth_data = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                # Surface the peer host:port so a flood of these warnings can
+                # be tied back to a specific client (e.g. for rate-limiting
+                # or firewalling). Not every WebSocket implementation exposes
+                # client metadata, so keep the warning path safe.
+                client = getattr(websocket, "client", None)
+                peer = "unknown"
+                if client is not None:
+                    try:
+                        peer = f"{client[0]}:{client[1]}"
+                    except (IndexError, KeyError, TypeError):
+                        pass
+                logger.warning(
+                    "WebSocket authentication handshake timed out after "
+                    f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message from "
+                    f"peer {peer}"
+                )
+                try:
+                    await websocket.close(code=1008, reason="Authentication timeout")
+                except Exception:
+                    # The peer may have closed the socket already; nothing to do.
+                    pass
+                return
 
-        if not auth_data.get("token"):
-            logger.warning("WebSocket connection attempt with missing token")
-            await websocket.close(code=1008, reason="Missing authentication token")
-            return
+            if not auth_data.get("token"):
+                logger.warning("WebSocket connection attempt with missing token")
+                await websocket.close(code=1008, reason="Missing authentication token")
+                return
 
-        token = auth_data.get("token")
-        # Clear sensitive data from memory as soon as possible
-        auth_data.clear()
+            token = auth_data.get("token")
+            # Clear sensitive data from memory as soon as possible
+            auth_data.clear()
 
-        try:
-            # Validate token against receiver roles to allow connection
-            claims = verify_token(token, self.receiver_roles, self.check_all)
-            
-            if not claims:
-                logger.warning("WebSocket connection attempt with invalid token (no claims)")
+            try:
+                # Validate token against receiver roles to allow connection
+                claims = verify_token(token, self.receiver_roles, self.check_all)
+
+                if not claims:
+                    logger.warning("WebSocket connection attempt with invalid token (no claims)")
+                    await websocket.close(code=1008, reason="Invalid authentication token")
+                    return
+
+            except HTTPException as e:
+                if e.status_code == 403:
+                    logger.warning(f"Receiver role check failed during WebSocket authentication: {e.detail}")
+                    await websocket.close(code=1008, reason="Insufficient permissions to receive data")
+                else:
+                    logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
+                    await websocket.close(code=1008, reason=e.detail)
+                return
+            except InvalidTokenError as e:
+                logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
                 await websocket.close(code=1008, reason="Invalid authentication token")
                 return
-                
-        except HTTPException as e:
-            if e.status_code == 403:
-                logger.warning(f"Receiver role check failed during WebSocket authentication: {e.detail}")
-                await websocket.close(code=1008, reason="Insufficient permissions to receive data")
-            else:
-                logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
-                await websocket.close(code=1008, reason=e.detail)
-            return
-        except InvalidTokenError as e:
-            logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
-            await websocket.close(code=1008, reason="Invalid authentication token")
-            return
-        except Exception as e:
-            logger.error(f"Unexpected error during token verification: {str(e)}")
-            await websocket.close(code=1011, reason="Authentication server error")
-            return
-        
-        # Verify required fields exist in claims
-        if not claims.get("sub"):
-            logger.warning("WebSocket token missing required 'sub' claim")
-            await websocket.close(code=1008, reason="Invalid token claims")
-            return
-        
-        websocket.state.user = {
-            "sub": claims.get("sub"),
-            "name": claims.get("name", "unknown user"),
-            "roles": claims.get("roles", [])
-        }
-        
-        self.active_connections.append(websocket)
+            except Exception as e:
+                logger.error(f"Unexpected error during token verification: {str(e)}")
+                await websocket.close(code=1011, reason="Authentication server error")
+                return
+
+            # Verify required fields exist in claims
+            if not claims.get("sub"):
+                logger.warning("WebSocket token missing required 'sub' claim")
+                await websocket.close(code=1008, reason="Invalid token claims")
+                return
+
+            websocket.state.user = {
+                "sub": claims.get("sub"),
+                "name": claims.get("name", "unknown user"),
+                "roles": claims.get("roles", [])
+            }
+
+            self.active_connections.append(websocket)
+            registered = True
+        finally:
+            # `auth_connect` historically registered only after successful
+            # authentication. Keep that invariant explicit if another
+            # early-return or validation exception is added here later.
+            if not registered and websocket in self.active_connections:
+                self.disconnect(websocket)
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
