@@ -342,6 +342,20 @@ export class PublicClientApplication {
   }
 
   loginPopup(loginRequestParam) {
+    // Test-only hook: when the e2e test sets MOCK_LOGIN_FAIL=true in
+    // localStorage we simulate the user closing the popup so the
+    // SessionRecoveryGuard / authFlow.js failure branches can be
+    // exercised. No production code reads this flag, so this is a
+    // test affordance only — production loginPopup returns a successful
+    // result unconditionally.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_LOGIN_FAIL') === 'true'
+    ) {
+      return Promise.reject(new Error('Mock MSAL: login popup cancelled'));
+    }
+
     if (loginRequestParam && loginRequestParam.prompt === 'select_account') {
       this.activeAccountIndex =
         (this.activeAccountIndex + 1) % this._allAccounts.length;
