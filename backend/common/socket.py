@@ -76,8 +76,19 @@ class ConnectionManager:
                     pass
                 return
 
-            if not auth_data.get("token"):
-                logger.warning("WebSocket connection attempt with missing token")
+            if not isinstance(auth_data, dict) or not auth_data.get("token"):
+                # `receive_json()` returns whatever the client sent parsed as
+                # JSON, so a malicious or buggy peer can send a list, number,
+                # string, or null for the very first frame. Treat any of those
+                # the same as a missing `"token"` field: close with 1008, do
+                # not register the connection, and keep the worker task free.
+                if isinstance(auth_data, dict):
+                    logger.warning("WebSocket connection attempt with missing token")
+                else:
+                    logger.warning(
+                        f"WebSocket connection attempt with non-dict auth payload "
+                        f"({type(auth_data).__name__})"
+                    )
                 await websocket.close(code=1008, reason="Missing authentication token")
                 return
 
