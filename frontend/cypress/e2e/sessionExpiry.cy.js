@@ -47,6 +47,14 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     cy.url().should('include', '/dashboard');
     cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
 
+    // The reload button is disabled while the initial fetchData is in
+    // flight (Dashboard.jsx: `<button ... disabled={loading}>`). Without
+    // this wait, `cy.click()` retries until its default 4s actionability
+    // timeout expires and the test reports a flaky 'Timed out waiting
+    // for element to be actionable' failure even though the recovery path
+    // itself is correct. The same pattern is used in dashboard.cy.js.
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
     // Stop the dashboard from rendering cleanly: respond to the next API
     // call with the Easy Auth login HTML. This is the case described in
     // the issue body — "in-page fetches receive the login page instead
@@ -80,6 +88,10 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     // Navigate to a page that hits the API.
     cy.get('[data-testid="nav-dashboard"]').click();
     cy.url().should('include', '/dashboard');
+
+    // Same loading-overlay wait as above — the reload button is disabled
+    // until the initial fetchData's `finally { setLoading(false) }` runs.
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
 
     // Intercept with a real 401 + JSON body — this is the "genuine 401"
     // case the acceptance criterion calls out.

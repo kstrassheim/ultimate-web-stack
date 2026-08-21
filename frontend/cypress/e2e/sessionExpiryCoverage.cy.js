@@ -47,6 +47,16 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-experiments"]').click();
     cy.url().should('include', '/experiments');
 
+    // The Experiments page renders the heading only inside the
+    // `{initialised && (...)}` block in Experiments.jsx — `initialised`
+    // is set in the `finally { setInitialised(true) }` of fetchExperiments.
+    // The reload button is `disabled={loading || actionLoading}`, so
+    // clicking it before the initial fetch resolves silently times out
+    // at Cypress's 4s actionability window even though the recovery
+    // logic itself is correct. experiments.cy.js waits on the same
+    // heading before any assertions; do the same here.
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
       statusCode: 200,
       contentType: 'text/html; charset=utf-8',
@@ -102,6 +112,10 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-experiments"]').click();
     cy.url().should('include', '/experiments');
 
+    // Wait for the initial fetch to settle before clicking reload — see
+    // the comment in the first `it` for why.
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
     cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
       statusCode: 200,
       contentType: 'text/html',
@@ -130,6 +144,9 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
     cy.get('[data-testid="nav-experiments"]').click();
     cy.url().should('include', '/experiments');
 
+    // Wait for the initial fetch to settle before clicking reload.
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
     // Make BOTH endpoints serve the Easy Auth login HTML. With the
     // single-flight lock in `authFlow.reauthenticate`, both failures
     // share one loginPopup.
@@ -156,6 +173,9 @@ describe('Session-expiry and error coverage — Future Gadget Lab endpoints (iss
   it('treats a redirected response to /\\.auth/login/aad as session expiry', () => {
     cy.get('[data-testid="nav-experiments"]').click();
     cy.url().should('include', '/experiments');
+
+    // Wait for the initial fetch to settle before clicking reload.
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
 
     cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
       statusCode: 200,
