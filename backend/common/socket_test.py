@@ -483,6 +483,47 @@ async def test_broadcast_server_with_errors(manager, monkeypatch):
     # Verify an error was logged for the problematic websocket
     assert len(error_messages) == 1
     assert "Error broadcasting to client" in error_messages[0]
-    
+
     # Ensure the broadcast continued despite the error
     assert len(normal_ws.sent_jsons) == 1
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_timeout(manager, monkeypatch, fake_websocket):
+    """A client that connects but never sends an auth message must be
+    disconnected after the handshake deadline (issue #111)."""
+    import common.socket
+
+    # Shorten the module-level timeout so the test stays fast.
+    monkeypatch.setattr(common.socket, "AUTH_HANDSHAKE_TIMEOUT_SECONDS", 0.05)
+
+    # Capture the warning so we can prove the timeout was logged.
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    # Override receive_json to block until the deadline fires.
+    async def _block_forever():
+        await asyncio.Event().wait()  # never set
+        return {}  # unreachable
+
+    fake_websocket.receive_json = _block_forever
+
+    await manager.auth_connect(fake_websocket)
+
+    # The socket was accepted (FastAPI/WebSocket lifecycle) but must have
+    # been closed with a policy-violation code, and must not be tracked
+    # as an active connection.
+    assert fake_websocket.accepted is True
+    assert fake_websocket.closed is not None
+    code, reason = fake_websocket.closed
+    assert code == 1008
+    assert "timeout" in reason.lower()
+    assert fake_websocket not in manager.active_connections
+
+    # The timeout must be logged so operators can spot abuse.
+    assert any("timed out" in w for w in warnings), warnings
