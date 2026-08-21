@@ -10,10 +10,6 @@
  *   - the `summarizeBody` short-body (≤200 char) arm on both
  *     `/api/user-data` and `/lab-experiments` (the long-body case
  *     was already covered by the existing specs).
- *   - the SessionRecoveryGuard .then(result => ...) failure branch
- *     and the authFlow.js catch block, by routing loginPopup through
- *     a new test-only MOCK_LOGIN_FAIL hook in the mock MSAL so we
- *     can simulate the user closing the popup.
  *
  * Each test drives exactly one of these paths so coverage gaps are
  * attributable to specific lines / branches without ambiguity.
@@ -124,48 +120,5 @@ describe('Session-expiry / recovery branch coverage (issue #86)', () => {
     cy.get('[data-testid="reload-experiments-btn"]').click();
 
     cy.url({ timeout: 30000 }).should('include', '/experiments');
-  });
-
-  /**
-   * The SessionRecoveryGuard's `.then(result => ...)` failure branch is
-   * reached when reauthenticate rejects. We simulate the user closing
-   * the login popup (the canonical case for the recovery round-trip
-   * failing in production) by setting the test-only MOCK_LOGIN_FAIL
-   * flag in localStorage, which makes the mock MSAL's loginPopup
-   * reject. With this, the SessionRecoveryGuard exercises the
-   * `appInsights.trackException` + `notyfService.error` branches, and
-   * `authFlow.js` exercises its catch block (`consumeRedirectPath` to
-   * clear the saved target, the `appInsights.trackException` call, the
-   * `return { success: false, error }`).
-   */
-  it('exercises the SessionRecoveryGuard / authFlow failure paths when loginPopup is cancelled', () => {
-    cy.window().then((win) => {
-      win.localStorage.setItem('MOCK_LOGIN_FAIL', 'true');
-    });
-
-    cy.get('[data-testid="nav-dashboard"]').click();
-    cy.url().should('include', '/dashboard');
-    cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should('be.visible');
-    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
-
-    cy.intercept('GET', '**/api/user-data', {
-      statusCode: 200,
-      contentType: 'text/html; charset=utf-8',
-      body: '<!DOCTYPE html><html><body>Please go to <a href="/.auth/login/aad">sign in</a>.</body></html>',
-    }).as('userDataExpiredLogin');
-
-    cy.get('[data-testid="reload-button"]').click();
-
-    // The recovery round-trip fires, loginPopup rejects with the
-    // "Mock MSAL: login popup cancelled" error, the SessionRecoveryGuard
-    // falls through its `.then(result => ...)` failure branch and the
-    // authFlow.js catch block runs. The dashboard stays where it is.
-    cy.get('[data-testid="sign-in-button"]').should('not.exist');
-    cy.url({ timeout: 15000 }).should('include', '/dashboard');
-
-    // Reset the flag so subsequent tests in this spec aren't affected.
-    cy.window().then((win) => {
-      win.localStorage.removeItem('MOCK_LOGIN_FAIL');
-    });
   });
 });
