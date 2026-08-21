@@ -191,30 +191,43 @@ async def frontend_handler(path: str):
     # survives httpx/Starlette URL normalization) resolve to a real
     # file outside ./dist and serve it with 200.
     #
-    # The pattern below is exactly what CodeQL's ``py/path-injection``
-    # docs recommend (see
+    # The pattern below is the CodeQL ``py/path-injection``
+    # recommended sanitizer shape (see
     # https://codeql.github.com/codeql-query-help/python/py-path-injection/):
-    # normalise the candidate with ``os.path.realpath`` and verify
-    # containment via ``startswith(base_dir + os.sep)`` BEFORE any
-    # filesystem access. The trailing ``os.sep`` is load-bearing —
-    # it stops ``dist_realpath = /tmp/dist`` from matching a sibling
-    # ``/tmp/dist_other/secret.txt``.
+    #
+    #  1. ``os.path.realpath`` is a recognized
+    #     ``Path::PathNormalization`` — collapses ``..`` and follows
+    #     symlinks so the candidate is canonical.
+    #  2. ``candidate.startswith(dist_realpath + os.sep)`` is a
+    #     recognized ``Path::SafeAccessCheck`` barrier guard that
+    #     sanitizes the candidate on its True branch. The trailing
+    #     ``os.sep`` is load-bearing — it stops
+    #     ``dist_realpath = /tmp/dist`` from matching a sibling
+    #     ``/tmp/dist_other/secret.txt``.
+    #  3. The filesystem access (``os.path.isfile``) MUST come after
+    #     the barrier guard so the candidate is already sanitized
+    #     when it reaches the sink — CodeQL evaluates ``and`` chains
+    #     left-to-right for data flow, so putting ``isfile`` first
+    #     re-opens the alert.
     #
     # The regex deny-list (literal ``..`` segments) is belt-and-
     # suspenders: it short-circuits before any path operation runs.
-    # The pathlib-based regression tests in
-    # ``TestFrontendHandlerPathContainment`` (main_test.py) exercise
-    # the same logic end-to-end against a real tmp_path dist tree
-    # to prove both layers reject path-traversal payloads.
+    # The regression tests in ``TestFrontendHandlerPathContainment``
+    # (main_test.py) exercise the same logic end-to-end against a
+    # real tmp_path dist tree to prove both layers reject path-
+    # traversal payloads.
     dist_realpath = os.path.realpath(str(dist))
     fp = os.path.join(dist_realpath, "index.html")
     if path and not re.search(r'(^|/)\.\.($|/)', path):
         candidate_realpath = os.path.realpath(
             os.path.join(dist_realpath, path)
         )
+        # ``startswith`` first (barrier guard), then ``isfile``
+        # (sink) — see comment block above for why the order is
+        # load-bearing for the CodeQL sanitizer model.
         if (
-            os.path.isfile(candidate_realpath)
-            and candidate_realpath.startswith(dist_realpath + os.sep)
+            candidate_realpath.startswith(dist_realpath + os.sep)
+            and os.path.isfile(candidate_realpath)
         ):
             fp = candidate_realpath
 
