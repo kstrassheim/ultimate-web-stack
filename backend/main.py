@@ -194,7 +194,7 @@ async def frontend_handler(path: str):
     # Two layers of defense:
     #   1. ``..`` segment deny-list (regex on path segments) — belt-
     #      and-suspenders. Catches literal ``..`` segments before
-    #      any ``Path(...)`` constructor runs.
+    #      any path operation runs.
     #   2. ``os.path.realpath`` + ``startswith(base_dir)`` containment
     #      check, the pattern CodeQL's ``py/path-injection`` query
     #      recognises as a sanitizer for the user-controlled ``path``
@@ -210,20 +210,21 @@ async def frontend_handler(path: str):
     #      ``TestFrontendHandlerPathContainment`` pin end-to-end.
     #      Both checks must pass before we serve; either failure
     #      falls back to ``index.html`` like any other unknown SPA
-    #      route.
+    #      route. ``fp`` is kept as a string throughout so the path
+    #      value never flows through a ``Path(...)`` constructor
+    #      while still under the user-controlled ``path``'s taint.
     dist_realpath = os.path.realpath(str(dist))
-    fp = Path(dist_realpath) / "index.html"
+    fp = os.path.join(dist_realpath, "index.html")
     if path and not re.search(r'(^|/)\.\.($|/)', path):
         candidate_realpath = os.path.realpath(
             os.path.join(dist_realpath, path)
         )
-        candidate = Path(candidate_realpath)
         if (
-            candidate.is_file()
+            os.path.isfile(candidate_realpath)
             and candidate_realpath.startswith(dist_realpath + os.sep)
-            and candidate.is_relative_to(Path(dist_realpath))
+            and Path(candidate_realpath).is_relative_to(Path(dist_realpath))
         ):
-            fp = candidate
+            fp = candidate_realpath
 
         # Set correct MIME types for JavaScript modules
     media_type = None
