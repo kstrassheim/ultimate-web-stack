@@ -127,25 +127,37 @@ describe('Chat Page Functionality', () => {
 
   it('should handle long messages', () => {
     // Wait for connection to be established — match the pattern the
-    // other tests in this block use. Without this wait cy.type races
-    // the WebSocket handshake: it waits up to its default 4s for the
-    // input to become enabled, and the chat page only enables the
-    // input once the auth handshake completes on the server side. The
-    // backend's 5s AUTH_HANDSHAKE_TIMEOUT_SECONDS bound is a safety
-    // net, not a target — a legitimate happy-path auth handshake
-    // settles in single-digit milliseconds and the test just needs to
-    // wait for it before typing.
-    //
-    // Also explicitly assert the input is enabled (not just the visual
-    // status indicator) to match the check the first test in this
-    // describe block uses — that's the strongest signal the cypress
-    // actionability check will pass.
+    // other tests in this block use. The chat page flips
+    // connectionStatus to 'connected' synchronously inside the WebSocket
+    // onopen callback (frontend/src/api/socket.js:43), *before* the
+    // backend's auth_connect has had a chance to fail-close. The 5s
+    // AUTH_HANDSHAKE_TIMEOUT_SECONDS bound (backend/common/socket.py)
+    // means a failed handshake can close the socket mid-typing, and
+    // cypress's actionability check on a 500-char cy.type (500 × 10ms
+    // = 5 s of typing, sitting right at the bound) is the place that
+    // race actually surfaces.
     cy.get('.status-connected', { timeout: 10000 }).should('exist');
     cy.get('.chat-input input').should('be.enabled');
 
+    // Confirm the connection is stable past the server-side auth
+    // handshake by sending a short probe message and waiting for the
+    // server's echo. The .status-connected + .should('be.enabled')
+    // checks above only catch the *current* state — if the backend is
+    // about to fail-close in a few ms (which it would, e.g., on a
+    // non-mock token rejection), both pass and the test then races
+    // the close while cypress is still typing. Waiting for a real
+    // server echo is the strongest signal the round-trip is wired up:
+    // a half-authed socket that the backend has already closed would
+    // never produce a "You sent: ..." message.
+    const probeMessage = 'connection-probe';
+    cy.get('.chat-input input').clear().type(probeMessage);
+    cy.get('.chat-input button').click();
+    cy.contains('.message', `You sent: ${probeMessage}`, { timeout: 10000 })
+      .should('be.visible');
+
     // Test with a very long message
     const longMessage = 'A'.repeat(500);
-    cy.get('.chat-input input').type(longMessage);
+    cy.get('.chat-input input').clear().type(longMessage);
     cy.get('.chat-input button').click();
 
     // Check message was sent
