@@ -24,6 +24,10 @@ class FakeWebSocket:
         self.state = type("State", (), {})()
         self.accepted = False
         self.closed = None
+        # Mirror Starlette's WebSocket.client (host, port) tuple so the
+        # timeout-warning log path that uses websocket.client doesn't
+        # AttributeError when run against this fake.
+        self.client = ("203.0.113.7", 54321)
 
     async def accept(self):
         self.accepted = True
@@ -525,5 +529,8 @@ async def test_auth_connect_timeout(manager, monkeypatch, fake_websocket):
     assert "timeout" in reason.lower()
     assert fake_websocket not in manager.active_connections
 
-    # The timeout must be logged so operators can spot abuse.
+    # The timeout must be logged so operators can spot abuse, and the
+    # log line must include the peer host:port so the warning is
+    # actionable (issue #111 acceptance criterion).
     assert any("timed out" in w for w in warnings), warnings
+    assert any("203.0.113.7:54321" in w for w in warnings), warnings

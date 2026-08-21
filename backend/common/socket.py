@@ -51,9 +51,16 @@ class ConnectionManager:
                 timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
+            # Surface the peer host:port so a flood of these warnings can be
+            # tied back to a specific client (e.g. for rate-limiting or
+            # firewalling). websocket.client is None in some test harnesses,
+            # so guard the format call.
+            client = websocket.client
+            peer = "unknown" if client is None else f"{client[0]}:{client[1]}"
             logger.warning(
                 "WebSocket authentication handshake timed out after "
-                f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message"
+                f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message from "
+                f"peer {peer}"
             )
             try:
                 await websocket.close(code=1008, reason="Authentication timeout")
