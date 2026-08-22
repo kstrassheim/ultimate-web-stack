@@ -875,4 +875,37 @@ describe('Session expiry re-auth flow (issue #86)', () => {
       win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED');
     });
   });
+
+  // ---------------------------------------------------------------------
+  // Same acquisition-required path as the test above, but with the
+  // mock throwing a *plain* Error whose name is not
+  // `InteractionRequiredAuthError` and whose errorCode is not
+  // `interaction_required` — the e2e equivalent of MSAL's surfacing
+  // interaction-required via the errorMessage text instead of via the
+  // class / errorCode fields. api.js / futureGadgetApi.js's
+  // three-way OR detection (name === '...' / errorCode === '...' /
+  // /regex/.test(errorMessage)) has short-circuit logic that means
+  // each mock only exercises one path; this test specifically drives
+  // the regex path that the existing MOCK_INTERACTION_REQUIRED hook
+  // cannot reach.
+  // ---------------------------------------------------------------------
+
+  it('re-authenticates when the token-error message mentions interaction_required', () => {
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE', 'true');
+    });
+
+    cy.get('[data-testid="reload-button"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE');
+    });
+  });
 });

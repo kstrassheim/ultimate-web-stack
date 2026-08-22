@@ -349,6 +349,26 @@ export class PublicClientApplication {
         )
       );
     }
+
+    // Test-only hook: simulate the "name is plain BrowserAuthError but the
+    // message text mentions interaction_required" shape that some MSAL
+    // browser builds surface. This drives the regex-based detection branch
+    // in api.js / futureGadgetApi.js — the existing MOCK_INTERACTION_REQUIRED
+    // hook only hits the name-based detection because InteractionRequiredAuthError
+    // sets `name = 'InteractionRequiredAuthError'` and short-circuits the OR
+    // chain. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE') === 'true'
+    ) {
+      const err = new Error('AADSTS50076: interaction_required due to expired session (mock test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'silent_auth_error';
+      err.errorMessage = 'AADSTS50076: interaction_required due to expired session (mock test affordance)';
+      return Promise.reject(err);
+    }
+
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });
