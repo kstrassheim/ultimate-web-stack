@@ -19,7 +19,7 @@ VIRTUAL_ENV="$PWD/backend/venv" uv pip sync ./backend/requirements.txt
 
 echo -e "\033[34mInitializing Terraform\033[0m"
 terraform init
-./terraform_apply.sh
+./apply.sh
 
 # Check if the virtual environment exists
 cd backend

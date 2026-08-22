@@ -1,20 +1,20 @@
 output "env" {
-  value = var.env
+  value       = var.env
   description = "The current deployment environment"
 }
 
 output "app_name" {
-  value = var.app_name
+  value       = var.app_name
   description = "The name of the application"
 }
 
 output "web_app_name" {
-  value = "${azurerm_linux_web_app.web.name}"
+  value       = azurerm_linux_web_app.web.name
   description = "The name of the web application"
 }
 
 output "web_url" {
-  value = "https://${azurerm_linux_web_app.web.default_hostname}"
+  value       = "https://${azurerm_linux_web_app.web.default_hostname}"
   description = "The URL of the deployed web app"
 }
 
@@ -34,7 +34,7 @@ output "client_id" {
 
 output "tenant_id" {
   description = "The Tenant for the logon"
-  value       =  azuread_service_principal.enterprise.application_tenant_id
+  value       = azuread_service_principal.enterprise.application_tenant_id
 }
 
 output "oauth2_permission_scope_uri" {
@@ -55,15 +55,15 @@ output "app_roles_allowed_member_types_list" {
 }
 
 output "requested_graph_api_delegated_permissions" {
-    value = distinct(compact(flatten([
+  value = distinct(compact(flatten([
     for rra in azuread_application.reg.required_resource_access : [
       for ra in rra.resource_access : ra.type == "Scope" ? lookup(module.api_roles.user_roles_dictionary_reversed, ra.id, "unknown") : null
     ]
   ])))
-}    
+}
 
 output "requested_graph_api_application_permissions" {
-    value = distinct(compact(flatten([
+  value = distinct(compact(flatten([
     for rra in azuread_application.reg.required_resource_access : [
       for ra in rra.resource_access : ra.type == "Role" ? lookup(module.api_roles.application_roles_dictionary_reversed, ra.id, "unknown") : null
     ]
@@ -71,7 +71,7 @@ output "requested_graph_api_application_permissions" {
 }
 
 output "resource_group_name" {
-  value = data.azurerm_resource_group.rg.name
+  value       = data.azurerm_resource_group.rg.name
   description = "The name of the resource group"
 }
 

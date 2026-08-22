@@ -1,30 +1,4 @@
-# Reusable Web App Deployment
-#
-# This workflow deploys an Entra ID authenticated web application to Azure.
-#
-# USAGE:
-# ------
-# jobs:
-#   deploy:
-#     uses: ./.github/workflows/entraid_web_deployment.yml
-#     with:
-#       environment: 'dev'
-#       python_version: '3.12'
-#       node_version: '18'
-#     secrets:
-#       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-#       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-#       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-#
-# PREREQUISITES:
-# -------------
-# 1. Azure credentials configured as repository secrets
-# 2. Repository structure:
-#    - [backend]: FastAPI backend code
-#    - [frontend]: React frontend code
-#    - OpenTofu configuration in the repository root
-#
-name: Reusable Web App Deployment
+name: Reusable OpenTofu Apply
 on:
   workflow_call:
     inputs:
@@ -42,7 +16,7 @@ on:
         description: 'Node.js version'
         required: false
         type: string
-        default: '22'
+        default: '18'
       working_dir:
         description: 'Directory with OpenTofu files'
         required: false
@@ -55,7 +29,6 @@ on:
         required: true
       AZURE_SUBSCRIPTION_ID:
         required: true
-
 jobs:
   deploy:
     environment:
@@ -76,7 +49,7 @@ jobs:
           tofu_version: 1.12.6
         
       - name: Log in to Azure via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -131,7 +104,9 @@ jobs:
             tofu apply -auto-approve
           fi
 
-          tofu output -json > output.json
+          tofu output -json > output.raw
+          sed '1d' output.raw > output.f1
+          grep -v "^::" output.f1 > output.json
 
           echo "Validating JSON..."
           if jq . output.json > /dev/null 2>&1; then
@@ -150,94 +125,3 @@ jobs:
           path: ${{ inputs.working_dir }}/output.json
           retention-days: 7
           if-no-files-found: error
-      
-      # === BUILD STEPS ===
-      - name: Copy and format OpenTofu config
-        run: |
-          if [ -f "${{ inputs.working_dir }}/output.json" ]; then
-            cp ${{ inputs.working_dir }}/output.json backend/terraform.config.json
-            cp ${{ inputs.working_dir }}/output.json frontend/terraform.config.json
-          else
-            echo "Error: output.json not found!"
-            exit 1
-          fi
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          registry-url: 'https://registry.npmjs.org/'
-          
-      - name: Install backend dependencies with uv
-        run: |
-          cd backend
-          # Install uv via the standalone installer (Debian's system pip is
-          # externally-managed under PEP 668, so `pip install uv` is blocked).
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          # backend/requirements.txt is the generated, hashed lock produced by
-          #     uv pip compile requirements.in --universal --generate-hashes \
-          #         --python-version 3.12 -o requirements.txt
-          # (see backend/requirements.in for the hand-edited direct-dependency selector).
-          uv venv venv --python ${{ inputs.python_version }}
-          source venv/bin/activate
-          uv pip sync requirements.txt
-          
-      # Install frontend dependencies with retry logic
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          # Create a .deploy file to Mark vite.config to use live urls for build
-          touch .deploy
-          # Configure npm for better reliability
-          npm config set fetch-retries 5
-          npm config set fetch-retry-maxtimeout 60000
-          npm ci || npm install
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Build Frontend
-        run: |
-          cd frontend
-          npm run build
-
-      - name: Zip artifact for deployment
-        run: |
-          cd backend
-          zip -r ../release.zip ./* -x "*/mock/*" -x "mock/*" -x "*/__pycache__/*" -x "*_test.py" -x "tests/*" 
-          
-      # Upload release package as artifact
-      - name: Upload Release package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-package-${{ inputs.environment }}
-          path: release.zip
-          retention-days: 7
-          if-no-files-found: error
-      
-      # === DEPLOY STEPS ===
-      - name: Extract web app name from OpenTofu config
-        id: extract-app-name
-        run: |
-          APP_NAME=$(jq -r '.web_app_name.value' ${{ inputs.working_dir }}/output.json)
-          echo "web_app_name=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "Using web app name: $APP_NAME"
-
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
-        with:
-          app-name: ${{ steps.extract-app-name.outputs.web_app_name }}
-          package: release.zip
-          slot-name: 'Production'
-      
-      - name: Logout from Azure
-        if: always()
-        run: |
-          az logout
-          # Clean up any cached credentials
-          rm -rf ~/.azure 2>/dev/null || true

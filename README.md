@@ -113,7 +113,7 @@ Review the diff, run the test suite, and commit both files. Never hand-edit `bac
 ### Terraform Local Setup
 You have to set the following variables in the terraform var and tfvar files to attach the terraform installation to your project.
 
-#### terraform_vars.tf
+#### vars.tf
 The following variable is very important to set because it's the name of the application and many other resources throughout the whole application are dependent on it.
 - __app_name__ - the short name of the application - many names in terraform are derived from this.
 
