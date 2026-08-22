@@ -332,6 +332,82 @@ export class PublicClientApplication {
 
   // Public methods (same as in your original mock)
   acquireTokenSilent() {
+    // Test-only hook: when the e2e test sets MOCK_INTERACTION_REQUIRED=true
+    // in localStorage we simulate MSAL's InteractionRequiredAuthError so
+    // the api.js / futureGadgetApi.js acquireTokenSilent-failure branches
+    // (the SessionExpiredError publish + rethrow path) can be exercised.
+    // No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED') === 'true'
+    ) {
+      return Promise.reject(
+        new InteractionRequiredAuthError(
+          'interaction_required',
+          'Mock MSAL: interaction required (test affordance)'
+        )
+      );
+    }
+
+    // Test-only hook: simulate the "name is plain BrowserAuthError but the
+    // message text mentions interaction_required" shape that some MSAL
+    // browser builds surface. This drives the regex-based detection branch
+    // in api.js / futureGadgetApi.js — the existing MOCK_INTERACTION_REQUIRED
+    // hook only hits the name-based detection because InteractionRequiredAuthError
+    // sets `name = 'InteractionRequiredAuthError'` and short-circuits the OR
+    // chain. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE') === 'true'
+    ) {
+      const err = new Error('AADSTS50076: interaction_required due to expired session (mock test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'silent_auth_error';
+      err.errorMessage = 'AADSTS50076: interaction_required due to expired session (mock test affordance)';
+      return Promise.reject(err);
+    }
+
+    // Test-only hook: simulate a generic MSAL failure that is NOT a
+    // session-expiry signal. Real-world examples: network failure,
+    // AAD outage, configuration drift. The api.js / futureGadgetApi.js
+    // token-acquisition catch must distinguish these (ApiError, genuine
+    // failure) from the session-expiry case (SessionExpiredError,
+    // triggers re-login). Without this affordance the three-way OR
+    // detection's "no match" branch is only exercised on the
+    // unit-test side. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_TOKEN_ERROR') === 'true'
+    ) {
+      const err = new Error('Mock MSAL: generic token acquisition failure (test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'network_error';
+      err.errorMessage = 'Mock MSAL: generic token acquisition failure (test affordance)';
+      return Promise.reject(err);
+    }
+
+    // Test-only hook: MSAL signals interaction_required through the
+    // errorCode field alone (neither the error class name nor the
+    // message text matches). Some MSAL browser builds surface
+    // interaction-required via errorCode when the user is still
+    // technically authenticated but the cached refresh token has been
+    // revoked server-side. Drives the middle OR operand in the
+    // three-way detection. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_CODE') === 'true'
+    ) {
+      const err = new Error('Mock MSAL: token cache miss (test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'interaction_required';
+      err.errorMessage = 'Mock MSAL: token cache miss (test affordance)';
+      return Promise.reject(err);
+    }
+
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });
@@ -342,6 +418,20 @@ export class PublicClientApplication {
   }
 
   loginPopup(loginRequestParam) {
+    // Test-only hook: when the e2e test sets MOCK_LOGIN_FAIL=true in
+    // localStorage we simulate the user closing the popup so the
+    // SessionRecoveryGuard / authFlow.js failure branches can be
+    // exercised. No production code reads this flag, so this is a
+    // test affordance only — production loginPopup returns a successful
+    // result unconditionally.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_LOGIN_FAIL') === 'true'
+    ) {
+      return Promise.reject(new Error('Mock MSAL: login popup cancelled'));
+    }
+
     if (loginRequestParam && loginRequestParam.prompt === 'select_account') {
       this.activeAccountIndex =
         (this.activeAccountIndex + 1) % this._allAccounts.length;

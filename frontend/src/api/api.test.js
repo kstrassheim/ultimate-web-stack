@@ -1,6 +1,7 @@
 import { getUserData, getAdminData } from './api';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
+import { ApiError, SessionExpiredError, notifySessionExpired } from './errors';
 
 // Mock dependencies
 jest.mock('@/auth/entraAuth', () => ({
@@ -17,6 +18,19 @@ global.fetch = jest.fn();
 
 // Make sure we're testing the actual implementation, not the mock
 jest.unmock('./api');
+
+/** Build a fake `Response` that implements the bits `inspectResponseForExpiry` reads. */
+const fakeResponse = ({ status = 200, contentType = 'application/json', bodyText = '', redirected = false, url = 'https://test.example.com/api/foo' } = {}) => ({
+  status,
+  statusText: status === 200 ? 'OK' : 'Error',
+  ok: status >= 200 && status < 300,
+  redirected,
+  url,
+  headers: {
+    get: (name) => (name && name.toLowerCase() === 'content-type') ? contentType : null,
+  },
+  text: async () => bodyText,
+});
 
 describe('API Module', () => {
   // Add getActiveAccount to the mock instance
@@ -197,6 +211,188 @@ describe('API Module', () => {
       
       expect(appInsights.trackException).toHaveBeenCalled();
       expect(console.error).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Session expiry behaviour for issue #86
+  // -------------------------------------------------------------------
+  describe('Session expiry detection (issue #86)', () => {
+    let onExpiryCalls;
+    let unsubscribe;
+
+    beforeEach(() => {
+      onExpiryCalls = [];
+      unsubscribe = require('./errors').onSessionExpired((payload) => {
+        onExpiryCalls.push(payload);
+      });
+    });
+    afterEach(() => {
+      unsubscribe();
+      unsubscribe = null;
+    });
+
+    it('rethrows SessionExpiredError and emits a notification on HTML body (login marker)', async () => {
+      // Server replies 200 with HTML containing "Sign in to your account".
+      // This is the case described in issue #86 — Easy Auth returned the
+      // Microsoft login page where JSON was expected.
+      global.fetch.mockReset();
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 200,
+          contentType: 'text/html; charset=utf-8',
+          bodyText: '<html><head><title>Sign in to your account</title></head></html>',
+        })
+      );
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(onExpiryCalls).toHaveLength(1);
+      expect(onExpiryCalls[0].error).toBeInstanceOf(SessionExpiredError);
+    });
+
+    it('differentiates a genuine 401 from expiry (does not trigger re-login)', async () => {
+      global.fetch.mockReset();
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 401,
+          contentType: 'application/json',
+          bodyText: '{"error":"unauthorized"}',
+        })
+      );
+
+      const result = await getUserData(mockInstance);
+      expect(result).toBeUndefined();
+      expect(onExpiryCalls).toHaveLength(0);
+    });
+
+    it('differentiates a genuine 403 from expiry on admin endpoints', async () => {
+      global.fetch.mockReset();
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 403,
+          contentType: 'application/json',
+          bodyText: '{"error":"forbidden"}',
+        })
+      );
+      await expect(getAdminData(mockInstance)).rejects.toBeInstanceOf(ApiError);
+      expect(onExpiryCalls).toHaveLength(0);
+    });
+
+    it('detects a redirect to /.auth/login/aad as session expiry', async () => {
+      global.fetch.mockReset();
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 200,
+          contentType: 'text/html; charset=utf-8',
+          bodyText: '<html></html>',
+          redirected: true,
+          url: 'https://app.example.com/.auth/login/aad?post_login_redirect_url=/dashboard',
+        })
+      );
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(onExpiryCalls).toHaveLength(1);
+    });
+
+    it('emits SessionExpiredError when MSAL acquires fail with InteractionRequiredAuthError', async () => {
+      // Simulate the refresh-token-missing case from acquireTokenSilent.
+      const interactionError = Object.assign(new Error('interaction_required'), {
+        name: 'InteractionRequiredAuthError',
+        errorCode: 'interaction_required',
+      });
+      retrieveTokenForBackend.mockRejectedValueOnce(interactionError);
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(onExpiryCalls).toHaveLength(1);
+    });
+
+    it('does not classify a plain network failure as session expiry', async () => {
+      // Plain `TypeError: Failed to fetch`-style error from a network
+      // blip should NOT be misread as expiry.
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      global.fetch.mockReset();
+      global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+      const result = await getUserData(mockInstance);
+      expect(result).toBeUndefined();
+      expect(onExpiryCalls).toHaveLength(0);
+    });
+
+    it('does not classify a non-InteractionRequired token error as session expiry', async () => {
+      // A bare Error from acquireTokenSilent (not an interaction-required
+      // one) must NOT be misread as session expiry.
+      const tokenError = new Error('network down');
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockRejectedValueOnce(tokenError);
+
+      const result = await getUserData(mockInstance);
+      expect(result).toBeUndefined();
+      expect(onExpiryCalls).toHaveLength(0);
+      // Console error must have been reported for telemetry.
+      expect(console.error).toHaveBeenCalled();
+    });
+
+    it('classifies MSAL errors with errorCode === "interaction_required" as expiry', async () => {
+      // Some MSAL error shapes put the marker on errorCode rather than
+      // errorMessage. Make sure both paths trigger the SessionExpiredError
+      // path.
+      const tokenError = Object.assign(new Error('some msal shape'), {
+        name: 'MsalInteractionRequiredError',
+        errorCode: 'interaction_required',
+      });
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockRejectedValueOnce(tokenError);
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(onExpiryCalls).toHaveLength(1);
+    });
+
+    it('classifies MSAL errors whose message mentions interaction_required as expiry', async () => {
+      // MSAL browser sometimes surfaces interaction-required via the
+      // errorMessage field. Cover that branch too.
+      const tokenError = Object.assign(new Error('Some failure'), {
+        name: 'ServerError',
+        errorMessage: 'interaction_required: please sign in again',
+      });
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockRejectedValueOnce(tokenError);
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(onExpiryCalls).toHaveLength(1);
+    });
+
+    it('surfaces admin JSON parse failures as ApiError', async () => {
+      global.fetch.mockReset();
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      // Real Response with HTML body — that path goes through the
+      // SessionExpired branch. Use a genuine 200 + JSON Content-Type
+      // whose body is not JSON: that's a parse failure, not an expiry.
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 200,
+          contentType: 'application/json',
+          bodyText: 'not actually json',
+        })
+      );
+      await expect(getAdminData(mockInstance)).rejects.toBeInstanceOf(ApiError);
+      expect(onExpiryCalls).toHaveLength(0);
+    });
+
+    it('returns undefined for user-data JSON parse failures on 200 + JSON content-type', async () => {
+      global.fetch.mockReset();
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({
+          status: 200,
+          contentType: 'application/json',
+          bodyText: 'not actually json',
+        })
+      );
+      const result = await getUserData(mockInstance);
+      expect(result).toBeUndefined();
+      expect(onExpiryCalls).toHaveLength(0);
     });
   });
 });

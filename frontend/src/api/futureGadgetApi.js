@@ -1,48 +1,161 @@
 import { backendUrl } from '@/config';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
+import {
+  ApiError,
+  SessionExpiredError,
+  inspectResponseForExpiry,
+  inspectionJson,
+  notifySessionExpired,
+} from '@/api/errors';
 import { WebSocketClient } from '@/api/socket';
 
 // Base URL for all Future Gadget Lab API endpoints
 const BASE_URL = `${backendUrl}/future-gadget-lab`;
 
-// Helper function to make authenticated API requests
+const summarizeBody = (bodyText) => {
+  if (!bodyText) return '';
+  const trimmed = bodyText.trim();
+  if (trimmed.length <= 200) return trimmed;
+  return `${trimmed.slice(0, 200)}…`;
+};
+
+// Helper function to make authenticated API requests. Mirrors the
+// session-expiry / genuine-error semantics in `api.js`. The previous
+// version threw a generic `new Error(...)`; the new version raises a
+// `SessionExpiredError` (which the SessionRecoveryGuard catches and turns
+// into a re-login prompt) when the backend or proxy hands back an HTML
+// login page or a redirect chain that lands on a login URL, and raises
+// `ApiError` otherwise so the calling page can surface a real error.
 const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = null) => {
+  const operation = `${method} ${url}`;
   try {
     appInsights.trackEvent({ name: `Api Call - Future Gadget Lab - ${method} ${url}` });
-    
-    const accessToken = await retrieveTokenForBackend(
-      instance, 
-      url.includes('admin') ? ['Group.Read.All'] : []
-    );
-    
+
+    let accessToken;
+    try {
+      accessToken = await retrieveTokenForBackend(
+        instance,
+        url.includes('admin') ? ['Group.Read.All'] : []
+      );
+    } catch (tokenError) {
+      const isInteractionRequired =
+        tokenError &&
+        (tokenError.name === 'InteractionRequiredAuthError' ||
+          tokenError.errorCode === 'interaction_required' ||
+          /interaction.?required/i.test(String(tokenError.errorMessage || tokenError.message || '')));
+
+      if (isInteractionRequired) {
+        const err = new SessionExpiredError(
+          'Silent token acquisition requires user interaction',
+          {
+            detection: 'interaction-required',
+            status: 0,
+            cause: tokenError,
+          }
+        );
+        notifySessionExpired({ error: err, source: url });
+        throw err;
+      }
+
+      throw new ApiError(`Failed to acquire access token: ${tokenError.message || tokenError}`, {
+        cause: tokenError,
+        operation,
+      });
+    }
+
     const headers = {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json'
     };
-    
+
     const options = {
       method,
       headers
     };
-    
+
     if (body && (method === 'POST' || method === 'PUT')) {
       options.body = JSON.stringify(body);
     }
-    
+
     const response = await fetch(`${BASE_URL}${url}`, options);
-    
-    if (!response.ok) {
-      throw new Error(`Request failed (${response.status}): ${response.statusText}`);
+
+    const inspection = await inspectResponseForExpiry(response, { expectsJson: true });
+
+    if (inspection.looksLikeExpiry) {
+      const err = new SessionExpiredError(
+        `API responded as session expiry (${inspection.detection})`,
+        {
+          detection: inspection.detection,
+          targetUrl: inspection.finalUrl,
+          status: inspection.status,
+        }
+      );
+      appInsights.trackEvent({
+        name: 'Future Gadget Api Session Expired',
+        properties: {
+          url,
+          method,
+          detection: inspection.detection,
+          status: String(inspection.status),
+          finalUrl: inspection.finalUrl,
+          bodyPreview: summarizeBody(inspection.bodyText),
+        },
+      });
+      notifySessionExpired({ error: err, source: url });
+      throw err;
     }
-    
-    return method === 'DELETE' ? { success: true } : await response.json();
+
+    // DELETE is treated as a no-content success — none of the lab endpoints
+    // really return JSON on DELETE today.
+    if (method === 'DELETE') {
+      if (inspection.status < 200 || inspection.status >= 300) {
+        const err = new ApiError(
+          `Request failed (${inspection.status}): ${inspection.statusText || 'Unknown'}`,
+          { status: inspection.status, operation }
+        );
+        appInsights.trackException({ exception: err, properties: { operation, source: 'Future Gadget Lab API' } });
+        console.error(`Error in Future Gadget Lab API (${operation}):`, err);
+        throw err;
+      }
+      return { success: true };
+    }
+
+    if (inspection.status < 200 || inspection.status >= 300) {
+      // Genuine, non-expiry error response.
+      const err = new ApiError(
+        `Request failed (${inspection.status}): ${inspection.statusText || 'Unknown'}`,
+        { status: inspection.status, operation }
+      );
+      appInsights.trackException({
+        exception: err,
+        properties: { operation, source: 'Future Gadget Lab API' }
+      });
+      console.error(`Error in Future Gadget Lab API (${operation}):`, err);
+      throw err;
+    }
+
+    // Genuine JSON response — prefer the inspection-captured body, fall back
+    // to response.json() when the body wasn't captured (test mocks).
+    try {
+      if (inspection.bodyText !== '' || typeof response.json !== 'function') {
+        return inspectionJson(inspection);
+      }
+      return await response.json();
+    } catch (parseErr) {
+      appInsights.trackException({
+        exception: parseErr,
+        properties: { operation, source: 'Future Gadget Lab API' }
+      });
+      console.error(`Error in Future Gadget Lab API (${operation}):`, parseErr);
+      throw parseErr;
+    }
   } catch (error) {
-    appInsights.trackException({ 
-      exception: error, 
-      properties: { operation: `${method} ${url}`, source: 'Future Gadget Lab API' }
+    appInsights.trackException({
+      exception: error,
+      properties: { operation, source: 'Future Gadget Lab API' }
     });
-    console.error(`Error in Future Gadget Lab API (${method} ${url}):`, error);
+    console.error(`Error in Future Gadget Lab API (${operation}):`, error);
     throw error;
   }
 };
