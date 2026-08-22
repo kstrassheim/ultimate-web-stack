@@ -332,6 +332,23 @@ export class PublicClientApplication {
 
   // Public methods (same as in your original mock)
   acquireTokenSilent() {
+    // Test-only hook: when the e2e test sets MOCK_INTERACTION_REQUIRED=true
+    // in localStorage we simulate MSAL's InteractionRequiredAuthError so
+    // the api.js / futureGadgetApi.js acquireTokenSilent-failure branches
+    // (the SessionExpiredError publish + rethrow path) can be exercised.
+    // No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED') === 'true'
+    ) {
+      return Promise.reject(
+        new InteractionRequiredAuthError(
+          'interaction_required',
+          'Mock MSAL: interaction required (test affordance)'
+        )
+      );
+    }
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });

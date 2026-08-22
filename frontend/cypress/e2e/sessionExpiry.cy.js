@@ -656,4 +656,223 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
     cy.url({ timeout: 5000 }).should('include', '/experiments');
   });
+
+  // ---------------------------------------------------------------------
+  // Coverage for /future-gadget-lab/divergence-readings — the third
+  // Future Gadget Lab endpoint that none of the prior session-expiry
+  // specs reach. Real user scenario: the user is reading the
+  // Divergence Meter and clicks the Refresh button on the readings
+  // table. The session can have expired between visits, and the API
+  // can also return a genuine backend failure.
+  // ---------------------------------------------------------------------
+
+  it('surfaces a genuine 401 on /divergence-readings as an error without re-login', () => {
+    // The user is on the dashboard, opens the divergence-readings
+    // refresh, and the API returns a real 401 (the user's Graph
+    // token has been revoked but their cached MSAL account is still
+    // valid). The recovery flow must NOT fire — only the Easy Auth
+    // sign-in page should trigger re-login. Acceptance criterion #3.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings*', {
+      statusCode: 401,
+      contentType: 'application/json',
+      body: { error: 'unauthorized' },
+    }).as('divergenceReadings401');
+
+    cy.get('[data-testid="refresh-readings-btn"]').click();
+    cy.wait('@divergenceReadings401');
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/dashboard');
+  });
+
+  it('re-authenticates when /divergence-readings returns the Easy Auth login page', () => {
+    // Same scenario as the dashboard reload test, but driven from the
+    // Refresh button on the divergence-readings table — exercises the
+    // recovery path through `getDivergenceReadings` in
+    // `futureGadgetApi.js`, which none of the other session-expiry
+    // specs reach. The user must land back on /dashboard after
+    // re-authenticating. Acceptance criteria #1 and #2.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+    cy.get('[data-testid="worldline-status-card"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings*', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('divergenceReadingsExpired');
+
+    cy.get('[data-testid="refresh-readings-btn"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+
+  // ---------------------------------------------------------------------
+  // PUT /lab-experiments/:id coverage — the previous consolidated spec
+  // only exercised GET, POST, and DELETE on the lab-experiments
+  // endpoints. PUT goes through the same code path as POST in
+  // makeAuthenticatedRequest, but `updateExperiment` is its own
+  // exported function and the e2e layer had never reached it through
+  // the real Edit form. Two scenarios:
+  //   - Admin edits an experiment while their session is healthy and
+  //     the API returns 403 (genuine backend rejection).
+  //   - Admin edits an experiment while their session has expired and
+  //     the API returns the Easy Auth sign-in HTML.
+  // Both are real user scenarios.
+  // ---------------------------------------------------------------------
+
+  it('surfaces a genuine 403 on PUT /lab-experiments/:id as an error without re-login', () => {
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [
+        {
+          id: 'probe-exp-put-403',
+          name: 'Experiment to edit (403)',
+          description: 'drives the PUT 403 branch',
+          worldLineChange: '0.000123',
+          creator: 'Test',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }).as('listForPut403');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: {
+        id: 'probe-exp-put-403',
+        name: 'Experiment to edit (403)',
+        description: 'drives the PUT 403 branch',
+        worldLineChange: '0.000123',
+        creator: 'Test',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    }).as('getExperimentForPut403');
+
+    cy.intercept('PUT', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 403,
+      contentType: 'application/json',
+      body: { error: 'forbidden' },
+    }).as('putExperiment403');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Experiment to edit (403)');
+
+    cy.contains('tr', 'Experiment to edit (403)').within(() => {
+      cy.get('button').contains(/Edit/i).click();
+    });
+    cy.get('[data-testid="experiment-form-modal"]', { timeout: 10000 }).should('be.visible');
+
+    // Submit the form unchanged — the PUT intercept handles it.
+    cy.get('[data-testid="experiment-form-submit"]').click();
+    cy.wait('@putExperiment403');
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/experiments');
+  });
+
+  it('re-authenticates when PUT /lab-experiments/:id returns the Easy Auth login page', () => {
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [
+        {
+          id: 'probe-exp-put-expired',
+          name: 'Experiment to edit (expired)',
+          description: 'drives the PUT expiry branch',
+          worldLineChange: '0.000456',
+          creator: 'Test',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }).as('listForPutExpired');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: {
+        id: 'probe-exp-put-expired',
+        name: 'Experiment to edit (expired)',
+        description: 'drives the PUT expiry branch',
+        worldLineChange: '0.000456',
+        creator: 'Test',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    }).as('getExperimentForPutExpired');
+
+    cy.intercept('PUT', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: loginHtmlBody,
+    }).as('putExperimentExpired');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Experiment to edit (expired)');
+
+    cy.contains('tr', 'Experiment to edit (expired)').within(() => {
+      cy.get('button').contains(/Edit/i).click();
+    });
+    cy.get('[data-testid="experiment-form-modal"]', { timeout: 10000 }).should('be.visible');
+
+    cy.get('[data-testid="experiment-form-submit"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+  });
+
+  // ---------------------------------------------------------------------
+  // InteractionRequiredAuthError from acquireTokenSilent. This is the
+  // "refresh token gone" case that MSAL raises before any HTTP request
+  // is made — a real user scenario distinct from the Easy Auth HTML
+  // detection above. The api.js / futureGadgetApi.js catch block
+  // publishes a SessionExpiredError and rethrows, which the recovery
+  // guard treats the same way as an HTML response. Drives the
+  // InteractionRequiredAuthError detection branches
+  // (tokenError.name === '...', errorCode === '...', /regex/) in both
+  // api files.
+  // ---------------------------------------------------------------------
+
+  it('re-authenticates when acquireTokenSilent signals interaction-required', () => {
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    // Tell the mock MSAL to make acquireTokenSilent reject with an
+    // InteractionRequiredAuthError — no HTTP request will fire because
+    // the token acquisition happens before fetch().
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_INTERACTION_REQUIRED', 'true');
+    });
+
+    // The next /api/user-data fetch will go through the
+    // acquireTokenSilent-rejection path. The recovery flow runs and
+    // the user lands back on /dashboard after the popup completes.
+    cy.get('[data-testid="reload-button"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+
+    // Reset the flag so subsequent tests use the default token path.
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED');
+    });
+  });
 });
