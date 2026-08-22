@@ -938,4 +938,57 @@ describe('Session expiry re-auth flow (issue #86)', () => {
       win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE');
     });
   });
+
+  // ---------------------------------------------------------------------
+  // Genuine token-acquisition failure (network, AAD outage, config
+  // drift) is distinct from session expiry: the user is still
+  // authenticated, the access token just could not be obtained right
+  // now. api.js / futureGadgetApi.js must NOT fire SessionExpiredError
+  // in this case — that would pop a re-auth popup the user does not
+  // need. The catch block must fall through to ApiError and the
+  // existing toast / error UI surfaces the failure.
+  // ---------------------------------------------------------------------
+
+  it('surfaces a genuine token-acquisition failure as an error without re-login', () => {
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_TOKEN_ERROR', 'true');
+    });
+
+    cy.get('[data-testid="reload-button"]').click();
+
+    // The Sign-In button must NOT appear — the user is still
+    // authenticated; the failure is just a token-acquisition error,
+    // not a session expiry. URL stays on /dashboard.
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 10000 }).should('include', '/dashboard');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_TOKEN_ERROR');
+    });
+  });
+
+  it('surfaces a genuine token-acquisition failure on /lab-experiments without re-login', () => {
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_TOKEN_ERROR', 'true');
+    });
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 10000 }).should('include', '/experiments');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_TOKEN_ERROR');
+    });
+  });
 });

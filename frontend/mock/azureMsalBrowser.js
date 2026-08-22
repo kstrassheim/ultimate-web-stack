@@ -369,6 +369,26 @@ export class PublicClientApplication {
       return Promise.reject(err);
     }
 
+    // Test-only hook: simulate a generic MSAL failure that is NOT a
+    // session-expiry signal. Real-world examples: network failure,
+    // AAD outage, configuration drift. The api.js / futureGadgetApi.js
+    // token-acquisition catch must distinguish these (ApiError, genuine
+    // failure) from the session-expiry case (SessionExpiredError,
+    // triggers re-login). Without this affordance the three-way OR
+    // detection's "no match" branch is only exercised on the
+    // unit-test side. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_TOKEN_ERROR') === 'true'
+    ) {
+      const err = new Error('Mock MSAL: generic token acquisition failure (test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'network_error';
+      err.errorMessage = 'Mock MSAL: generic token acquisition failure (test affordance)';
+      return Promise.reject(err);
+    }
+
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });
