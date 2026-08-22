@@ -448,4 +448,84 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
     cy.url({ timeout: 5000 }).should('include', '/experiments');
   });
+
+  // ---------------------------------------------------------------------
+  // Genuine 4xx / 5xx errors on the lab endpoints must surface as
+  // errors, NOT trigger re-login. Acceptance criterion #3 is
+  // endpoint-agnostic; these tests extend the same coverage to the
+  // lab-side endpoints (which have their own DELETE-specific error
+  // branch in `futureGadgetApi.js` that the existing genuine-error
+  // paths in the main spec do not exercise).
+  // ---------------------------------------------------------------------
+
+  it('surfaces a genuine 500 on DELETE /lab-experiments/:id as an error without re-login', () => {
+    // DELETE is treated as a no-content success by futureGadgetApi.js
+    // unless the response status is outside 2xx — in which case it
+    // throws ApiError unconditionally. The Admin must see the error
+    // toast via the existing notyfService path and stay on
+    // /experiments; the recovery flow must NOT fire.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [
+        {
+          id: 'probe-exp-del',
+          name: 'Experiment to delete',
+          description: 'drives the DELETE 500 branch',
+          worldLineChange: '0.000123',
+          creator: 'Test',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }).as('listForDelete500');
+
+    cy.intercept('DELETE', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 500,
+      contentType: 'application/json',
+      body: { error: 'internal error' },
+    }).as('delete500');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Experiment to delete');
+
+    cy.contains('tr', 'Experiment to delete').within(() => {
+      cy.get('button').contains(/Delete/i).click();
+    });
+    cy.get('[data-testid="confirm-delete-btn"]').should('be.visible').click();
+    cy.wait('@delete500');
+
+    // The DELETE-500 path throws ApiError; the experiments page
+    // surfaces it via notyfService.error and stays put. No re-login.
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/experiments');
+  });
+
+  it('surfaces a genuine 401 on /worldline-history as an error without re-login', () => {
+    // The WorldlineMonitor fetches /worldline-history on mount and on
+    // the dedicated refresh button. A genuine 401 (the user's account
+    // was deprovisioned, cached session still valid) must surface as
+    // an error rather than triggering the Easy Auth re-login flow.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+    cy.get('[data-testid="worldline-history-card"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/worldline-history', {
+      statusCode: 401,
+      contentType: 'application/json',
+      body: { error: 'unauthorized' },
+    }).as('worldlineHistory401');
+
+    cy.get('[data-testid="refresh-history-btn"]').click();
+    cy.wait('@worldlineHistory401');
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/dashboard');
+  });
 });
