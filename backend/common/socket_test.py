@@ -49,6 +49,83 @@ class FakeWebSocket:
 def manager():
     return ConnectionManager()
 
+
+def test_default_constructor_does_not_share_role_lists():
+    """Regression test for issue #110.
+
+    Two ``ConnectionManager`` instances built with no arguments must not
+    share the same role-list object. With the pre-fix default of
+    ``receiver_roles: List[str] = []``, the empty list was created once
+    at function-definition time and stored on every instance; any future
+    ``.append()`` on one manager's ``receiver_roles`` or ``sender_roles``
+    would silently leak into every other manager — a cross-instance
+    bug that is genuinely hard to find in production. The fix moves
+    the default to ``None`` and normalises to a fresh list inside
+    ``__init__``; this test fails on the pre-fix code and passes on
+    the post-fix code.
+    """
+    a = ConnectionManager()
+    b = ConnectionManager()
+
+    # Each manager owns its own list objects, not the shared default.
+    assert a.receiver_roles is not b.receiver_roles
+    assert a.sender_roles is not b.sender_roles
+
+    # Mutating one manager must not affect the other.
+    a.receiver_roles.append("Admin")
+    a.sender_roles.append("Editor")
+    assert b.receiver_roles == []
+    assert b.sender_roles == []
+
+
+def test_explicit_none_constructor_is_equivalent_to_default():
+    """Regression test for issue #110.
+
+    ``worldline_connection_manager = ConnectionManager(
+        receiver_roles=None, ...)`` already passes ``None`` from the
+    call site — the pre-fix code happened to accept it because
+    ``__init__`` just stored whatever was passed. The fix makes
+    ``None`` the canonical default at the signature level, so the
+    explicit ``None`` call must continue to produce the same shape
+    as the bare-default call: a fresh list (not ``None``), empty by
+    default, and isolated from any other manager.
+    """
+    explicit = ConnectionManager(receiver_roles=None, sender_roles=None)
+    default = ConnectionManager()
+
+    assert explicit.receiver_roles == default.receiver_roles == []
+    assert explicit.sender_roles == default.sender_roles == []
+    assert explicit.receiver_roles is not explicit.sender_roles
+
+    explicit.receiver_roles.append("Admin")
+    assert default.receiver_roles == []
+
+
+def test_explicit_lists_are_copied_not_aliased():
+    """Regression test for issue #110.
+
+    A caller that passes a list explicitly must not have that list
+    aliased into the manager. Mutating ``manager.receiver_roles``
+    afterwards would otherwise mutate the caller's list — surprising
+    and a classic source of cross-talk between construction sites.
+    """
+    receiver = ["Admin"]
+    sender = ["Editor"]
+    manager = ConnectionManager(receiver_roles=receiver, sender_roles=sender)
+
+    assert manager.receiver_roles == ["Admin"]
+    assert manager.sender_roles == ["Editor"]
+    assert manager.receiver_roles is not receiver
+    assert manager.sender_roles is not sender
+
+    manager.receiver_roles.append("User")
+    assert receiver == ["Admin"], (
+        "caller's receiver_roles list was mutated through the manager"
+    )
+    assert sender == ["Editor"], (
+        "caller's sender_roles list was mutated through the manager"
+    )
+
 @pytest.fixture
 def fake_websocket():
     return FakeWebSocket()

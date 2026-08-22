@@ -6,7 +6,7 @@ import jwt
 from jwt import InvalidTokenError  # base class for all PyJWT decode errors
 from fastapi import HTTPException, status
 import requests
-from typing import List
+from typing import List, Optional
 
 # Before the verify_token function, initialize the JWKS client
 
@@ -42,20 +42,31 @@ else:
     azure_scheme = MockAzureAuthScheme(logger)
 
 
-def verify_token(token: str, required_roles: List[str] = [], check_all: bool = False):
+def verify_token(
+    token: str,
+    required_roles: Optional[List[str]] = None,
+    check_all: bool = False,
+):
     """Verify a JWT token and return its claims
-    
+
     Args:
         token: The JWT token string
         required_roles: Optional list of roles to check against token claims
         check_all: If True, user must have ALL roles; if False, ANY role is sufficient
-    
+
     Returns:
         The token claims dictionary if validation succeeds
-    
+
     Raises:
         HTTPException: If token validation fails or roles check fails
     """
+    # Normalize the default away from `None` so the body always operates on
+    # a list. ``None`` is the function-signature default (avoids the mutable-
+    # default trap where one shared list leaks across calls), but every
+    # ``if required_roles`` / ``for role in required_roles`` site below
+    # expects a list.
+    if required_roles is None:
+        required_roles = []
     try:
         # Use the same condition pattern for consistency
         if tfconfig["env"]["value"] != "dev" or not mock_enabled:
