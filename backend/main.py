@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+from contextlib import asynccontextmanager
 import os.path
 import re
 import uvicorn
@@ -100,14 +101,90 @@ from api.api import api_router
 from api.future_gadget_api import future_gadget_api_router
 # Check MOCK environment variable
 mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
+
+# ---------------------------------------------------------------------
+# Future Gadget Lab test-data seeding (issue #112)
+#
+# Test data used to be generated as a side effect of importing this
+# module:
+#
+#   if not fgl_service.get_all_experiments() and not fgl_service.get_all_divergence_readings():
+#       test_data = generate_test_data(fgl_service)
+#       print(...)
+#
+# That meant *every* import of ``backend.main`` (unit tests, tooling
+# scripts, ``--reload`` picking the module back up) wrote to the data
+# store, and under a multi-worker server every worker raced on the
+# emptiness check. It also routed messages through ``print`` instead of
+# the configured logger.
+#
+# Seeding now lives in the FastAPI ``lifespan`` startup hook below, so
+# it runs exactly once per application start. Whether it runs at all is
+# controlled by the ``SEED_FGL_TEST_DATA`` env var:
+#
+#   "true"   - always seed if the store is empty (handy for a first
+#              deploy to a fresh Cosmos container).
+#   "false"  - never seed.
+#   "auto"   (default) - seed iff MOCK mode is enabled, matching the
+#              pre-#112 dev behaviour where import-time seeding ran
+#              only under MOCK=true.
+#
+# Importing ``backend.main`` performs NO writes now — the helper is
+# only invoked from inside ``lifespan`` after the app starts serving.
+# ---------------------------------------------------------------------
+_SEED_FGL_TEST_DATA_ENV = "SEED_FGL_TEST_DATA"
+
+
+def _should_seed_fgl_test_data() -> bool:
+    """Decide whether the lifespan startup hook should seed FGL test data.
+
+    See the module-level comment on ``_SEED_FGL_TEST_DATA_ENV`` for the
+    full semantics. The env-var lookup is done here (not at module
+    import time) so tests can flip the variable between cases without
+    re-importing ``main``.
+    """
+    raw = os_environ.get(_SEED_FGL_TEST_DATA_ENV, "auto").strip().lower()
+    if raw == "true":
+        return True
+    if raw == "false":
+        return False
+    return mock_enabled
+
+
 # Init FastAPI - hide API discovery surface (/docs, /redoc, /openapi.json)
 # in non-dev environments so the schema, Entra app id, Cosmos endpoint,
 # and every privileged route are not exposed to anonymous callers (#95).
 is_dev = tfconfig["env"]["value"] == "dev"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan hook.
+
+    Startup: optionally seed the Future Gadget Lab data store with
+    sample experiments / divergence readings (issue #112). The seed
+    itself is a no-op if the store already contains data, so it is
+    safe to leave the env var at its default in any environment
+    where MOCK mode is on — it will only fill an empty store on
+    first start.
+
+    Shutdown: nothing to do; the lifespan completes silently.
+    """
+    if _should_seed_fgl_test_data():
+        # Imported lazily so the lifespan import doesn't pull the
+        # data service (and its Cosmos client) at module scope before
+        # the user has had a chance to set env vars.
+        from db.future_gadget_lab_data_service import seed_test_data_if_empty
+
+        seed_test_data_if_empty(fgl_service, _logger)
+    yield
+
+
 app = FastAPI(
     docs_url="/docs" if is_dev else None,
     redoc_url="/redoc" if is_dev else None,
     openapi_url="/openapi.json" if is_dev else None,
+    lifespan=lifespan,
 )
 
 from common.log import log_azure_exporter
@@ -129,17 +206,13 @@ app.include_router(api_router, prefix="/api")
 # Register Future gadget Router
 app.include_router(future_gadget_api_router, prefix="/future-gadget-lab")
 
-# Generate test data for Future Gadget Lab
-from db.future_gadget_lab_data_service import generate_test_data
-from api.future_gadget_api import fgl_service
-
-# Only generate test data if the database is empty
-if not fgl_service.get_all_experiments() and not fgl_service.get_all_divergence_readings():
-    test_data = generate_test_data(fgl_service)
-    print("=== Generated Future Gadget Lab Test Data ===")
-    print(f"Created {len(test_data['experiments'])} experiments")
-    print(f"Created {len(test_data['divergence_readings'])} divergence readings")
-    print("===========================================")
+# Bring the FGL data service instance into this module's namespace
+# so the lifespan hook above can reach it. The import has been moved
+# here (after the routers are registered) because creating the
+# service also opens a Cosmos connection / in-memory TinyDB — doing
+# it at import time was the original sin that issue #112 fixes, and
+# keeping it down here keeps the import surface minimal.
+from api.future_gadget_api import fgl_service  # noqa: E402,F401
 
 @app.get("/health")
 @app.head("/health")
