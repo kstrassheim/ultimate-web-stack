@@ -1,7 +1,7 @@
 from fastapi import WebSocket, WebSocketDisconnect, HTTPException
 from jwt import InvalidTokenError
 from common.auth import verify_token
-from typing import List
+from typing import List, Optional
 from common.log import logger
 import asyncio
 import datetime
@@ -17,21 +17,27 @@ AUTH_HANDSHAKE_TIMEOUT_SECONDS = 5.0
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(
-        self, 
-        receiver_roles: List[str] = [], 
-        sender_roles: List[str] = [], 
-        check_all: bool = False
+        self,
+        receiver_roles: Optional[List[str]] = None,
+        sender_roles: Optional[List[str]] = None,
+        check_all: bool = False,
     ):
         """Initialize a connection manager with role-based permissions
-        
+
         Args:
             receiver_roles: Roles allowed to connect and receive data
             sender_roles: Roles allowed to send data via this WebSocket
             check_all: If True, require all roles; if False, any matching role is sufficient
         """
         self.active_connections: list[WebSocket] = []
-        self.receiver_roles = receiver_roles
-        self.sender_roles = sender_roles
+        # Normalize the default away from ``None`` so ``self.receiver_roles``
+        # / ``self.sender_roles`` are always lists. The signature default is
+        # ``None`` to avoid the mutable-default-argument trap (one shared
+        # list object across every manager constructed without arguments);
+        # mutating ``self.sender_roles`` on one instance would otherwise leak
+        # into every other instance.
+        self.receiver_roles = list(receiver_roles) if receiver_roles is not None else []
+        self.sender_roles = list(sender_roles) if sender_roles is not None else []
         self.check_all = check_all
 
     # Connect without authentication

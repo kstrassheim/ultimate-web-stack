@@ -314,6 +314,74 @@ class TestVerifyTokenMockPath:
         claims = mock_path_config.verify_token(token, required_roles=["admin"])
         assert claims is not None
 
+    def test_default_required_roles_is_none_safe(self, mock_path_config):
+        """Regression test for issue #110.
+
+        ``verify_token`` had ``required_roles: List[str] = []`` as its
+        default — the classic Python mutable-default-argument trap. The
+        default has been moved to ``None`` and normalised to ``[]``
+        inside the body. This test verifies the post-fix contract:
+
+          1. Calling with no ``required_roles`` works (default behaviour
+             unchanged from the caller's perspective).
+          2. Calling with ``required_roles=None`` explicitly is equivalent.
+          3. Two consecutive calls without args do not leak state — the
+             function must not have captured the default list into a
+             module-level or per-instance mutable that a future caller
+             could observe.
+        """
+        token_with_roles = _build_test_jwt(
+            {"sub": "u", "name": "Alice", "roles": ["Admin"]}
+        )
+        token_without_roles = _build_test_jwt(
+            {"sub": "u", "name": "Bob", "roles": []}
+        )
+
+        # 1. Bare default still works.
+        claims_default = mock_path_config.verify_token(token_with_roles)
+        assert claims_default["sub"] == "u"
+
+        # 2. Explicit ``None`` is equivalent to the default.
+        claims_none = mock_path_config.verify_token(
+            token_with_roles, required_roles=None
+        )
+        assert claims_none == claims_default
+
+        # 3. Two consecutive bare-default calls with a no-role token still
+        # return claims (no stored default list, no cross-call leakage).
+        claims_a = mock_path_config.verify_token(token_without_roles)
+        claims_b = mock_path_config.verify_token(token_without_roles)
+        assert claims_a["sub"] == "u"
+        assert claims_b["sub"] == "u"
+
+    def test_default_required_roles_skips_role_check(self, mock_path_config):
+        """Regression test for issue #110.
+
+        With the pre-fix default ``required_roles=[]``, the body's
+        ``if required_roles:`` was always falsy, so the role check
+        was always skipped. The post-fix default is ``None``,
+        normalised to ``[]`` inside the body — the same ``if
+        required_roles:`` predicate must still be falsy after
+        normalisation, so behaviour for callers that pass no roles
+        is unchanged.
+        """
+        token = _build_test_jwt(
+            {"sub": "u", "name": "Alice", "roles": []}
+        )
+        # No role check happens — call must succeed even though the
+        # token's roles would not satisfy any realistic required set.
+        claims = mock_path_config.verify_token(token)
+        assert claims is not None
+
+        # Same shape when explicitly passing ``None``.
+        claims_none = mock_path_config.verify_token(token, required_roles=None)
+        assert claims_none is not None
+
+        # And same shape when explicitly passing ``[]`` — the legacy
+        # literal that callers used to default to.
+        claims_empty = mock_path_config.verify_token(token, required_roles=[])
+        assert claims_empty is not None
+
 
 class TestVerifyTokenRealPath:
     """Tests for verify_token in production (PyJWT + JWKS) mode.
