@@ -118,7 +118,13 @@ describe('Divergence readings CSV export', () => {
       cy.get('[data-testid="export-readings-csv-btn"]')
         .should('be.visible')
         .and('not.be.disabled')
-        .and('contain.text', /export.*csv/i);
+        // `contain.text` takes a STRING. Handed a regex it compares the
+        // button's text to the RegExp object itself, which can never match —
+        // so this failed with `-'Export CSV'` against `+/export.*csv/i` while
+        // the button was rendering perfectly. `match` is the assertion that
+        // takes a pattern, and it needs the text as the subject.
+        .invoke('text')
+        .should('match', /export.*csv/i);
     });
   });
 
