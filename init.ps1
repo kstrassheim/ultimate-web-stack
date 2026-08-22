@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 Write-Host "Initializing Terraform"
 # Uncomment if needed
 terraform init
-.\terraform_apply.cmd
+.\apply.cmd
 
 # TODO check for az login
 Write-Host "Initializing Frontend"

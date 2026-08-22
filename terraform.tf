@@ -1,28 +1,28 @@
 # get api role dictionaries
-module api_roles {
+module "api_roles" {
   source = "./modules/azure_api_roles"
 }
 
 locals {
   # apply resouce naming conventions
   # remove environment from the name in prod
-  resourceGroupName = var.env == "prod" ? var.app_name : "${var.app_name}-${var.env}"
+  resourceGroupName                 = var.env == "prod" ? var.app_name : "${var.app_name}-${var.env}"
   deploymentUserManagedIdentityName = var.env == "prod" ? "github-${var.app_name}" : "github-${var.app_name}-${var.env}"
-  planName = var.env == "prod" ? replace(replace(module.naming.app_service_plan.name, "_", "-"), "-prod", "") : replace(module.naming.app_service_plan.name, "_", "-")
-  webName = var.env == "prod" ? replace(replace("${var.app_name}", "_", "-"), "-prod", "") : "${replace("${var.app_name}-${var.env}", "_", "-")}"
-  insightsName = var.env == "prod" ? "${replace("${var.app_name}-insights", "_", "-")}" : "${replace("${var.app_name}-insights-${var.env}", "_", "-")}"
-  insightsLogAnalyticsName = var.env == "prod" ? "${replace("${var.app_name}-log-analytics", "_", "-")}" : "${replace("${var.app_name}-log-analytics-${var.env}", "_", "-")}"
-  appRegName = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
+  planName                          = var.env == "prod" ? replace(replace(module.naming.app_service_plan.name, "_", "-"), "-prod", "") : replace(module.naming.app_service_plan.name, "_", "-")
+  webName                           = var.env == "prod" ? replace(replace("${var.app_name}", "_", "-"), "-prod", "") : "${replace("${var.app_name}-${var.env}", "_", "-")}"
+  insightsName                      = var.env == "prod" ? "${replace("${var.app_name}-insights", "_", "-")}" : "${replace("${var.app_name}-insights-${var.env}", "_", "-")}"
+  insightsLogAnalyticsName          = var.env == "prod" ? "${replace("${var.app_name}-log-analytics", "_", "-")}" : "${replace("${var.app_name}-log-analytics-${var.env}", "_", "-")}"
+  appRegName                        = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
 }
 
 # Reference the resource group of this project
 data "azurerm_resource_group" "rg" {
-  name = local.resourceGroupName   // name of your resource group
+  name = local.resourceGroupName // name of your resource group
 }
 
 // Reference to assign the ownership to the app registration
 data "azurerm_user_assigned_identity" "deploy_managed_identity" {
-  name = local.deploymentUserManagedIdentityName
+  name                = local.deploymentUserManagedIdentityName
   resource_group_name = data.azurerm_resource_group.rg.name
 }
 
@@ -32,17 +32,17 @@ data "azuread_service_principal" "deploy_managed_identity_pricipal" {
 
 // Create an App Service Plan (Linux)
 resource "azurerm_service_plan" "plan" {
-  name                = local.planName
+  name = local.planName
   #name                = module.naming.app_service_plan.name_unique
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = data.azurerm_resource_group.rg.location
   os_type             = "Linux"
-  sku_name            = var.web_plan_sku 
+  sku_name            = var.web_plan_sku
 }
 
 resource "azurerm_linux_web_app" "web" {
   # remove prod fom website naming on prod
-  name                = local.webName
+  name = local.webName
   #name                = replace(module.naming.app_service.name,"_","-") # nomal naming with prod
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = azurerm_service_plan.plan.location
@@ -56,14 +56,14 @@ resource "azurerm_linux_web_app" "web" {
   site_config {
     always_on = false # in free version, always_on is not supported
     application_stack {
-        python_version = "3.12"
+      python_version = "3.12"
     }
 
     # Startup command for FASTAPI
-    app_command_line  = "gunicorn --worker-class uvicorn.workers.UvicornWorker --timeout 600 --access-logfile '-' --error-logfile '-' main:app"
-    
+    app_command_line = "gunicorn --worker-class uvicorn.workers.UvicornWorker --timeout 600 --access-logfile '-' --error-logfile '-' main:app"
+
     # Health check configuration
-    health_check_path = "/health"
+    health_check_path                 = "/health"
     health_check_eviction_time_in_min = 10
   }
 
@@ -71,7 +71,7 @@ resource "azurerm_linux_web_app" "web" {
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.log.instrumentation_key
     // !!! IMPORTANT or python site will not build !!!
-    "SCM_DO_BUILD_DURING_DEPLOYMENT"= true
+    "SCM_DO_BUILD_DURING_DEPLOYMENT" = true
   }
 }
 
@@ -87,15 +87,15 @@ resource "azurerm_application_insights" "log" {
   name                = local.insightsName
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = data.azurerm_resource_group.rg.location
-  workspace_id = azurerm_log_analytics_workspace.log_workspace.id
+  workspace_id        = azurerm_log_analytics_workspace.log_workspace.id
   application_type    = "web"
 }
 
 # Create an App Registration for the Entra ID Logon managed by the frontend
 resource "azuread_application" "reg" {
   # remove the name prod from the prod version
-  display_name     = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
-  logo_image       = filebase64("${path.module}/frontend/logo_src/${var.env}/logo.png")
+  display_name = var.env == "prod" ? "${replace(var.app_name, "_", "-")}" : "${replace(var.app_name, "_", "-")}-${var.env}"
+  logo_image   = filebase64("${path.module}/frontend/logo_src/${var.env}/logo.png")
 
   # !! ABSOLUTELY IMPORTANT OTHERWISE - IDENTIFIER HAS TO BE CONFIGURED IN SEPERATE OBJECT BELOW AND THIS HAS TO BE SET !!
   # !! OTHERWISE IT WILL RECREATE AGAIN AND AGAIN WITHOUT SETTING THE IDENTIFIER URI WHAT WILL DISABLE AUTHENTICATION FOR CLIENTS !!!
@@ -104,9 +104,9 @@ resource "azuread_application" "reg" {
       identifier_uris,
     ]
   }
-  
+
   # Assign the ownership to the deployment managed identity or you will get conflicts between local and pipeline deployments
-  owners           = [data.azuread_service_principal.deploy_managed_identity_pricipal.object_id]
+  owners = [data.azuread_service_principal.deploy_managed_identity_pricipal.object_id]
   // Single Tenant
   sign_in_audience = "AzureADMyOrg"
 
@@ -155,12 +155,12 @@ resource "azuread_application" "reg" {
     resource_app_id = "00000003-0000-0000-c000-000000000000" # Microsoft Graph
 
     resource_access {
-      id   = lookup(module.api_roles.user_roles_dictionary,"User.Read.All")
+      id   = lookup(module.api_roles.user_roles_dictionary, "User.Read.All")
       type = lookup(module.api_roles.role_type_mapping, "Delegated")
     }
 
     resource_access {
-      id   = lookup(module.api_roles.user_roles_dictionary,"Group.Read.All")
+      id   = lookup(module.api_roles.user_roles_dictionary, "Group.Read.All")
       type = lookup(module.api_roles.role_type_mapping, "Delegated")
     }
 
@@ -187,5 +187,5 @@ resource "azuread_service_principal" "enterprise" {
   client_id = azuread_application.reg.client_id
 
   # Allow only assigned users to login to this application
-  app_role_assignment_required  = true
+  app_role_assignment_required = true
 }
