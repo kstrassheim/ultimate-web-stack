@@ -37,11 +37,11 @@
     "@azure/msal-browser": "^5.8.0",
     "@azure/msal-react": "^5.3.1",
     "@microsoft/applicationinsights-web": "^3.4.3",
-    "apexcharts": "^5.10.6",
+    "apexcharts": "^5.16.0",
     "bootstrap": "^5.3.8",
     "notyf": "^3.10.0",
     "react": "^19.2.7",
-    "react-apexcharts": "^2.1.0",
+    "react-apexcharts": "^2.1.1",
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.2.7",
     "react-router": "^8.3.0"
