@@ -327,7 +327,7 @@ Create an empty resource group and make sure that you are at least Contributor o
       ``` 
 
 ## Connect Github Setup
-The github actions require permissions to create the structure with terraform. Do the following steps to create and assign a ServicePrincipal to that specific Github Project' Environment if necessary.
+The github actions require permissions to create the structure with OpenTofu. Do the following steps to create and assign a ServicePrincipal to that specific Github Project' Environment if necessary.
 1. In Azure Open the Managed Identity go to Settings/Federated Credentials and click Add Credential and select the Federated credential scenario "Configure a Github issued token..."
 2. Add your Organization/Personal Accountname, enter the repository name and __environment__ name as Entity. Also choose a credential name for it.
 3. Click on Add
@@ -344,7 +344,7 @@ The github actions require permissions to create the structure with terraform. D
 8. make sure that you have set up the environment name in any job that requires these credentials.
   ```yaml
     jobs:
-      terraform:
+      tofu:
         environment:
           name: 'dev'
   ```
@@ -358,9 +358,9 @@ The github actions require permissions to create the structure with terraform. D
   ```
 10. You are done here. Run the Action and check if it can authorize on azure for it.
 
-## Terraform Azure Storage Setup
-When you have a Storage Account for all Terraform states of all projects on your Tenant then create a Container `[projectname_env]` and
-1. Check if terraform azurerm backend is configured with use_azuread_auth = true
+## OpenTofu Azure Storage Setup
+When you have a Storage Account for all OpenTofu states of all projects on your Tenant then create a Container `[projectname_env]` and
+1. Check if the OpenTofu azurerm backend is configured with use_azuread_auth = true
 2. Assign yourself as **Storage Data Contributor** to the container
 3. Assign the Github Managed Identity also **Storage Data Contributor** Permissions to the container
 
@@ -386,11 +386,11 @@ To generate a production compile of the frontend
 ## Adding Users to Application and commit requested Permissions
 To enable users joining your application you have to do following
 1. Go to Azure Portal and Navigate to Entra Id -> Enterprise Applications
-2. Select the generated Application (following the terraform vars it is [app_name]-dev - with dashes not underlines)  
+2. Select the generated Application (following the OpenTofu vars it is [app_name]-dev - with dashes not underlines)  
 3. Go to Manage -> Users and groups
 4. Add the users and groups which should have access to the application and select also their Role (in this example its "User" or "Admin"). It will take some while so refresh the page couple of times
 5. To enable the requested permissions go to Entra Id - App registrations - All Applications
-6. Select the generated Application (following the terraform vars it is [app_name]-dev - with dashes not underlines)  
+6. Select the generated Application (following the OpenTofu vars it is [app_name]-dev - with dashes not underlines)  
 7. Go to Manage -> API Permissions
 8. Click on "Grant admin consent for [Your Tenant Name]" and confirm
 9. The users should now be able to log on to your application and only able to navigate within their role.
