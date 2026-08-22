@@ -381,4 +381,71 @@ describe('Session expiry re-auth flow (issue #86)', () => {
 
     cy.url({ timeout: 30000 }).should('include', '/experiments');
   });
+
+  // ---------------------------------------------------------------------
+  // Genuine backend malfunctions: the recovery flow must NOT trigger
+  // re-login when the API genuinely returns a malformed or non-JSON
+  // body. Issue #86 is specifically about the Easy Auth sign-in page
+  // being mistaken for a real API response — a malformed JSON body on
+  // a JSON endpoint is a different failure mode (a server bug, a
+  // proxy interference) and the user should see the existing
+  // 'no data' empty state, not a re-login popup.
+  // ---------------------------------------------------------------------
+
+  it('treats a malformed JSON body on /api/user-data as a genuine backend failure', () => {
+    // The backend (or a misconfigured proxy) returns 200 OK with a JSON
+    // Content-Type but the body is not valid JSON. The dashboard must
+    // render the existing empty state without firing the recovery flow
+    // (no SessionExpiredError, no loginPopup). The `inspectionJson`
+    // helper throws ApiError for non-JSON bodies, and `getUserData`
+    // swallows non-admin failures and returns undefined.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: 'this is not JSON',
+    }).as('malformedUserData');
+
+    cy.get('[data-testid="reload-button"]').click();
+    cy.wait('@malformedUserData');
+
+    // The recovery flow must NOT fire. A genuine 401/5xx/parse-error
+    // leaves the user on the same page; only the Easy Auth sign-in
+    // page should trigger re-login. Wait long enough for the recovery
+    // flow to have started (loginPopup takes a few hundred ms in mock
+    // mode) and confirm the Sign-In button is still gone.
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/dashboard');
+  });
+
+  it('treats a malformed JSON body on /lab-experiments as a genuine backend failure', () => {
+    // Same scenario as the dashboard test, but on the experiments list.
+    // `getAllExperiments` mirrors `getUserData`'s behaviour: 200 OK +
+    // application/json + non-JSON body hits the parse-error branch in
+    // `futureGadgetApi.js`, which throws `ApiError` (since this is a
+    // lab endpoint, not a user-data endpoint). The UI surfaces the
+    // error via the existing notyfService.error toast rather than
+    // re-login.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: 'not json',
+    }).as('malformedExperiments');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.wait('@malformedExperiments');
+
+    // No re-login — the parse error must not be mistaken for expiry.
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/experiments');
+  });
 });
