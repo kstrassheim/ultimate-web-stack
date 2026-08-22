@@ -81,15 +81,29 @@ const EntraProfile = () => {
   const logonFunc = async (forcePopup = false) => {
     setRecoveryInFlight(true);
     try {
-      // Deleting the existing path means we use the page the user is
-      // currently on (which is "/" if they were not redirected there).
-      window.sessionStorage.removeItem('redirectPath');
+      // Do NOT touch sessionStorage.redirectPath here. `reauthenticate`
+      // (called below) only overwrites the saved path when `target` is
+      // truthy — passing `target: null` makes it preserve whatever was
+      // already stored. That matters for two cases:
+      //
+      //   1. ProtectedRoute wrote `redirectPath = '/admin'` (or similar)
+      //      when an unauthenticated user was redirected to
+      //      /access-denied from a guarded route; the manual Sign-In
+      //      button must land them on the originally requested page,
+      //      not on '/'.
+      //   2. SessionRecoveryGuard saved the user's current location when
+      //      an in-flight API call detected an expired session; the
+      //      manual Sign-In button must respect that save so the user
+      //      returns to the page where they were when the session died.
+      //
+      // `reauthenticate` calls `consumeRedirectPath()` after `loginPopup`
+      // succeeds, which reads the saved value, removes it from
+      // sessionStorage, and navigates there. When nothing is stored
+      // (the first-sign-in case), `consumeRedirectPath` falls back to
+      // '/' — the correct destination for a fresh login.
       const result = await reauthenticate(instance, {
         navigate,
         forceSelectAccount: forcePopup,
-        // We always want to drop the user back on whatever page they
-        // were trying to reach — the SessionRecoveryGuard may already
-        // have saved a value, so let consumeRedirectPath() find it.
         target: null,
       });
       if (result && result.success) {

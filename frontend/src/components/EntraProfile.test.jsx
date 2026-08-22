@@ -41,6 +41,24 @@ const renderWithRouter = (ui) => {
   );
 };
 
+// jsdom's real sessionStorage, isolated into its own Map so the per-test
+// `setItem` / `getItem` / `removeItem` calls actually persist and can be
+// asserted on. Used by the ProtectedRoute-redirect-path regression test
+// below — the global beforeEach replaces `window.sessionStorage` with a
+// jest.fn() stub that does not store values, so a real instance is
+// required to exercise the bug that test pins down.
+const stubbedRealSessionStorage = () => {
+  const store = new Map();
+  return {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+    clear: () => { store.clear(); },
+    key: (i) => Array.from(store.keys())[i] || null,
+    get length() { return store.size; },
+  };
+};
+
 describe('EntraProfile Component', () => {
   let msalInstance;
   const mockAccount = {
@@ -306,48 +324,98 @@ describe('EntraProfile Component', () => {
     // expect(mockedNavigate).toHaveBeenCalledWith('/post-logout');
   });
 
-  test('redirects to saved path after successful login', async () => {
-    // Set up initial state - no active account
+  test('honors a pre-existing redirectPath saved by ProtectedRoute on manual sign-in', async () => {
+    // Real sessionStorage rather than per-test jest.fn() stubs — the
+    // previous version of this test mocked `getItem` to always return
+    // '/admin' regardless of what `setItem`/`removeItem` had been called
+    // with, which masked a regression in `EntraProfile.logonFunc` that
+    // called `sessionStorage.removeItem('redirectPath')` BEFORE delegating
+    // to `reauthenticate`. The real `sessionStorage` keeps the bug
+    // observable: a `setItem` followed by the click must land the user on
+    // the saved path, and the key must be cleared afterwards.
+    //
+    // The global `beforeEach` replaces `window.sessionStorage` with a
+    // jest.fn() stub that does not actually persist values; swap it
+    // for jsdom's real implementation here and restore it after.
+    //
+    // Background: ProtectedRoute writes `redirectPath = '/admin'` (or
+    // similar) when an unauthenticated user is denied access to a
+    // guarded route. The Sign-In button must respect that save and
+    // return the user to the originally requested page rather than
+    // dropping them on '/'.
+    const stubbedSessionStorage = window.sessionStorage;
+    Object.defineProperty(window, 'sessionStorage', {
+      value: stubbedRealSessionStorage(),
+      writable: true,
+      configurable: true,
+    });
+
     msalInstance.getActiveAccount.mockReturnValue(null);
-    
-    // Mock sessionStorage
-    const originalGetItem = window.sessionStorage.getItem;
-    const originalRemoveItem = window.sessionStorage.removeItem;
-    
-    window.sessionStorage.getItem = jest.fn().mockReturnValue('/admin');
-    window.sessionStorage.removeItem = jest.fn();
-    
-    // Mock navigate function
+    window.sessionStorage.setItem('redirectPath', '/admin');
+
+    // Mock navigate
     const mockedNavigate = jest.fn();
     jest.spyOn(require('react-router'), 'useNavigate').mockReturnValue(mockedNavigate);
-    
+
     // Mock successful login response
     msalInstance.loginPopup.mockResolvedValue({
       account: mockAccount
     });
-    
-    // Render component
+
     renderWithRouter(<EntraProfile />);
-    
-    // Click sign-in button
+
+    // The button is still rendered and the saved value is still there
+    // before the click — sanity check.
+    expect(screen.getByTestId('sign-in-button')).toBeInTheDocument();
+    expect(window.sessionStorage.getItem('redirectPath')).toBe('/admin');
+
     fireEvent.click(screen.getByTestId('sign-in-button'));
-    
-    // Wait for login process to complete
+
+    // Wait for the login round-trip to finish.
     await waitFor(() => {
-      expect(msalInstance.loginPopup).toHaveBeenCalledWith(expect.objectContaining({}));
       expect(msalInstance.setActiveAccount).toHaveBeenCalled();
     });
-    
-    // Verify sessionStorage interactions
-    expect(window.sessionStorage.getItem).toHaveBeenCalledWith('redirectPath');
-    expect(window.sessionStorage.removeItem).toHaveBeenCalledWith('redirectPath');
-    
-    // Verify navigation
+
+    // The Sign-In button must NOT have wiped the saved path before
+    // delegating to reauthenticate: the user lands on /admin, not /.
     expect(mockedNavigate).toHaveBeenCalledWith('/admin', { replace: true });
-    
-    // Restore original sessionStorage methods
-    window.sessionStorage.getItem = originalGetItem;
-    window.sessionStorage.removeItem = originalRemoveItem;
+
+    // reauthenticate's consumeRedirectPath call removes the key after
+    // navigating to it. The Sign-In button must NOT leave stale state
+    // behind for subsequent renders.
+    expect(window.sessionStorage.getItem('redirectPath')).toBeNull();
+
+    // Restore the per-test stub so subsequent tests in this file see
+    // the jest.fn() sessionStorage they were configured for.
+    Object.defineProperty(window, 'sessionStorage', {
+      value: stubbedSessionStorage,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  test('falls back to "/" on manual sign-in when no redirectPath is stored', async () => {
+    // First-time sign-in: there is no pre-existing redirectPath
+    // (no ProtectedRoute redirect, no SessionRecoveryGuard save). The
+    // user just clicked Sign In from the unauthenticated shell. The
+    // post-login destination is '/' — the default of consumeRedirectPath
+    // when nothing is stored.
+    msalInstance.getActiveAccount.mockReturnValue(null);
+    window.sessionStorage.removeItem('redirectPath');
+
+    const mockedNavigate = jest.fn();
+    jest.spyOn(require('react-router'), 'useNavigate').mockReturnValue(mockedNavigate);
+
+    msalInstance.loginPopup.mockResolvedValue({ account: mockAccount });
+
+    renderWithRouter(<EntraProfile />);
+    fireEvent.click(screen.getByTestId('sign-in-button'));
+
+    await waitFor(() => {
+      expect(msalInstance.setActiveAccount).toHaveBeenCalled();
+    });
+
+    expect(mockedNavigate).toHaveBeenCalledWith('/', { replace: true });
   });
 
   // Add these tests to verify the roles display functionality
