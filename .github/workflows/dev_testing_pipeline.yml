@@ -25,15 +25,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: 1.12.6
 
       - name: Log in to Azure via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -85,22 +85,22 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       # Initialize CodeQL analysis
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: python, javascript  # Analyze both backend and frontend
           queries: security-extended  # Use extended security queries
       
       # Autobuild (attempts to build code for languages that require it)
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
       
       # Perform CodeQL Analysis
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python,javascript"
 
@@ -111,7 +111,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       # Install dependencies (Alpine-specific)
       - name: Install backend dependencies
@@ -135,7 +135,7 @@ jobs:
       # Upload test coverage report as an artifact
       - name: Upload test coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pytest-coverage
           path: backend/htmlcov
@@ -144,7 +144,7 @@ jobs:
       # Upload coverage XML for potential integration with Codecov or other tools
       - name: Upload coverage XML
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pytest-coverage-xml
           path: backend/coverage.xml
@@ -157,7 +157,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       # Install Alpine build dependencies for npm packages that may need compilation
       - name: Install build dependencies
@@ -194,7 +194,7 @@ jobs:
       # Upload test coverage report as an artifact
       - name: Upload test coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jest-coverage
           path: frontend/coverage/lcov-report
@@ -206,11 +206,11 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
     
       # Set up Node.js directly on the runner
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org/'
@@ -225,7 +225,7 @@ jobs:
       # which fails the job even though every actual step succeeded. See the
       # Install backend dependencies step for the uv install command.
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       
@@ -308,7 +308,7 @@ jobs:
       # Upload Cypress screenshots on failure
       - name: Upload screenshots if tests fail
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cypress-screenshots
           path: frontend/cypress/screenshots
@@ -317,7 +317,7 @@ jobs:
       # Upload Cypress videos
       - name: Upload test videos
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cypress-videos
           path: frontend/cypress/videos
@@ -326,7 +326,7 @@ jobs:
       # Upload flattened coverage reports
       - name: Upload E2E coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-coverage-report
           path: frontend/coverage/lcov-report
