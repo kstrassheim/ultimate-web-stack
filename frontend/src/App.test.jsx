@@ -1,6 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+// React Router 8 dropped the `react-router-dom` re-export package
+// but the declarative routers (BrowserRouter / MemoryRouter /
+// HashRouter / ...) still come from core `react-router`; only
+// Framework-mode helpers (RouterProvider / HydratedRouter) live under
+// `react-router/dom`. See https://reactrouter.com/upgrading/v7#react-router-dom
 import { BrowserRouter, MemoryRouter } from 'react-router';
 import App from './App';
 

@@ -1,5 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+// React Router 8 dropped the `react-router-dom` re-export package
+// (it stops at 7.18.2). Declarative routers (BrowserRouter /
+// MemoryRouter / HashRouter / ...) still live in core `react-router`;
+// only Framework-mode helpers (RouterProvider / HydratedRouter) live
+// under `react-router/dom`. We're in Declarative mode, so core stays
+// the right entry point — see https://reactrouter.com/upgrading/v7#react-router-dom
 import { BrowserRouter } from 'react-router';
 import { MsalProvider } from '@azure/msal-react';
 import msalInstance, { msalInitialization } from '@/auth/msalInstance';

@@ -9,10 +9,30 @@ module.exports ={
       "^@/(.*)$": "<rootDir>/src/$1"
     },
     transform: {
-        "^.+\\.[jt]sx?$": ["@swc/jest"]
+        // React Router 8 ships ESM-only and references `import.meta.hot`
+        // in `lib/dom/ssr/routeModules.js`; @swc/jest alone does not
+        // strip `import.meta` (it has no built-in CJS lowering for it),
+        // so we wrap it with a tiny post-processor that only touches
+        // that one file. The pattern also covers `.mjs` so RR's ESM-
+        // only transitive deps (`cookie-es/dist/index.mjs`) get
+        // transpiled too. See jest/transform-import-meta.cjs for the
+        // full rationale.
+        "^.+\\.[jt]sx?$|^.+\\.mjs$": ["<rootDir>/jest/transform-import-meta.cjs"]
     },
+    // React Router 8 is published as ESM-only, so swc must transpile it
+    // (specifically the `react-router/dom` and `react-router` entry
+    // trees). Without this unignore, Jest loads the raw ESM and dies
+    // on the first `import.meta` it finds. See
+    // https://reactrouter.com/upgrading/v7#react-router-dom (the ESM-
+    // only switch is part of v8).
     transformIgnorePatterns: [
-      "/node_modules/(?!module-to-transform)/"
+      // React Router 8 (ESM-only, uses `import.meta.hot` in
+      // `lib/dom/ssr/routeModules.js`; the wrapper above strips it)
+      // and its ESM-only transitive dep `cookie-es` (used by RR for
+      // cookie parsing) must both be transpiled to CJS, otherwise
+      // the Jest runtime hits `SyntaxError: Unexpected token 'export'`
+      // the first time a test touches the router.
+      "/node_modules/(?!(react-router|cookie-es|module-to-transform)/)"
     ],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     moduleDirectories: ['node_modules', 'src'],
