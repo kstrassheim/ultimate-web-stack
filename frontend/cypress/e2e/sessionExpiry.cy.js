@@ -908,4 +908,34 @@ describe('Session expiry re-auth flow (issue #86)', () => {
       win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE');
     });
   });
+
+  // ---------------------------------------------------------------------
+  // Lab-side counterpart of the test above: the same generic-error
+  // BrowserAuthError mentioning `interaction_required` in the message
+  // reaches a Future Gadget Lab endpoint instead of the dashboard's
+  // /api/user-data. This is the e2e proof that futureGadgetApi.js's
+  // token-acquisition catch publishes a SessionExpiredError and
+  // triggers the recovery flow, not just api.js. Without this test
+  // the regex branch in futureGadgetApi.js's three-way OR detection
+  // would only be exercised on the unit-test side.
+  // ---------------------------------------------------------------------
+
+  it('re-authenticates when the lab reload token-error message mentions interaction_required', () => {
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE', 'true');
+    });
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE');
+    });
+  });
 });
