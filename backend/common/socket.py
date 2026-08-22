@@ -3,7 +3,16 @@ from jwt import InvalidTokenError
 from common.auth import verify_token
 from typing import List
 from common.log import logger
+import asyncio
 import datetime
+import json
+
+# Maximum time (seconds) to wait for the first message from a newly-opened
+# WebSocket before closing it. Bounds the resource usage of clients that
+# connect but never send credentials, so a malicious peer cannot pin a worker
+# task by spamming half-open sockets. Tune per environment if legitimate
+# clients need more headroom for their auth handshake.
+AUTH_HANDSHAKE_TIMEOUT_SECONDS = 5.0
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -34,57 +43,171 @@ class ConnectionManager:
     async def auth_connect(self, websocket: WebSocket):
         await websocket.accept()
 
-        # Wait for authentication message
-        auth_data = await websocket.receive_json()
-        
-        if not auth_data.get("token"):
-            logger.warning("WebSocket connection attempt with missing token")
-            await websocket.close(code=1008, reason="Missing authentication token")
-            return
-
-        token = auth_data.get("token")
-        # Clear sensitive data from memory as soon as possible
-        auth_data.clear()
-
+        registered = False
         try:
-            # Validate token against receiver roles to allow connection
-            claims = verify_token(token, self.receiver_roles, self.check_all)
-            
-            if not claims:
-                logger.warning("WebSocket connection attempt with invalid token (no claims)")
-                await websocket.close(code=1008, reason="Invalid authentication token")
+            # Wait for the authentication message, but bound the wait so a peer
+            # that connects and then sends nothing cannot pin this worker task
+            # (or the accepted socket) indefinitely. See issue #111.
+            try:
+                auth_data = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=AUTH_HANDSHAKE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                # Surface the peer host:port so a flood of these warnings can
+                # be tied back to a specific client (e.g. for rate-limiting
+                # or firewalling). Not every WebSocket implementation exposes
+                # client metadata, so keep the warning path safe.
+                client = getattr(websocket, "client", None)
+                peer = "unknown"
+                if client is not None:
+                    try:
+                        peer = f"{client[0]}:{client[1]}"
+                    except (IndexError, KeyError, TypeError):
+                        pass
+                logger.warning(
+                    "WebSocket authentication handshake timed out after "
+                    f"{AUTH_HANDSHAKE_TIMEOUT_SECONDS}s with no message from "
+                    f"peer {peer}"
+                )
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Authentication timeout",
+                )
                 return
-                
-        except HTTPException as e:
-            if e.status_code == 403:
-                logger.warning(f"Receiver role check failed during WebSocket authentication: {e.detail}")
-                await websocket.close(code=1008, reason="Insufficient permissions to receive data")
-            else:
-                logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
-                await websocket.close(code=1008, reason=e.detail)
-            return
-        except InvalidTokenError as e:
-            logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
-            await websocket.close(code=1008, reason="Invalid authentication token")
-            return
-        except Exception as e:
-            logger.error(f"Unexpected error during token verification: {str(e)}")
-            await websocket.close(code=1011, reason="Authentication server error")
-            return
-        
-        # Verify required fields exist in claims
-        if not claims.get("sub"):
-            logger.warning("WebSocket token missing required 'sub' claim")
-            await websocket.close(code=1008, reason="Invalid token claims")
-            return
-        
-        websocket.state.user = {
-            "sub": claims.get("sub"),
-            "name": claims.get("name", "unknown user"),
-            "roles": claims.get("roles", [])
-        }
-        
-        self.active_connections.append(websocket)
+            except json.JSONDecodeError:
+                # The first frame wasn't valid JSON at all. Treat it the same
+                # as a missing-token payload: close with 1008 (policy
+                # violation), do not register, log so a malformed-frame flood
+                # is distinguishable from a missing-token flood. Without this
+                # branch the JSONDecodeError escapes auth_connect and the
+                # outer endpoint handler closes the socket with 1006
+                # (abnormal closure), which clients may interpret as a
+                # transport failure rather than an auth rejection.
+                logger.warning(
+                    "WebSocket connection attempt with invalid JSON in first frame"
+                )
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Invalid authentication frame",
+                )
+                return
+
+            if not isinstance(auth_data, dict) or not auth_data.get("token"):
+                # `receive_json()` returns whatever the client sent parsed as
+                # JSON, so a malicious or buggy peer can send a list, number,
+                # string, or null for the very first frame. Treat any of those
+                # the same as a missing `"token"` field: close with 1008, do
+                # not register the connection, and keep the worker task free.
+                if isinstance(auth_data, dict):
+                    logger.warning("WebSocket connection attempt with missing token")
+                else:
+                    logger.warning(
+                        f"WebSocket connection attempt with non-dict auth payload "
+                        f"({type(auth_data).__name__})"
+                    )
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Missing authentication token",
+                )
+                return
+
+            token = auth_data.get("token")
+            # Clear sensitive data from memory as soon as possible
+            auth_data.clear()
+
+            try:
+                # Validate token against receiver roles to allow connection
+                claims = verify_token(token, self.receiver_roles, self.check_all)
+
+                if not claims:
+                    logger.warning("WebSocket connection attempt with invalid token (no claims)")
+                    await self._close_with_policy_violation(
+                        websocket,
+                        reason="Invalid authentication token",
+                    )
+                    return
+
+            except HTTPException as e:
+                if e.status_code == 403:
+                    logger.warning(f"Receiver role check failed during WebSocket authentication: {e.detail}")
+                    await self._close_with_policy_violation(
+                        websocket,
+                        reason="Insufficient permissions to receive data",
+                    )
+                else:
+                    logger.error(f"HTTP error during WebSocket authentication: {e.detail}")
+                    await self._close_with_policy_violation(
+                        websocket,
+                        reason=e.detail,
+                    )
+                return
+            except InvalidTokenError as e:
+                logger.error(f"JWT Error during WebSocket authentication: {str(e)}")
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Invalid authentication token",
+                )
+                return
+            except Exception as e:
+                logger.error(f"Unexpected error during token verification: {str(e)}")
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Authentication server error",
+                    code=1011,
+                )
+                return
+
+            # Verify required fields exist in claims
+            if not claims.get("sub"):
+                logger.warning("WebSocket token missing required 'sub' claim")
+                await self._close_with_policy_violation(
+                    websocket,
+                    reason="Invalid token claims",
+                )
+                return
+
+            websocket.state.user = {
+                "sub": claims.get("sub"),
+                "name": claims.get("name", "unknown user"),
+                "roles": claims.get("roles", [])
+            }
+
+            self.active_connections.append(websocket)
+            registered = True
+        finally:
+            # `auth_connect` historically registered only after successful
+            # authentication. Keep that invariant explicit if another
+            # early-return or validation exception is added here later.
+            if not registered and websocket in self.active_connections:
+                self.disconnect(websocket)
+
+    @staticmethod
+    async def _close_with_policy_violation(
+        websocket: WebSocket,
+        reason: str,
+        code: int = 1008,
+    ) -> None:
+        """Close a handshake peer once, even if it disconnected meanwhile.
+
+        ``asyncio.wait_for`` cancels the coroutine that is awaiting the frame,
+        but it does not necessarily cancel the frame read performed by the
+        WebSocket transport underneath it. A client can therefore still be
+        blocked in ``receive_json()`` after the outer task has timed out. Use
+        one shared close path for every rejected handshake, and let a
+        transport-level close settle the receive that the timeout interrupted.
+        """
+        try:
+            await asyncio.shield(
+                websocket.close(code=code, reason=reason)
+            )
+        except asyncio.CancelledError:
+            # Do not swallow cancellation of the handshake task; the shielded
+            # close keeps running while this task unwinds.
+            raise
+        except Exception:
+            # The peer may have closed the socket already; nothing to do.
+            pass
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)

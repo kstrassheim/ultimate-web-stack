@@ -126,11 +126,22 @@ describe('Chat Page Functionality', () => {
   });
 
   it('should handle long messages', () => {
+    // Wait for the WebSocket auth handshake to settle before typing —
+    // match the pattern the other tests in this block use. The chat
+    // page only enables the input once `connectionStatus` flips to
+    // 'connected', and cypress's default 4s actionability window is
+    // tight against a cold CI runner. {delay: 0} on the cy.type also
+    // keeps the 500-char type from sitting for ~5 s on top of the new
+    // 5 s AUTH_HANDSHAKE_TIMEOUT_SECONDS bound (issue #111) — the test
+    // is about sending a long message, not about pacing keystrokes, so
+    // removing the typing window doesn't change what's under test.
+    cy.get('.status-connected', { timeout: 10000 }).should('exist');
+
     // Test with a very long message
     const longMessage = 'A'.repeat(500);
-    cy.get('.chat-input input').type(longMessage);
+    cy.get('.chat-input input').type(longMessage, { delay: 0 });
     cy.get('.chat-input button').click();
-    
+
     // Check message was sent
     cy.contains('.message', longMessage.substring(0, 50)).should('be.visible');
   });
