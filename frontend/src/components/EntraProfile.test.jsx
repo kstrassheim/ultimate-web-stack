@@ -6,6 +6,13 @@ import EntraProfile from './EntraProfile';
 import { getProfilePhoto } from '@/api/graphApi';
 import appInsights from '@/log/appInsights';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
+// React Router 8 dropped the `react-router-dom` re-export package
+// but the declarative routers (BrowserRouter / MemoryRouter /
+// HashRouter / ...) still come from core `react-router`; only
+// Framework-mode helpers (RouterProvider / HydratedRouter) live under
+// `react-router/dom`. The hook mocks below target the same module
+// (`useNavigate` / `useLocation`), so MemoryRouter stays here too.
+// See https://reactrouter.com/upgrading/v7#react-router-dom
 import { MemoryRouter } from 'react-router';
 
 // Add this with your other mocks at the top of the file
