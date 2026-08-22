@@ -41,15 +41,15 @@ jobs:
     steps:
       # === OPENTOFU STEPS ===
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         
       - name: Set up OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@v2
         with:
           tofu_version: 1.12.6
         
       - name: Log in to Azure via OIDC
-        uses: azure/login@v1
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -119,7 +119,7 @@ jobs:
           
       # Upload tofu output as artifact  
       - name: Upload OpenTofu output artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: tofu-config-${{ inputs.environment }}
           path: ${{ inputs.working_dir }}/output.json
