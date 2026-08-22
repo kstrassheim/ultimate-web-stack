@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, mock_open
 import pytest
 import json
+import os
 from pathlib import Path
 
 # Import the app to test
@@ -903,6 +904,298 @@ class TestSecurityHeadersMiddleware:
 # (issue #100) and no longer calls psutil, so there is nothing to mock.
 # /health is still used as the hit-or-miss surface for the security
 # header regression tests below.
+
+
+class TestFglTestDataSeeding:
+    """Regression coverage for issue #112: Future Gadget Lab test data
+    must NOT be generated as a side effect of importing ``backend.main``.
+
+    The pre-#112 code seeded the data store at module scope:
+
+        if not fgl_service.get_all_experiments() and not fgl_service.get_all_divergence_readings():
+            test_data = generate_test_data(fgl_service)
+            print(...)
+
+    That meant importing ``main`` (unit tests, tooling scripts,
+    ``--reload`` picking the module back up) wrote to the data store,
+    and the print calls bypassed the configured logger. Seeding now
+    lives in a FastAPI ``lifespan`` startup hook (gated by the
+    ``SEED_FGL_TEST_DATA`` env var), and these tests pin both
+    halves of the contract.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_fgl_store(self):
+        """Truncate both FGL tables before each test.
+
+        ``main.fgl_service`` is the singleton created at module import
+        time, so its TinyDB state leaks across tests in this class. A
+        number of these tests assert ``len(...) == 0`` before and
+        after the lifespan hook, which is only meaningful if we start
+        from a clean slate. Truncating in ``autouse`` keeps each test
+        self-contained without forcing every assertion to do its own
+        cleanup.
+        """
+        main.fgl_service.experiments_table.truncate()
+        main.fgl_service.divergence_readings_table.truncate()
+        yield
+        main.fgl_service.experiments_table.truncate()
+        main.fgl_service.divergence_readings_table.truncate()
+
+    def test_importing_main_does_not_write_test_data(self):
+        """Importing ``backend.main`` must leave the data store empty.
+
+        Pins the acceptance criterion from issue #112: "Importing
+        ``backend.main`` performs no writes". The pre-#112 code would
+        have populated both tables during the ``import main`` line
+        itself; after the fix, both ``get_all_*`` calls must return
+        the empty list.
+
+        Runs in a fresh subprocess so the assertion is not contaminated
+        by any state already held by the running pytest process (the
+        existing test fixtures import ``main`` at module scope and
+        earlier tests may have populated the in-memory store).
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        # ``__file__`` is not defined in `python -c`, so we pass the
+        # backend dir through an env var the script can pick up.
+        script = textwrap.dedent(
+            """
+            import os, sys
+            sys.path.insert(0, os.environ['FGL_TEST_BACKEND_DIR'])
+            os.environ.setdefault('MOCK', 'true')
+            import main
+            exp = len(main.fgl_service.get_all_experiments())
+            read = len(main.fgl_service.get_all_divergence_readings())
+            assert exp == 0, f'import main wrote {exp} experiments'
+            assert read == 0, f'import main wrote {read} divergence readings'
+            print('OK')
+            """
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=backend_dir,
+            env={
+                **os.environ,
+                "MOCK": "true",
+                "FGL_TEST_BACKEND_DIR": backend_dir,
+            },
+            timeout=60,
+        )
+        assert proc.returncode == 0, (
+            f"Fresh-process import of main failed: stdout={proc.stdout!r} "
+            f"stderr={proc.stderr!r}"
+        )
+        assert "OK" in proc.stdout, (
+            f"Subprocess did not reach the OK marker; "
+            f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+        )
+        # And the pre-#112 side-effect must not appear in stdout either.
+        assert "Generated Future Gadget Lab Test Data" not in proc.stdout, (
+            "Importing main emitted the seeding message to stdout "
+            "(issue #112): seed messages must come from the logger, "
+            f"not from import-time print. stdout={proc.stdout!r}"
+        )
+
+    def test_lifespan_seeds_when_default_auto_and_mock_enabled(self):
+        """Default behaviour: with MOCK=true and SEED_FGL_TEST_DATA
+        unset / "auto", the lifespan startup hook seeds the store.
+
+        Mirrors the pre-#112 dev experience: any developer running
+        ``uvicorn main:app`` against the MOCK backend on first start
+        still gets the sample experiments and divergence readings.
+        """
+        # Sanity: store starts empty (relying on the import-time invariant
+        # being intact, since the fixture chain in conftest.py sets MOCK=true).
+        assert main.fgl_service.get_all_experiments() == []
+
+        # Entering the TestClient context manager triggers the lifespan
+        # startup hook; exiting it triggers shutdown. We assert inside
+        # the block so we observe the post-seed state.
+        with TestClient(main.app):
+            experiments = main.fgl_service.get_all_experiments()
+            readings = main.fgl_service.get_all_divergence_readings()
+            assert len(experiments) == 7
+            assert len(readings) == 5
+
+    def test_lifespan_skips_when_seed_env_false(self, monkeypatch):
+        """``SEED_FGL_TEST_DATA=false`` must disable seeding even when
+        MOCK mode is on.
+
+        The new env var lets an operator (or a test) opt out of
+        seeding for a particular run, e.g. to keep an empty store for
+        a fresh integration test fixture.
+        """
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "false")
+        # Ensure the helper re-reads the env var instead of caching it.
+        # (The helper reads os.environ every call, so this is
+        # belt-and-braces; the assertion below is what actually matters.)
+        assert main._should_seed_fgl_test_data() is False
+
+        with TestClient(main.app):
+            assert main.fgl_service.get_all_experiments() == []
+            assert main.fgl_service.get_all_divergence_readings() == []
+
+    def test_lifespan_seeds_when_seed_env_true(self, monkeypatch):
+        """``SEED_FGL_TEST_DATA=true`` forces seeding on an empty store.
+
+        Useful for first-deploy-to-empty-Cosmos workflows where the
+        operator wants the sample dataset to bootstrap the UI without
+        having to flip MOCK on in production.
+        """
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "true")
+        assert main._should_seed_fgl_test_data() is True
+
+        with TestClient(main.app):
+            assert len(main.fgl_service.get_all_experiments()) == 7
+            assert len(main.fgl_service.get_all_divergence_readings()) == 5
+
+    def test_seed_decision_helpers(self, monkeypatch):
+        """The ``_should_seed_fgl_test_data`` helper implements the
+        documented ``SEED_FGL_TEST_DATA`` semantics:
+
+            "true"           -> seed
+            "false"          -> do not seed
+            "auto" + MOCK    -> seed (pre-#112 dev behaviour)
+            "auto" + non-MOCK-> do not seed (production default)
+            unset / ""       -> same as "auto"
+
+        Mixed case and surrounding whitespace are normalised so a
+        shell ``export SEED_FGL_TEST_DATA=True`` works the same as
+        the canonical lowercase form.
+        """
+        # "auto" + MOCK=true (the conftest default) -> seed.
+        monkeypatch.delenv("SEED_FGL_TEST_DATA", raising=False)
+        assert main._should_seed_fgl_test_data() is True
+
+        # "true" forces seeding regardless of MOCK.
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "true")
+        assert main._should_seed_fgl_test_data() is True
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "TRUE")
+        assert main._should_seed_fgl_test_data() is True
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "  TrUe  ")
+        assert main._should_seed_fgl_test_data() is True
+
+        # "false" disables seeding.
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "false")
+        assert main._should_seed_fgl_test_data() is False
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "FALSE")
+        assert main._should_seed_fgl_test_data() is False
+
+        # "auto" + non-MOCK -> no seed (production default).
+        monkeypatch.setattr(main, "mock_enabled", False)
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "auto")
+        assert main._should_seed_fgl_test_data() is False
+
+        # Unknown values fall back to the auto/MOCK behaviour (don't
+        # crash, don't silently force seeding on).
+        monkeypatch.setattr(main, "mock_enabled", True)
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "yes-please")
+        assert main._should_seed_fgl_test_data() is True
+        monkeypatch.setattr(main, "mock_enabled", False)
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "yes-please")
+        assert main._should_seed_fgl_test_data() is False
+
+    def test_lifespan_seeding_routes_through_logger_not_print(
+        self, monkeypatch, capsys,
+    ):
+        """The seeding messages must reach ``common.log.logger``, NOT
+        ``print`` (issue #112 acceptance criterion #4).
+
+        Pre-#112 the four ``print(...)`` lines bypassed the
+        configured logger entirely; after the fix they go through
+        ``logger.info`` and ``print`` must remain silent for them.
+        We assert both directions: the seeded data appears AND no
+        "Generated Future Gadget Lab Test Data" line was printed.
+        """
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "true")
+        with TestClient(main.app):
+            # Lifespan startup completed -> store populated.
+            assert len(main.fgl_service.get_all_experiments()) == 7
+            assert len(main.fgl_service.get_all_divergence_readings()) == 5
+
+        # The TestClient context exits here. Capture stdout/stderr
+        # AFTER the with-block so any print calls made during the
+        # lifespan startup are visible.
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "Generated Future Gadget Lab Test Data" not in combined, (
+            "Seeding messages must go through the logger, not print "
+            "(issue #112). Got stdout/stderr: "
+            f"out={captured.out!r} err={captured.err!r}"
+        )
+
+    def test_lifespan_does_not_double_seed(self, monkeypatch):
+        """If the store already has data, the lifespan hook is a no-op.
+
+        ``seed_test_data_if_empty`` short-circuits when either table
+        has rows. This is what protects a multi-worker deployment
+        from re-seeding on the second worker's startup (issue #112
+        calls out that the old import-time check was racy).
+        """
+        # Pre-populate the store by hand; the lifespan hook must NOT
+        # append to it.
+        from db.future_gadget_lab_data_service import generate_test_data
+
+        generate_test_data(main.fgl_service)
+        before_exp = len(main.fgl_service.get_all_experiments())
+        before_read = len(main.fgl_service.get_all_divergence_readings())
+        assert before_exp == 7
+        assert before_read == 5
+
+        # The hook is gated by ``_should_seed_fgl_test_data``; force
+        # it on so we test the inner helper, not the gate.
+        monkeypatch.setenv("SEED_FGL_TEST_DATA", "true")
+        with TestClient(main.app):
+            assert len(main.fgl_service.get_all_experiments()) == before_exp
+            assert len(main.fgl_service.get_all_divergence_readings()) == before_read
+
+
+class TestSeedTestDataIfEmpty:
+    """Unit tests for the ``seed_test_data_if_empty`` helper itself,
+    independent of the ``main`` lifespan wiring.
+
+    Lives in main_test.py rather than the data-service tests because
+    the helper exists specifically to support the issue #112 fix and
+    the assertion of interest ("uses logger, not print") is the same
+    property being pinned at the integration level above. Keeping the
+    coverage in one file makes the regression story for the issue
+    easy to follow.
+    """
+
+    def test_seeds_when_empty(self):
+        """An empty store is filled with the canonical 7 experiments
+        and 5 divergence readings; the call returns True to signal
+        that a seed actually happened."""
+        from db.future_gadget_lab_data_service import seed_test_data_if_empty
+
+        result = seed_test_data_if_empty(main.fgl_service, main._logger)
+        assert result is True
+        assert len(main.fgl_service.get_all_experiments()) == 7
+        assert len(main.fgl_service.get_all_divergence_readings()) == 5
+
+    def test_noop_when_already_seeded(self):
+        """If either table has rows, the helper returns False and
+        leaves the data alone — protecting against multi-worker
+        races on a freshly-bootstrapped Cosmos container."""
+        from db.future_gadget_lab_data_service import seed_test_data_if_empty
+
+        main.fgl_service.create_experiment(
+            {"name": "Preexisting", "status": "planned", "creator_id": "x"}
+        )
+        before_exp = len(main.fgl_service.get_all_experiments())
+        before_read = len(main.fgl_service.get_all_divergence_readings())
+
+        result = seed_test_data_if_empty(main.fgl_service, main._logger)
+        assert result is False
+        assert len(main.fgl_service.get_all_experiments()) == before_exp
+        assert len(main.fgl_service.get_all_divergence_readings()) == before_read
 
 
 def _csp_sources(csp: str, directive: str) -> list[str]:

@@ -2,6 +2,7 @@ from tinydb import TinyDB, Query
 from tinydb.storages import MemoryStorage
 from pathlib import Path
 import datetime
+import logging
 import re
 import uuid
 from typing import Dict, List, Optional, Union, Any
@@ -659,6 +660,54 @@ def generate_test_data(service: FutureGadgetLabDataService) -> Dict[str, List[Di
 
     # Return all created items
     return created_items
+
+
+def seed_test_data_if_empty(
+    service: "FutureGadgetLabDataService",
+    logger: logging.Logger,
+) -> bool:
+    """Seed ``service`` with sample data iff both tables/containers are empty.
+
+    Issue #112: replaces the import-time seeding block previously in
+    ``backend/main.py``. Importing ``main`` for any reason (unit test,
+    tooling script, ``--reload`` picking the module back up) used to
+    run ``generate_test_data`` as a side effect of importing. That is
+    gone now — seeding happens explicitly in the FastAPI lifespan
+    startup hook in ``main.py``, and this helper is the only place the
+    sample dataset is materialised.
+
+    All messages go through ``logger`` (``common.log.logger`` in
+    production) instead of ``print`` so they pick up the configured log
+    level, formatter, and handlers — including the Azure exporter in
+    production. ``print`` would bypass all of that.
+
+    Args:
+        service: A ``FutureGadgetLabDataService`` (or mock subclass) that
+            supports ``get_all_experiments`` / ``get_all_divergence_readings``.
+        logger: Logger to emit informational messages to.
+
+    Returns:
+        True iff seeding actually happened; False if the store already
+        held data and the call was a no-op.
+    """
+    if service.get_all_experiments() or service.get_all_divergence_readings():
+        logger.info(
+            "Future Gadget Lab data already present; skipping test-data seed."
+        )
+        return False
+
+    test_data = generate_test_data(service)
+    logger.info("=== Generated Future Gadget Lab Test Data ===")
+    logger.info(
+        "Created %d experiments", len(test_data["experiments"])
+    )
+    logger.info(
+        "Created %d divergence readings",
+        len(test_data["divergence_readings"]),
+    )
+    logger.info("===========================================")
+    return True
+
 
 def calculate_worldline_status(experiments, readings=None):
     """
