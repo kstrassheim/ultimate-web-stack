@@ -389,6 +389,25 @@ export class PublicClientApplication {
       return Promise.reject(err);
     }
 
+    // Test-only hook: MSAL signals interaction_required through the
+    // errorCode field alone (neither the error class name nor the
+    // message text matches). Some MSAL browser builds surface
+    // interaction-required via errorCode when the user is still
+    // technically authenticated but the cached refresh token has been
+    // revoked server-side. Drives the middle OR operand in the
+    // three-way detection. No production code reads this flag.
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_CODE') === 'true'
+    ) {
+      const err = new Error('Mock MSAL: token cache miss (test affordance)');
+      err.name = 'BrowserAuthError';
+      err.errorCode = 'interaction_required';
+      err.errorMessage = 'Mock MSAL: token cache miss (test affordance)';
+      return Promise.reject(err);
+    }
+
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });

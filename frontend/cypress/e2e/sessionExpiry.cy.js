@@ -991,4 +991,53 @@ describe('Session expiry re-auth flow (issue #86)', () => {
       win.localStorage.removeItem('MOCK_TOKEN_ERROR');
     });
   });
+
+  // ---------------------------------------------------------------------
+  // MSAL signals interaction_required through errorCode alone (not via
+  // the InteractionRequiredAuthError class name, and not via the
+  // errorMessage text). Some MSAL browser builds surface this shape
+  // when the cached refresh token has been revoked server-side while
+  // the user is still technically authenticated. Drives the middle OR
+  // operand in the three-way detection. Mirrors the MOCK_INTERACTION_REQUIRED
+  // test, but the recovery still fires because the catch publishes
+  // SessionExpiredError when errorCode === 'interaction_required'.
+  // ---------------------------------------------------------------------
+
+  it('re-authenticates when the dashboard token-error carries errorCode=interaction_required', () => {
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_INTERACTION_REQUIRED_BY_CODE', 'true');
+    });
+
+    cy.get('[data-testid="reload-button"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_CODE');
+    });
+  });
+
+  it('re-authenticates when the lab reload token-error carries errorCode=interaction_required', () => {
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.window().then((win) => {
+      win.localStorage.setItem('MOCK_INTERACTION_REQUIRED_BY_CODE', 'true');
+    });
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+
+    cy.window().then((win) => {
+      win.localStorage.removeItem('MOCK_INTERACTION_REQUIRED_BY_CODE');
+    });
+  });
 });
