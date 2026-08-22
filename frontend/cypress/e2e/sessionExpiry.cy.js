@@ -528,4 +528,132 @@ describe('Session expiry re-auth flow (issue #86)', () => {
     cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
     cy.url({ timeout: 5000 }).should('include', '/dashboard');
   });
+
+  // ---------------------------------------------------------------------
+  // Coverage-targeted user scenarios for the branches the existing
+  // expiry specs leave uncovered. Each test below is a real user-visible
+  // scenario (an empty response body is something a misconfigured proxy
+  // would actually emit on an expired session; a 404 is what an
+  // authentic API call returns when a record is gone; a DELETE 2xx is
+  // the normal success path of the experiment-DELETE button).
+  //
+  // None of these are coverage-only — they describe real production
+  // behaviour and assert the same UX outcomes as the rest of the file
+  // (recovery fires on Easy Auth signals; errors surface via the
+  // existing notyf path without a login popup; successful deletes keep
+  // the user on /experiments).
+  // ---------------------------------------------------------------------
+
+  it('re-authenticates when the dashboard reload returns an empty HTML body', () => {
+    // Some misconfigured App Service deployments return an empty
+    // HTML response (Content-Type: text/html, body: '') instead of
+    // the full Microsoft sign-in page when the Easy Auth session
+    // has expired. The recovery flow's inspection detects this via
+    // the html-body branch (no login-marker required because the body
+    // is empty) and the body summarizer hits its empty-body early
+    // return. The user must still get a re-auth prompt and land back
+    // on /dashboard, identical to the full-body case.
+    loginAs('User');
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.url().should('include', '/dashboard');
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should('not.exist');
+
+    cy.intercept('GET', '**/api/user-data', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '',
+    }).as('expiredEmptyHtmlBody');
+
+    cy.get('[data-testid="reload-button"]').click();
+    cy.url({ timeout: 30000 }).should('include', '/dashboard');
+  });
+
+  it('re-authenticates when an Admin reload of /lab-experiments returns an empty HTML body', () => {
+    // Same shape as the dashboard empty-body test, but on the lab
+    // API. futureGadgetApi.js has its own copy of `summarizeBody`
+    // and its own `inspection.looksLikeExpiry` handling — the empty
+    // body needs to be covered there too.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '',
+    }).as('expiredEmptyLabBody');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.url({ timeout: 30000 }).should('include', '/experiments');
+  });
+
+  it('surfaces a genuine 404 on /lab-experiments as an error without re-login', () => {
+    // The lab GET genuine-error branch in futureGadgetApi.js is
+    // exercised by 401 (handled by the existing 401 test on /api/
+    // paths) and 500 (the DELETE-500 test). 404 covers the second
+    // explicit user-visible failure mode — the experiment list is
+    // gone or temporarily unrouteable. Like the 401 case it must
+    // surface as an error, NOT trigger re-login.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 404,
+      contentType: 'application/json',
+      body: { error: 'not found' },
+    }).as('labExperiments404');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.wait('@labExperiments404');
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/experiments');
+  });
+
+  it('keeps the user on /experiments when DELETE /lab-experiments/:id succeeds', () => {
+    // The DELETE branch in futureGadgetApi.js is a 2xx-success
+    // early-return (no JSON parse) — only the error path was
+    // exercised by the existing DELETE-500 test. This drives the
+    // success path end-to-end: Admin clicks delete, the API returns
+    // 2xx (no body), the row vanishes from the table, the user
+    // stays on /experiments. Real user scenario, no recovery flow.
+    loginAs('Admin');
+    cy.get('[data-testid="nav-experiments"]').click();
+    cy.url().should('include', '/experiments');
+    cy.get('[data-testid="experiments-heading"]', { timeout: 10000 }).should('be.visible');
+
+    cy.intercept('GET', '**/future-gadget-lab/lab-experiments', {
+      statusCode: 200,
+      contentType: 'application/json',
+      body: [
+        {
+          id: 'probe-exp-del-ok',
+          name: 'Experiment to delete (success)',
+          description: 'drives the DELETE 2xx success branch',
+          worldLineChange: '0.000456',
+          creator: 'Test',
+          timestamp: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }).as('listForDeleteSuccess');
+
+    cy.intercept('DELETE', '**/future-gadget-lab/lab-experiments/*', {
+      statusCode: 204,
+    }).as('deleteSuccess');
+
+    cy.get('[data-testid="reload-experiments-btn"]').click();
+    cy.get('[data-testid="experiments-table"]', { timeout: 10000 }).should('contain.text', 'Experiment to delete (success)');
+
+    cy.contains('tr', 'Experiment to delete (success)').within(() => {
+      cy.get('button').contains(/Delete/i).click();
+    });
+    cy.get('[data-testid="confirm-delete-btn"]').should('be.visible').click();
+    cy.wait('@deleteSuccess');
+
+    cy.get('[data-testid="sign-in-button"]', { timeout: 5000 }).should('not.exist');
+    cy.url({ timeout: 5000 }).should('include', '/experiments');
+  });
 });
