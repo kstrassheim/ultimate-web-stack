@@ -1,9 +1,9 @@
 # Ultimate Web Stack
-This project is based on Python (FastAPI) and gives the users a blank canvas in Python to publish their solutions within a website and in an acceptable technical framework to go into production with entra id users while avoiding producing legacy code. This concretely means the following features: Entra ID role-based authentication, Azure logging, e2e tests with mockup, unit tests (Jest, PyTest), authenticated RealTime WebSocket connections and many more features. The whole stack auto-installs via terraform and derives its settings into the frontend and backend. You just have to adjust the app name.
+This project is based on Python (FastAPI) and gives the users a blank canvas in Python to publish their solutions within a website and in an acceptable technical framework to go into production with entra id users while avoiding producing legacy code. This concretely means the following features: Entra ID role-based authentication, Azure logging, e2e tests with mockup, unit tests (Jest, PyTest), authenticated RealTime WebSocket connections and many more features. The whole stack auto-installs via OpenTofu and derives its settings into the frontend and backend. You just have to adjust the app name.
 
 ## Features
 In the following is a description of the provided features. **(please leave a star if you like this project)**
-- Terraform __auto__ installation and setup
+- OpenTofu __auto__ installation and setup
 - Entra ID Authentication with __auto__ installation and setup **(You don't have to set up anything on frontend and backend)**
 - Azure Application Insight logging with __auto__ installation and setup
 - Test Driven Development Setup
@@ -14,7 +14,7 @@ In the following is a description of the provided features. **(please leave a st
 - Real Time Web Socket Connections with Token and Role Authentication
 - Azure Cosmos DB (NoSQL) persistence with __auto__ installation and setup
     - Serverless tier (pay-per-request) to keep costs low
-    - Managed-identity authentication only (no keys), with RBAC role assignments provisioned by Terraform
+    - Managed-identity authentication only (no keys), with RBAC role assignments provisioned by OpenTofu
     - Local developer access auto-granted to the current `az login` principal during apply
     - In-memory TinyDB fallback for Mock mode (no Azure dependency for local dev and tests)
 - Responsive Design and PWA support out of the box
@@ -22,9 +22,9 @@ In the following is a description of the provided features. **(please leave a st
 - Running on Free Plan F1 of Azure App Service to avoid any unnecessary costs
 
 ## Prerequisites
-Before running `init.sh` / terraform, make sure these tools are installed:
+Before running `init.sh` / tofu, make sure these tools are installed:
 
-- **Terraform** (>= 1.x) — infrastructure provisioning
+- **OpenTofu** (>= 1.9) — infrastructure provisioning. **Not** HashiCorp Terraform: this project's state is encrypted with an Azure Key Vault key using OpenTofu's `azure_vault` key provider, and Terraform cannot read it.
 - **Azure CLI** (`az login`) — Azure authentication and resource access
 - **Node.js + npm** — frontend
 - **Python 3.12 + pip/venv** — backend
@@ -42,12 +42,12 @@ Set-ExecutionPolicy Bypass -Scope Process -Force;
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;
 Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'));
 ```
-2. Install terraform with chocolatey and test if it was installed correctly that the command is available in root
+2. Install OpenTofu with chocolatey and test if it was installed correctly that the command is available in root
 ```bash
-choco install terraform
-terraform -v
+choco install opentofu
+tofu -v
 ```
-3. (Optional) Alternatively install OpenTofu as Alternative to Terraform (Set EXE=tofu env variable)
+3. (Alternative) Install OpenTofu standalone
 ```powershell
 Invoke-WebRequest -outfile "install-opentofu.ps1" -uri "https://get.opentofu.org/install-opentofu.ps1"
 & .\install-opentofu.ps1 -installMethod standalone -skipVerify
@@ -81,7 +81,7 @@ sudo apt-get install -y microsoft-edge-stable
 ### Initialization
 In the following is a guide to initialize the project to be your custom project.
 
-#### Quick Init (Mock run without Terraform)
+#### Quick Init (Mock run without OpenTofu)
 For a quick init start of the application just run
 ```bash
 ./initq.sh
@@ -91,7 +91,7 @@ on Linux or
 ./initq.ps1
 ```
 on Windows.
-It will set up the web applications to be runnable in __Mocked__ Debug mode without touching terraform.
+It will set up the web applications to be runnable in __Mocked__ Debug mode without touching OpenTofu.
 
 ### Dependency locking (uv)
 The backend Python dependencies are locked with [uv](https://docs.astral.sh/uv/) into a fully pinned, hash-verified, cross-platform lock:
@@ -110,12 +110,25 @@ uv pip compile backend/requirements.in --universal --generate-hashes \
 
 Review the diff, run the test suite, and commit both files. Never hand-edit `backend/requirements.txt`.
 
-### Terraform Local Setup
-You have to set the following variables in the terraform var and tfvar files to attach the terraform installation to your project.
+### OpenTofu Local Setup
+You have to set the following variables in the tofu var and tfvar files to attach the OpenTofu installation to your project.
 
 #### vars.tf
 The following variable is very important to set because it's the name of the application and many other resources throughout the whole application are dependent on it.
-- __app_name__ - the short name of the application - many names in terraform are derived from this.
+- __app_name__ - the short name of the application - many names in OpenTofu are derived from this. It is also the single source of truth for the state blob container and for the name of the RSA key in the `kv-mytofustates` Key Vault that encrypts the state, so changing it means creating a matching key in the vault.
+
+#### State encryption
+
+State lives in the `ultimate-web-stack` blob container of the `mytofustates` storage account and is **encrypted at rest by OpenTofu itself**, on top of Azure's own storage encryption. A fresh AES-GCM data key is generated per run and wrapped with the RSA key `ultimate-web-stack` in the `kv-mytofustates` Key Vault, so the key material never leaves the vault.
+
+Consequences worth knowing before you touch this:
+
+- **HashiCorp Terraform cannot read this state.** Use `tofu`.
+- The backend derives its values from variables — `container_name = var.app_name` and `key = "${var.env}.tfstate"` — which relies on OpenTofu early evaluation. That syntax is also not parseable by Terraform.
+- `dev`, `test` and `prod` share one Key Vault key but keep separate state blobs.
+- Each deploy identity holds `Key Vault Crypto User` scoped to that single key object, not to the whole vault, so no project's pipeline can decrypt another project's state.
+
+Locally the key provider authenticates through your `az login` session. CI authenticates by GitHub OIDC, which needs `TF_VAR_use_oidc=true` plus `TF_VAR_arm_client_id` / `TF_VAR_arm_tenant_id`. Those are separate from `ARM_USE_OIDC` / `ARM_USE_CLI`, which configure the backend and the azurerm provider — the key provider does not read `ARM_*` variables at all. The pipelines set both; if only one is set, that consumer falls back to the Azure CLI credential and fails with *"Please specify only one of subscription and tenant, not both"*.
 
 #### Other variables (Optional)
 The app is fully capable of running in Azure Free Plan but if you require more performance you can change these variables whether in var file (Default or in the specific environment file).
@@ -124,11 +137,11 @@ The app is fully capable of running in Azure Free Plan but if you require more p
 
 You should not touch the env variable unless you really want to change the naming everywhere.
 
-#### Terraform deployment
-When you have set up everything, then __terraform will handle the whole deployment of the resources and the web application__. 
+#### OpenTofu deployment
+When you have set up everything, then __OpenTofu will handle the whole deployment of the resources and the web application__. 
 
 ### Init Web Project
-When you have set up terraform correctly, run the command to set up the web applications ready to run. Please note that you have to log on to Azure and select the correct subscription to make terraform run.
+When you have set up OpenTofu correctly, run the command to set up the web applications ready to run. Please note that you have to log on to Azure and select the correct subscription to make OpenTofu run.
 ```bash
 az login
 ./init.sh
@@ -139,7 +152,7 @@ az login
 ./init.ps1
 ```
 on Windows.
-This will first run terraform to adjust or install the Azure resources like the app registration and further will copy the terraform output to backend and frontend where its settings will be applied to adjust the authentication.
+This will first run OpenTofu to adjust or install the Azure resources like the app registration and further will copy the OpenTofu output to backend and frontend where its settings will be applied to adjust the authentication.
 
 ### VSCode setup, run and debugging
 In the following is the VSCode setup to run and debug the application.
@@ -308,13 +321,13 @@ Create an empty resource group and make sure that you are at least Contributor o
       ```powershell
         Add-AzureADDirectoryRoleMember -ObjectId '[App Admin Object Id]' -RefObjectId '[User Managed Identity Object Id]'
       ``` 
-  - Also assign the "Directory Reader" role in the same way to enable the terraform module `azure_api_roles' query the directory. Or use the `azure_api_roles_static' module where you have to check in the result json into the repository.
+  - Also assign the "Directory Reader" role in the same way to enable the OpenTofu module `azure_api_roles' query the directory. Or use the `azure_api_roles_static' module where you have to check in the result json into the repository.
       ```powershell
         Add-AzureADDirectoryRoleMember -ObjectId '[Directory Reader Object Id]' -RefObjectId '[User Managed Identity Object Id]'
       ``` 
 
 ## Connect Github Setup
-The github actions require permissions to create the structure with terraform. Do the following steps to create and assign a ServicePrincipal to that specific Github Project' Environment if necessary.
+The github actions require permissions to create the structure with OpenTofu. Do the following steps to create and assign a ServicePrincipal to that specific Github Project' Environment if necessary.
 1. In Azure Open the Managed Identity go to Settings/Federated Credentials and click Add Credential and select the Federated credential scenario "Configure a Github issued token..."
 2. Add your Organization/Personal Accountname, enter the repository name and __environment__ name as Entity. Also choose a credential name for it.
 3. Click on Add
@@ -331,7 +344,7 @@ The github actions require permissions to create the structure with terraform. D
 8. make sure that you have set up the environment name in any job that requires these credentials.
   ```yaml
     jobs:
-      terraform:
+      tofu:
         environment:
           name: 'dev'
   ```
@@ -345,9 +358,9 @@ The github actions require permissions to create the structure with terraform. D
   ```
 10. You are done here. Run the Action and check if it can authorize on azure for it.
 
-## Terraform Azure Storage Setup
-When you have a Storage Account for all Terraform states of all projects on your Tenant then create a Container `[projectname_env]` and
-1. Check if terraform azurerm backend is configured with use_azuread_auth = true
+## OpenTofu Azure Storage Setup
+When you have a Storage Account for all OpenTofu states of all projects on your Tenant then create a Container `[projectname_env]` and
+1. Check if the OpenTofu azurerm backend is configured with use_azuread_auth = true
 2. Assign yourself as **Storage Data Contributor** to the container
 3. Assign the Github Managed Identity also **Storage Data Contributor** Permissions to the container
 
@@ -373,11 +386,11 @@ To generate a production compile of the frontend
 ## Adding Users to Application and commit requested Permissions
 To enable users joining your application you have to do following
 1. Go to Azure Portal and Navigate to Entra Id -> Enterprise Applications
-2. Select the generated Application (following the terraform vars it is [app_name]-dev - with dashes not underlines)  
+2. Select the generated Application (following the OpenTofu vars it is [app_name]-dev - with dashes not underlines)  
 3. Go to Manage -> Users and groups
 4. Add the users and groups which should have access to the application and select also their Role (in this example its "User" or "Admin"). It will take some while so refresh the page couple of times
 5. To enable the requested permissions go to Entra Id - App registrations - All Applications
-6. Select the generated Application (following the terraform vars it is [app_name]-dev - with dashes not underlines)  
+6. Select the generated Application (following the OpenTofu vars it is [app_name]-dev - with dashes not underlines)  
 7. Go to Manage -> API Permissions
 8. Click on "Grant admin consent for [Your Tenant Name]" and confirm
 9. The users should now be able to log on to your application and only able to navigate within their role.
