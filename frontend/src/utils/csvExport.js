@@ -68,11 +68,15 @@ export const rowsToCsv = (headers, rows) => {
 /**
  * Trigger a browser download of the given CSV text.
  *
- * Creates a Blob URL, attaches it to a temporary `<a download>` element,
- * clicks it, and revokes the URL. The anchor is not appended to the
- * DOM — modern browsers honour the `download` attribute on a detached
- * element. The download runs asynchronously; the function returns as
- * soon as the click has been dispatched.
+ * Creates a Blob URL, attaches it to a temporary `<a download>`
+ * element long enough to dispatch the click, and revokes the URL.
+ * The attach/detach dance is defensive: modern browsers honour the
+ * `download` attribute on a detached element, but a few older
+ * browsers silently drop the click on a detached anchor. The cost
+ * is two DOM mutations per export, which is negligible compared to
+ * the work the rest of the function already does. The download
+ * itself runs asynchronously; the function returns as soon as the
+ * click has been dispatched.
  *
  * Safe to call only in the browser. In non-browser environments
  * (e.g. jsdom in some configurations) `URL.createObjectURL` is
@@ -96,7 +100,9 @@ export const downloadCsv = (filename, csvText) => {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  // Detached element is fine for the `download` attribute to work.
+  // Defensive attach so the click is honoured on every browser
+  // that ever shipped a download attribute. Removed again before
+  // this function returns so no extra node lingers in the DOM.
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
