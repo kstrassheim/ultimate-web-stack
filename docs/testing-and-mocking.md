@@ -12,7 +12,7 @@
   redirected to `mock/` implementations by the bundler (Vite) and the unit-test
   runner (Jest). The app imports the same specifiers in every mode.
 - **The frontend swaps only the outer boundaries**: the identity provider
-  (`@azure/msal-browser`), Microsoft Graph, App Insights, and the Terraform
+  (`@azure/msal-browser`), Microsoft Graph, App Insights, and the OpenTofu
   config. Everything the app actually does with those is real.
 - **The backend swaps only the last DB layer.** `MockFutureGadgetLabDataService`
   subclasses the real service and overrides **only** database initialization to
@@ -31,7 +31,7 @@
 
 | Layer | Runner | Location | Mode | What is faked |
 |-------|--------|----------|------|---------------|
-| Frontend unit | Jest (jsdom + `@swc/jest`) | `frontend/src/**/*.test.{js,jsx}` | `moduleNameMapper` | styles, static assets, terraform config (per test as needed) |
+| Frontend unit | Jest (jsdom + `@swc/jest`) | `frontend/src/**/*.test.{js,jsx}` | `moduleNameMapper` | styles, static assets, OpenTofu config (per test as needed) |
 | Backend unit | pytest | `backend/**/*_test.py` | `MOCK=true` (via `conftest.py`) | DB → TinyDB, auth scheme, telemetry exporter |
 | End-to-end | Cypress (Edge, headless in CI) | `frontend/cypress/e2e/**/*.cy.js` | full stack in mock mode | only MSAL/Azure AD, Cosmos DB, App Insights |
 
@@ -275,5 +275,5 @@ pipeline layout.
    `cy.setMockRole`; observe-only aliases are fine. The existing stubs listed
    above are legacy — shrink that list, don't grow it.
 5. **Faked boundaries are fixed**: identity/MSAL, Microsoft Graph, Cosmos DB,
-   App Insights, and Terraform config. Everything between them should run for real
+   App Insights, and OpenTofu config. Everything between them should run for real
    in tests.

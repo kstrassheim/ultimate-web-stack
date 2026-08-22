@@ -43,11 +43,6 @@ terraform {
   # provider does NOT read ARM_USE_OIDC / ARM_USE_CLI / ARM_CLIENT_ID /
   # ARM_TENANT_ID from the environment the way the backend does. They default to
   # the Azure CLI so local runs work off `az login`; CI sets TF_VAR_use_oidc.
-  #
-  # MIGRATION: the `fallback` lets the first run per environment read the state
-  # while it is still unencrypted and write it back encrypted. Remove the
-  # fallback once dev, test and prod have each applied once, otherwise
-  # unencrypted state stays acceptable indefinitely.
   # ---------------------------------------------------------------------------
   encryption {
     key_provider "azure_vault" "state" {
@@ -65,14 +60,8 @@ terraform {
       keys = key_provider.azure_vault.state
     }
 
-    method "unencrypted" "migrate" {}
-
     state {
       method = method.aes_gcm.state
-
-      fallback {
-        method = method.unencrypted.migrate
-      }
     }
 
     plan {
