@@ -2,17 +2,22 @@
 
 /**
  * End-to-end coverage for issue #85 — dark-mode toggle in Settings.
+ * Updated for issue #129 — dark is now the default theme for first-time
+ * visitors; OS preference only participates when the user explicitly
+ * chooses 'Follow my OS preference' in Settings.
  *
  * Acceptance criteria exercised here:
  *   1. A toggle in Settings switches between light and dark immediately,
  *      without a reload.
  *   2. The choice persists across a full page reload.
- *   3. With no choice ever made, the OS preference is still followed.
+ *   3. With no choice ever made, the page renders dark by default (#129).
+ *   4. An existing stored 'os' choice still follows the OS preference.
  *
  * The OS-preference branch is hard to exercise from headless Cypress
  * (the browser runs without a real user preference), so this spec drives
- * the toggle and reload paths — the unit suite (Settings.test.jsx)
- * covers the prefers-color-scheme branch exhaustively in jsdom.
+ * the toggle and reload paths — the unit suite (Settings.test.jsx and
+ * ThemeProvider.test.jsx) covers the prefers-color-scheme branch
+ * exhaustively in jsdom.
  */
 describe('Settings — dark mode toggle (issue #85)', () => {
   beforeEach(() => {
@@ -23,7 +28,7 @@ describe('Settings — dark mode toggle (issue #85)', () => {
 
     // Start every test from a known-clean theme state. The boot script
     // reads localStorage["theme-mode"] synchronously, so wiping it here
-    // ensures we're truly on the OS-preference fallback.
+    // puts us on the dark-by-default path (#129).
     cy.window().then((win) => {
       win.localStorage.removeItem('theme-mode');
     });

@@ -10,7 +10,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
  *               from `prefers-color-scheme` and follows OS changes.
  *
  * Persistence: `mode` is stored in localStorage under the key
- * `theme-mode`. Missing/invalid values fall back to 'os'.
+ * `theme-mode`. Missing/invalid values fall back to 'dark' (issue
+ * #129 — dark is the app's safe default, so a first-time visitor
+ * never sees a light flash on first paint).
  *
  * The active theme is mirrored to `<html data-bs-theme="...">` so the
  * Bootstrap 5.3 theme tokens (body bg, navbar palette, modal chrome,
@@ -24,14 +26,15 @@ export const THEME_STORAGE_KEY = 'theme-mode';
 const OS_QUERY = '(prefers-color-scheme: dark)';
 
 function readStoredMode() {
-  if (typeof window === 'undefined') return 'os';
+  if (typeof window === 'undefined') return 'dark';
   try {
     const value = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (value === 'light' || value === 'dark' || value === 'os') return value;
   } catch (_) {
     // localStorage can throw (private mode, disabled). Treat as no choice.
   }
-  return 'os';
+  // No stored choice → dark is the safe default (issue #129).
+  return 'dark';
 }
 
 function writeStoredMode(mode) {
@@ -45,7 +48,10 @@ function writeStoredMode(mode) {
 
 function detectOsTheme() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return 'light';
+    // matchMedia unavailable → fall back to the app's safe default
+    // (issue #129). Users who explicitly chose 'os' mode still get
+    // a deterministic palette rather than an OS-detection surprise.
+    return 'dark';
   }
   return window.matchMedia(OS_QUERY).matches ? 'dark' : 'light';
 }
