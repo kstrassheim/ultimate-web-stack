@@ -1,4 +1,3 @@
-import React from 'react';
 import './GroupsList.css'; // We'll create this next
 
 const GroupsList = ({ groups, loading }) => {
