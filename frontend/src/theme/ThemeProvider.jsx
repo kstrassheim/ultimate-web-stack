@@ -1,7 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 /**
- * Theme system for #85 — dark-mode toggle in Settings.
+ * Theme system for #85 - dark-mode toggle in Settings.
  *
  * Three logical states are tracked:
  *   - `mode`  : what the user asked for. 'light', 'dark', or 'os'.
@@ -39,7 +39,7 @@ function writeStoredMode(mode) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, mode);
   } catch (_) {
-    // Ignore write errors — toggle still works for the current session.
+    // Ignore write errors - toggle still works for the current session.
   }
 }
 

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Card, Table, Badge, Row, Col, Form, InputGroup, Button, Alert } from 'react-bootstrap';
+import { useState, useEffect, useMemo } from 'react';
+import { Card, Table, Badge, Row, Col, Form, Button, Alert } from 'react-bootstrap';
 import { useMsal } from '@azure/msal-react';
 import ReactApexChart from 'react-apexcharts'; // Add this import
 import { 
@@ -52,7 +52,6 @@ const WorldlineMonitor = () => {
   });
   const [error, setError] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const historyChartRef = useRef(null);
   const [chartKey, setChartKey] = useState(0); // For forcing chart re-renders
   // Issue #113: AbortController scoped to this component's mount. The
   // helper functions accept an optional `{ signal }` arg; without one
@@ -379,7 +378,7 @@ const WorldlineMonitor = () => {
         enabled: true,
         shared: false,
         intersect: false,
-        custom: function({ series, seriesIndex, dataPointIndex, w }) {
+        custom: function({ series, seriesIndex, dataPointIndex, w: _w }) {
           // Skip the first point (base worldline with no experiment)
           if (dataPointIndex === 0) {
             return `
