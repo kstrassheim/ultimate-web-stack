@@ -8,6 +8,7 @@ import { reauthenticate } from '@/auth/authFlow';
 import dummy_avatar from '@/assets/dummy-avatar.jpg';
 import appInsights from '@/log/appInsights';
 import { getProfilePhoto } from '@/api/graphApi';
+import { useAbortController } from '@/utils/useAbortController';
 import './EntraProfile.css'; // Create this file for custom tooltip styles
 
 const EntraProfile = () => {
@@ -24,12 +25,16 @@ const EntraProfile = () => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false); // Track dropdown state
   const [recoveryInFlight, setRecoveryInFlight] = useState(false);
+  // Issue #113: AbortController scoped to this component's mount so the
+  // in-flight Graph `getProfilePhoto` request is cancelled when the
+  // EntraProfile unmounts.
+  const abortController = useAbortController();
 
   const fetchProfilePhotoFunc = async (targetAccount) => {
     const accountToUse = targetAccount ?? account;
     if (accountToUse) {
       try {
-        const photo = await getProfilePhoto(instance, accountToUse);
+        const photo = await getProfilePhoto(instance, accountToUse, { signal: abortController.signal });
         // Only set photo URL if it's a valid URL string
         if (photo && typeof photo === 'string' && photo.trim() !== '') {
           setPhotoUrl(photo);
@@ -38,6 +43,8 @@ const EntraProfile = () => {
           setPhotoUrl(dummy_avatar);
         }
       } catch (error) {
+        // A caller-driven abort (component unmounted) is the silent path.
+        if (error && error.name === 'AbortError') return;
         console.error("Error fetching profile photo:", error);
         setPhotoUrl(dummy_avatar);
         appInsights.trackException({ error });

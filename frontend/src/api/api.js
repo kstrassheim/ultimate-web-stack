@@ -8,6 +8,7 @@ import {
   inspectionJson,
   notifySessionExpired,
 } from '@/api/errors';
+import { fetchWithTimeout } from '@/api/fetchWithTimeout';
 
 // Base URL for API endpoints
 const BASE_URL = `${backendUrl}/api`;
@@ -28,7 +29,7 @@ const summarizeBody = (bodyText) => {
 /**
  * Make an authenticated API request.
  *
- * Behaviour summary (the bits that matter for issue #86):
+ * Behaviour summary (the bits that matter for issues #86 and #113):
  *
  *  1. If MSAL's `acquireTokenSilent` rejects with InteractionRequiredAuthError
  *     (the canonical "refresh token gone" case), we publish a
@@ -51,11 +52,29 @@ const summarizeBody = (bodyText) => {
  *     surfaced as ApiError — the user will see the message rather than an
  *     empty page.
  *
+ *  5. (Issue #113) The fetch is wrapped in `fetchWithTimeout`, which aborts
+ *     the request after the configured default and re-throws the cancellation
+ *     as an `ApiError` with `.name === 'RequestTimeoutError'`. We surface
+ *     that the same way as any other backend failure (trackException + the
+ *     existing catch-all below) so the spinner can't spin forever.
+ *
  * `url.includes('admin')` callers (`getAdminData`) used to rely on errors
  * being rethrown. Both call sites are already set up to render the error
  * message — we preserve that contract.
+ *
+ * The optional `options` bag forwards:
+ *   - `signal`: an `AbortSignal` (typically from `useAbortController()`)
+ *     that aborts the in-flight fetch when the caller wants out — e.g. a
+ *     React component unmounting mid-request.
+ *   - `timeoutMs`: per-call timeout override, mainly for tests.
  */
-const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = null) => {
+const makeAuthenticatedRequest = async (
+  instance,
+  url,
+  method = 'GET',
+  body = null,
+  options = {},
+) => {
   const operation = `${method} ${url}`;
   let accessToken;
   try {
@@ -105,18 +124,37 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
       'Content-Type': 'application/json'
     };
 
-    const options = {
+    const fetchOptions = {
       method,
       headers
     };
 
     // Add request body for non-GET requests
     if (body && (method === 'POST' || method === 'PUT')) {
-      options.body = JSON.stringify(body);
+      fetchOptions.body = JSON.stringify(body);
     }
 
-    // Make the API request
-    const response = await fetch(`${BASE_URL}${url}`, options);
+    // Make the API request — wrapped in `fetchWithTimeout` so a stalled
+    // backend can't pin the spinner forever (issue #113). The onTimeout
+    // callback pipes the timeout into the same telemetry stream as every
+    // other failure; the catch-all at the bottom of this function then
+    // surfaces the user-facing error the same way as any other backend
+    // rejection.
+    const response = await fetchWithTimeout(
+      `${BASE_URL}${url}`,
+      fetchOptions,
+      {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        operation,
+        onTimeout: {
+          trackException: (err) => appInsights.trackException({
+            error: err,
+            properties: { operation, source: 'API', detection: 'timeout' }
+          }),
+        },
+      },
+    );
 
     // Always inspect the response for the login-page / expiry signals even
     // when the status is "ok" — that's the whole point of issue #86.
@@ -214,15 +252,15 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
   }
 };
 
-export const getUserData = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/user-data');
+export const getUserData = async (instance, options) => {
+  return makeAuthenticatedRequest(instance, '/user-data', 'GET', null, options);
 };
 
-export const getAdminData = async (instance, message = "Hello from frontend", status = 123) => {
+export const getAdminData = async (instance, message = "Hello from frontend", status = 123, options) => {
   const body = {
     message,
     status
   };
 
-  return makeAuthenticatedRequest(instance, '/admin-data', 'POST', body);
+  return makeAuthenticatedRequest(instance, '/admin-data', 'POST', body, options);
 };

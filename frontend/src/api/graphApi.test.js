@@ -2,6 +2,7 @@
 import { getProfilePhoto, getAllGroups } from './graphApi';
 import { retrieveTokenForGraph } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
+import { ApiError } from './errors';
 
 // Add the following block to mock the entire module so that retrieveTokenForGraph becomes a jest mock:
 jest.mock('@/auth/entraAuth', () => ({
@@ -63,7 +64,8 @@ describe('graphApi', () => {
       const result = await getProfilePhoto(mockInstance, mockAccount);
       expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Profile - Getting profile image' });
       expect(global.fetch).toHaveBeenCalledWith('https://graph.microsoft.com/v1.0/me/photo/$value', {
-        headers: { Authorization: 'Bearer fake-token' }
+        headers: { Authorization: 'Bearer fake-token' },
+        signal: expect.any(AbortSignal),
       });
       expect(result).toBe(expectedUrl);
     });
@@ -108,7 +110,8 @@ describe('graphApi', () => {
         headers: {
           Authorization: 'Bearer fake-group-token',
           'Content-Type': 'application/json'
-        }
+        },
+        signal: expect.any(AbortSignal),
       });
       expect(result).toEqual([{ id: 'group1' }]);
     });
@@ -125,6 +128,143 @@ describe('graphApi', () => {
       expect(appInsights.trackException).toHaveBeenCalled();
       // Optionally verify the console.error was called without seeing the output
       expect(console.error).toHaveBeenCalled();
+    });
+
+    it('surfaces a timeout as RequestTimeoutError and tracks it via App Insights', async () => {
+      // Configure a tiny timeout so the test runs quickly.
+      window.__UWS_API_TIMEOUT_MS = 5;
+      try {
+        const mockInstance = {
+          getActiveAccount: jest.fn().mockReturnValue({
+            idTokenClaims: { roles: ['Admin'] }
+          })
+        };
+        retrieveTokenForGraph.mockResolvedValue('fake-group-token');
+
+        let rejectFetch;
+        fetch.mockImplementation(
+          () => new Promise((_resolve, reject) => {
+            rejectFetch = reject;
+          })
+        );
+
+        const promise = getAllGroups(mockInstance).catch((err) => err);
+
+        // Wait for fetch to be called, then wire the abort listener.
+        for (let i = 0; i < 20 && fetch.mock.calls.length === 0; i++) {
+          await Promise.resolve();
+        }
+        const signal = fetch.mock.calls[0][1].signal;
+        signal.addEventListener('abort', () =>
+          rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        );
+
+        const err = await promise;
+        expect(err).toBeDefined();
+        expect(err.name).toBe('RequestTimeoutError');
+        expect(err).toBeInstanceOf(ApiError);
+        expect(err.status).toBe(0);
+        expect(err.detection).toBe('timeout');
+        expect(appInsights.trackException).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exception: expect.objectContaining({ name: 'RequestTimeoutError' }),
+            properties: expect.objectContaining({
+              operation: 'getAllGroups',
+              source: 'Graph API',
+              detection: 'timeout',
+            }),
+          })
+        );
+      } finally {
+        delete window.__UWS_API_TIMEOUT_MS;
+      }
+    });
+
+    it('works with fake timers (acceptance criterion for issue #113)', async () => {
+      jest.useFakeTimers({
+        doNotFake: ['queueMicrotask', 'nextTick', 'setImmediate', 'clearImmediate'],
+      });
+      try {
+        window.__UWS_API_TIMEOUT_MS = 5;
+        try {
+          const mockInstance = {
+            getActiveAccount: jest.fn().mockReturnValue({
+              idTokenClaims: { roles: ['Admin'] }
+            })
+          };
+          retrieveTokenForGraph.mockResolvedValue('fake-group-token');
+          let rejectFetch;
+          fetch.mockImplementation(
+            () => new Promise((_resolve, reject) => {
+              rejectFetch = reject;
+            })
+          );
+          const promise = getAllGroups(mockInstance).catch((err) => err);
+          for (let i = 0; i < 20 && fetch.mock.calls.length === 0; i++) {
+            await Promise.resolve();
+          }
+          const signal = fetch.mock.calls[0][1].signal;
+          signal.addEventListener('abort', () =>
+            rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          );
+          jest.advanceTimersByTime(10);
+          const err = await promise;
+          expect(err).toBeDefined();
+          expect(err.name).toBe('RequestTimeoutError');
+        } finally {
+          delete window.__UWS_API_TIMEOUT_MS;
+        }
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Request timeout for getProfilePhoto (issue #113)
+  // -------------------------------------------------------------------
+  describe('getProfilePhoto timeout (issue #113)', () => {
+    beforeEach(() => {
+      window.__UWS_API_TIMEOUT_MS = 5;
+    });
+    afterEach(() => {
+      delete window.__UWS_API_TIMEOUT_MS;
+    });
+
+    it('tracks a timeout via App Insights and falls back to undefined', async () => {
+      const mockInstance = {
+        acquireTokenSilent: jest.fn().mockResolvedValue({ accessToken: 'fake-token' })
+      };
+      const mockAccount = {
+        username: 'testuser',
+        idTokenClaims: { roles: ['Admin'] }
+      };
+      let rejectFetch;
+      fetch.mockImplementation(
+        () => new Promise((_resolve, reject) => {
+          rejectFetch = reject;
+        })
+      );
+
+      const promise = getProfilePhoto(mockInstance, mockAccount);
+      for (let i = 0; i < 20 && fetch.mock.calls.length === 0; i++) {
+        await Promise.resolve();
+      }
+      const signal = fetch.mock.calls[0][1].signal;
+      signal.addEventListener('abort', () =>
+        rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+      );
+      const result = await promise;
+      // getProfilePhoto's contract is to swallow errors and return
+      // undefined, so a timeout yields no value (the calling component
+      // falls back to the dummy avatar). Telemetry must still fire.
+      expect(result).toBeUndefined();
+      expect(appInsights.trackException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({ name: 'RequestTimeoutError' }),
+          properties: expect.objectContaining({ detection: 'timeout' }),
+        })
+      );
     });
   });
 });

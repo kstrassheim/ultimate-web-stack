@@ -82,11 +82,14 @@ describe('Dashboard Component', () => {
     // Once data is loaded, verify display containers
     expect(screen.getByTestId('api-response-card')).toBeInTheDocument();
 
-    // Verify API calls were made
+    // Verify API calls were made. The Dashboard passes an options bag
+    // containing an AbortSignal so the request can be cancelled on
+    // unmount (issue #113); the signal value is implementation-defined
+    // so we match it loosely rather than asserting a specific shape.
     expect(getUserData).toHaveBeenCalledTimes(1);
-    expect(getUserData).toHaveBeenCalledWith(mockMsalInstance);
+    expect(getUserData).toHaveBeenCalledWith(mockMsalInstance, expect.objectContaining({ signal: expect.anything() }));
     expect(getAllGroups).toHaveBeenCalledTimes(1);
-    expect(getAllGroups).toHaveBeenCalledWith(mockMsalInstance);
+    expect(getAllGroups).toHaveBeenCalledWith(mockMsalInstance, expect.objectContaining({ signal: expect.anything() }));
     
     // Verify tracking was called
     expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Home - Fetch data started' });

@@ -215,6 +215,153 @@ describe('API Module', () => {
   });
 
   // -------------------------------------------------------------------
+  // Request timeout behaviour for issue #113
+  // -------------------------------------------------------------------
+  describe('Request timeout (issue #113)', () => {
+    beforeEach(() => {
+      // Trim the timeout so the test runs quickly. The override is read
+      // by `getRequestTimeoutMs()` in the helper at request time.
+      window.__UWS_API_TIMEOUT_MS = 5;
+    });
+    afterEach(() => {
+      delete window.__UWS_API_TIMEOUT_MS;
+    });
+
+    /** Configure the global fetch mock so it never resolves on its own,
+     *  and wire its signal to a reject handler so the test can drive
+     *  both timeout and caller-abort paths from outside. */
+    const installPendingFetch = () => {
+      let rejectFetch;
+      const fetchMock = jest.fn().mockImplementation(
+        () => new Promise((_resolve, reject) => {
+          rejectFetch = reject;
+        })
+      );
+      global.fetch = fetchMock;
+      return {
+        fetchMock,
+        rejectFetch: (err) => rejectFetch(err),
+      };
+    };
+
+    /** Helper: wait for the helper to have invoked fetch, then attach an
+     *  abort listener that rejects with a DOMException-shaped
+     *  AbortError. Real fetch does the same when the signal it
+     *  received is aborted. */
+    const wireAbortRejection = async (pending) => {
+      // Poll until the fetch mock has been invoked; the helper awaits
+      // `retrieveTokenForBackend` first so the fetch call happens one
+      // microtask after `getUserData` returns.
+      for (let i = 0; i < 20 && pending.fetchMock.mock.calls.length === 0; i++) {
+        await Promise.resolve();
+      }
+      const call = pending.fetchMock.mock.calls[0];
+      if (!call) throw new Error('fetch was never called by the helper');
+      const signal = call[1].signal;
+      signal.addEventListener('abort', () =>
+        pending.rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+      );
+    };
+
+    it('surfaces a timeout as RequestTimeoutError and tracks it via App Insights', async () => {
+      const pending = installPendingFetch();
+      const promise = getUserData(mockInstance);
+      await wireAbortRejection(pending);
+
+      const result = await promise;
+
+      // getUserData's contract: errors are swallowed to `undefined` for
+      // user-data URLs. The helper has already pushed the error through
+      // App Insights.
+      expect(result).toBeUndefined();
+      expect(pending.fetchMock).toHaveBeenCalledTimes(1);
+      expect(appInsights.trackException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            name: 'RequestTimeoutError',
+            detection: 'timeout',
+          }),
+          properties: expect.objectContaining({
+            operation: expect.any(String),
+            source: 'API',
+            detection: 'timeout',
+          }),
+        })
+      );
+    });
+
+    it('tracks the timeout via App Insights even on admin endpoints (which rethrow)', async () => {
+      const pending = installPendingFetch();
+      const promise = getAdminData(mockInstance).catch((err) => err);
+      await wireAbortRejection(pending);
+
+      const err = await promise;
+      expect(err).toBeDefined();
+      expect(err.name).toBe('RequestTimeoutError');
+      expect(err).toBeInstanceOf(ApiError);
+      expect(appInsights.trackException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({ name: 'RequestTimeoutError' }),
+        })
+      );
+    });
+
+    it('does not classify an AbortError from the underlying fetch as a timeout when no timeout fired', async () => {
+      const pending = installPendingFetch();
+      const callerController = new AbortController();
+      const promise = getUserData(mockInstance, { signal: callerController.signal });
+      await wireAbortRejection(pending);
+
+      callerController.abort();
+
+      const result = await promise;
+      expect(result).toBeUndefined();
+      // The App Insights timeout-telemetry should NOT have fired.
+      const timeoutCalls = (appInsights.trackException.mock.calls || []).filter(([arg]) => {
+        const props = arg && arg.properties;
+        return props && props.detection === 'timeout';
+      });
+      expect(timeoutCalls).toHaveLength(0);
+    });
+
+    it('works with fake timers (acceptance criterion for issue #113)', async () => {
+      // Issue #113 acceptance criterion: "Tests cover the timeout path
+      // with fake timers." This test exercises the same path using
+      // Jest's fake timers rather than real ones, to confirm the
+      // timeout firing and the App Insights trackException call land
+      // even when no wall-clock time has actually passed.
+      jest.useFakeTimers({
+        // Don't fake Promise microtask machinery — we still need awaits
+        // to drain normally so the helper's catch handler runs.
+        doNotFake: [
+          'queueMicrotask',
+          'nextTick',
+          'setImmediate',
+          'clearImmediate',
+        ],
+      });
+      try {
+        const pending = installPendingFetch();
+        const promise = getUserData(mockInstance);
+        await wireAbortRejection(pending);
+
+        // Advance fake time past the configured 5ms timeout.
+        jest.advanceTimersByTime(10);
+        // Let the helper's catch handler run.
+        await promise;
+
+        expect(appInsights.trackException).toHaveBeenCalledWith(
+          expect.objectContaining({
+            error: expect.objectContaining({ name: 'RequestTimeoutError' }),
+          })
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------
   // Session expiry behaviour for issue #86
   // -------------------------------------------------------------------
   describe('Session expiry detection (issue #86)', () => {

@@ -187,15 +187,19 @@ describe('Experiments Component', () => {
     // Submit the form
     fireEvent.click(screen.getByTestId('experiment-form-submit'));
     
-    // Wait for API call
-    await waitFor(() => {
+    // Wait for API call. The Experiments page passes an options bag
+      // containing an AbortSignal so the request can be cancelled on
+      // unmount (issue #113); the signal value is implementation-defined
+      // so we match it loosely.
+      await waitFor(() => {
       expect(createExperiment).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
           name: 'Test Experiment',
           description: 'Test description',
           world_line_change: '0.123456'
-        })
+        }),
+        expect.objectContaining({ signal: expect.anything() })
       );
     });
     
@@ -262,7 +266,8 @@ describe('Experiments Component', () => {
         expect.objectContaining({
           name: 'Updated Phone Microwave',
           world_line_change: '0.409431'
-        })
+        }),
+        expect.objectContaining({ signal: expect.anything() })
       );
     });
   });
@@ -419,7 +424,11 @@ describe('Experiments Component', () => {
     
     // Wait for API call
     await waitFor(() => {
-      expect(deleteExperiment).toHaveBeenCalledWith(expect.anything(), 'exp-1');
+      expect(deleteExperiment).toHaveBeenCalledWith(
+        expect.anything(),
+        'exp-1',
+        expect.objectContaining({ signal: expect.anything() })
+      );
     });
     
     // Verify success notification
@@ -520,7 +529,8 @@ describe('Experiments Component', () => {
         expect.objectContaining({
           name: 'Date Validation Test',
           timestamp: '2025-04-07T12:34:56.789Z'
-        })
+        }),
+        expect.objectContaining({ signal: expect.anything() })
       );
     });
   });
