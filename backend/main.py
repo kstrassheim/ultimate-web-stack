@@ -35,10 +35,10 @@ from common.config import tfconfig, origins
 #   - https://login.microsoftonline.com (MSAL / Entra ID auth redirect)
 #   - https://*.in.applicationinsights.azure.com (App Insights telemetry ingest)
 #   - https://js.monitor.azure.com (Application Insights SDK CDN snippet)
-# The img-src allows https://graph.microsoft.com because the SPA fetches the
-# signed-in user's profile photo from Microsoft Graph. Add any new external
-# origin to this list if the SPA or telemetry stack talks to it, otherwise
-# the browser will block the request after deployment.
+# The img-src allows https://graph.microsoft.com because the SPA fetches
+# the signed-in user's profile photo from Microsoft Graph. Add any new
+# external origin to this list if the SPA or telemetry stack talks to it,
+# otherwise the browser will block the request after deployment.
 _SECURITY_HEADERS_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -54,12 +54,23 @@ _SECURITY_HEADERS_PERMISSIONS = "camera=(), microphone=(), geolocation=()"
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Adds baseline security response headers to every response.
+    """Adds baseline security response headers to every HTTP response.
 
-    ``setdefault`` is used on every header so downstream middleware
-    (CORS, OpenCensus) can still emit its own headers without clobbering
-    this layer. The exception is logged before the synthesized 500
-    response is returned to the client.
+    See issue #98. ``setdefault`` is used on every header so downstream
+    middleware (CORS, OpenCensus) can still emit their own headers without
+    clobbering this layer.
+
+    The dispatch body is wrapped in ``try/except`` so that unhandled
+    exceptions raised by route handlers (or any inner middleware) still
+    produce a 500 response with the baseline security headers attached.
+    Starlette's ``ServerErrorMiddleware`` sits OUTSIDE the user
+    middleware stack and synthesizes a 500 response directly to the
+    client — bypassing this middleware — so without the explicit catch
+    any uncaught exception would produce a 500 with no security
+    headers. The exception is logged before the synthesized 500 is
+    returned so the traceback still reaches application log
+    aggregation (ServerErrorMiddleware would otherwise log it on its
+    own path, but we never reach this path).
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -126,10 +137,12 @@ _SEED_FGL_TEST_DATA_ENV = "SEED_FGL_TEST_DATA"
 
 
 def _should_seed_fgl_test_data() -> bool:
-    """Decide whether the lifespan startup hook should seed FGL data.
+    """Decide whether the lifespan startup hook should seed FGL test data.
 
-    The env-var lookup is done here so tests can flip the variable between
-    cases without re-importing ``main``.
+    See the module-level comment on ``_SEED_FGL_TEST_DATA_ENV`` for the
+    full semantics. The env-var lookup is done here (not at module
+    import time) so tests can flip the variable between cases without
+    re-importing ``main``.
     """
     raw = os_environ.get(_SEED_FGL_TEST_DATA_ENV, "auto").strip().lower()
     if raw == "true":
@@ -152,8 +165,8 @@ async def lifespan(app: FastAPI):
     Startup: optionally seed the Future Gadget Lab data store with
     sample experiments / divergence readings (issue #112). The seed
     itself is a no-op if the store already contains data, so it is
-    safe to leave it at its default in any environment where MOCK
-    mode is on — it will only fill an empty Cosmos container on
+    safe to leave the env var at its default in any environment
+    where MOCK mode is on — it will only fill an empty store on
     first start.
 
     Shutdown: nothing to do; the lifespan completes silently.
@@ -207,18 +220,21 @@ from api.future_gadget_api import fgl_service  # noqa: E402,F401
 async def health():
     # Issue #100: minimal payload — only the status string is returned.
     #
-    # The previous handler returned host CPU%, memory breakdown,
+    # The previous handler returned the host's CPU%, memory breakdown,
     # and uptime to any anonymous caller. That disclosed the App Service
     # SKU (CPU/memory totals fingerprint F1 vs B1 vs P1v3) and how
-    # stale the deployment is (an App Service restart after every code
-    # change). Both signals were serving an attacker who can query the
-    # endpoint anonymously, so the response now contains only the
-    # status field required by the load balancer.
+    # stale the deployment is (uptime tracks the most recent App Service
+    # restart, which Azure triggers on every code change). Both
+    # signals were reaching attackers without an Authorization header.
     #
-    # Azure App Service uses this path itself for its health probe
-    # (see terraform.tf's ``health_check_path = "/health"``), so
-    # the endpoint must stay reachable — fix the content, not the
-    # existence of the route.
+    # Azure App Service uses this path itself for its load-balancer
+    # health probe (see terraform.tf's ``health_check_path = "/health"``),
+    # so the endpoint must stay reachable — the fix is the *content* of
+    # the response, not the existence of the route.
+    #
+    # If detailed metrics are needed later, gate them behind an
+    # authenticated endpoint (e.g. ``/api/health/internal`` with
+    # ``@required_roles(["Admin"])``) rather than re-exposing them here.
     return {"status": "ok"}
 
 
@@ -261,8 +277,8 @@ async def frontend_handler(path: str):
     #     recognized ``Path::SafeAccessCheck`` barrier guard that
     #     sanitizes the candidate on its True branch. The trailing
     #     `os.sep` is load-bearing — it stops
-    #     `dist_realpath = /tmp/dist` from matching a sibling
-    #     `/tmp/dist_other/secret.txt`.
+    #     ``dist_realpath = /tmp/dist`` from matching a sibling
+    #     ``/tmp/dist_other/secret.txt``.
     #  3. The filesystem access (``os.path.isfile``) MUST come after
     #     the barrier guard so the candidate is already sanitized
     #     when it reaches the sink — CodeQL evaluates ``and`` chains
@@ -271,12 +287,19 @@ async def frontend_handler(path: str):
     #
     # The regex deny-list (literal ``..`` segments) is belt-and-
     # suspenders: it short-circuits before any path operation runs.
+    # The regression tests in ``TestFrontendHandlerPathContainment``
+    # (main_test.py) exercise the same logic end-to-end against a
+    # real tmp_path dist tree to prove both layers reject path-
+    # traversal payloads.
     dist_realpath = os.path.realpath(str(dist))
     fp = os.path.join(dist_realpath, "index.html")
     if path and not re.search(r'(^|/)\.\.($|/)', path):
         candidate_realpath = os.path.realpath(
             os.path.join(dist_realpath, path)
         )
+        # ``startswith`` first (barrier guard), then ``isfile``
+        # (sink) — see comment block above for why the order is
+        # load-bearing for the CodeQL sanitizer model.
         if (
             candidate_realpath.startswith(dist_realpath + os.sep)
             and os.path.isfile(candidate_realpath)
