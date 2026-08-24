@@ -1,4 +1,3 @@
-import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useAbortController } from './useAbortController';
@@ -33,7 +32,7 @@ describe('useAbortController', () => {
     expect(captured.signal.aborted).toBe(false);
   });
 
-  it('does NOT auto-abort on unmount (intentional — see hook docstring)', () => {
+  it('does NOT auto-abort on unmount (intentional - see hook docstring)', () => {
     // The hook deliberately drops the useEffect-driven auto-abort on
     // unmount because doing it without breaking React.StrictMode would
     // require moving every fetch into a useEffect that owns its own
@@ -87,7 +86,7 @@ describe('useAbortController', () => {
     expect(captured.signal.aborted).toBe(true);
     unmount();
     // The unmount cleanup must not throw "Cannot read properties of
-    // null (reading 'abort')" — the previous implementation could
+    // null (reading 'abort')" - the previous implementation could
     // null out `ref.current` between the simulated-unmount and the
     // real-unmount cleanups under React.StrictMode and crash the
     // whole subtree on the next unmount.

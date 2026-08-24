@@ -34,7 +34,9 @@ const copyLogos = () => {
       // Check if it's a directory
       if (fs.statSync(srcPath).isDirectory()) {
         // Recursively copy subdirectories
-        copyAllFiles(srcPath, destPath);
+        fs.readdirSync(srcPath).forEach(subFile => {
+          fs.copyFileSync(join(srcPath, subFile), join(destPath, subFile));
+        });
       } else {
         // Copy file
         fs.copyFileSync(srcPath, destPath);
