@@ -8,6 +8,7 @@ import {
   inspectionJson,
   notifySessionExpired,
 } from '@/api/errors';
+import { fetchWithTimeout } from '@/api/fetchWithTimeout';
 import { WebSocketClient } from '@/api/socket';
 
 // Base URL for all Future Gadget Lab API endpoints
@@ -27,7 +28,18 @@ const summarizeBody = (bodyText) => {
 // into a re-login prompt) when the backend or proxy hands back an HTML
 // login page or a redirect chain that lands on a login URL, and raises
 // `ApiError` otherwise so the calling page can surface a real error.
-const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = null) => {
+//
+// The `options` bag forwards `signal` / `timeoutMs` to `fetchWithTimeout`
+// so callers can cancel an in-flight request (e.g. on component unmount
+// via `useAbortController`) and so a stalled backend can't pin the UI
+// forever (issue #113).
+const makeAuthenticatedRequest = async (
+  instance,
+  url,
+  method = 'GET',
+  body = null,
+  options = {},
+) => {
   const operation = `${method} ${url}`;
   try {
     appInsights.trackEvent({ name: `Api Call - Future Gadget Lab - ${method} ${url}` });
@@ -69,16 +81,36 @@ const makeAuthenticatedRequest = async (instance, url, method = 'GET', body = nu
       'Content-Type': 'application/json'
     };
 
-    const options = {
+    const fetchOptions = {
       method,
       headers
     };
 
     if (body && (method === 'POST' || method === 'PUT')) {
-      options.body = JSON.stringify(body);
+      fetchOptions.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${BASE_URL}${url}`, options);
+    // Make the API request — wrapped in `fetchWithTimeout` so a stalled
+    // backend can't pin the spinner forever (issue #113). The onTimeout
+    // callback pipes the timeout into the same telemetry stream as every
+    // other failure; the catch-all at the bottom of this function then
+    // surfaces the user-facing error the same way as any other backend
+    // rejection.
+    const response = await fetchWithTimeout(
+      `${BASE_URL}${url}`,
+      fetchOptions,
+      {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        operation,
+        onTimeout: {
+          trackException: (err) => appInsights.trackException({
+            exception: err,
+            properties: { operation, source: 'Future Gadget Lab API', detection: 'timeout' }
+          }),
+        },
+      },
+    );
 
     const inspection = await inspectResponseForExpiry(response, { expectsJson: true });
 
@@ -183,43 +215,43 @@ export const formatWorldLineChange = (change) => {
 
 // ----- EXPERIMENTS API ONLY -----
 
-export const getAllExperiments = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/lab-experiments');
+export const getAllExperiments = async (instance, options) => {
+  return makeAuthenticatedRequest(instance, '/lab-experiments', 'GET', null, options);
 };
 
-export const getExperimentById = async (instance, experimentId) => {
-  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`);
+export const getExperimentById = async (instance, experimentId, options) => {
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'GET', null, options);
 };
 
-export const createExperiment = async (instance, experimentData) => {
+export const createExperiment = async (instance, experimentData, options) => {
   // Only add timestamp if not provided by user
   const dataWithTimestamp = {
     ...experimentData,
     // Add timestamp if not provided or empty
     timestamp: experimentData.timestamp || new Date().toISOString()
   };
-  
-  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', dataWithTimestamp);
+
+  return makeAuthenticatedRequest(instance, '/lab-experiments', 'POST', dataWithTimestamp, options);
 };
 
-export const updateExperiment = async (instance, experimentId, experimentData) => {
-  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'PUT', experimentData);
+export const updateExperiment = async (instance, experimentId, experimentData, options) => {
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'PUT', experimentData, options);
 };
 
-export const deleteExperiment = async (instance, experimentId) => {
-  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE');
+export const deleteExperiment = async (instance, experimentId, options) => {
+  return makeAuthenticatedRequest(instance, `/lab-experiments/${experimentId}`, 'DELETE', null, options);
 };
 
 // Add these functions after the existing experiment functions
 
 // ----- WORLDLINE & DIVERGENCE API -----
 
-export const getWorldlineStatus = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/worldline-status');
+export const getWorldlineStatus = async (instance, options) => {
+  return makeAuthenticatedRequest(instance, '/worldline-status', 'GET', null, options);
 };
 
-export const getWorldlineHistory = async (instance) => {
-  return makeAuthenticatedRequest(instance, '/worldline-history');
+export const getWorldlineHistory = async (instance, options) => {
+  return makeAuthenticatedRequest(instance, '/worldline-history', 'GET', null, options);
 };
 
 export const getDivergenceReadings = async (instance, {
@@ -227,18 +259,18 @@ export const getDivergenceReadings = async (instance, {
   recordedBy = null,
   minValue = null,
   maxValue = null
-} = {}) => {
+} = {}, options) => {
   // Build query string with any provided filters
   const params = new URLSearchParams();
   if (status) params.append('status', status);
   if (recordedBy) params.append('recorded_by', recordedBy);
   if (minValue !== null) params.append('min_value', minValue);
   if (maxValue !== null) params.append('max_value', maxValue);
-  
+
   const queryString = params.toString();
   const url = `/divergence-readings${queryString ? `?${queryString}` : ''}`;
-  
-  return makeAuthenticatedRequest(instance, url);
+
+  return makeAuthenticatedRequest(instance, url, 'GET', null, options);
 };
 
 // Format divergence reading for display

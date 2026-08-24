@@ -14,6 +14,7 @@ import {
 import appInsights from '@/log/appInsights';
 import Loading from '@/components/Loading';
 import notyfService from '@/log/notyfService';
+import { useAbortController } from '@/utils/useAbortController';
 
 const Experiments = () => {
   const { instance } = useMsal();
@@ -29,22 +30,30 @@ const Experiments = () => {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const initFetchCompleted = useRef(false);
   const [initialised, setInitialised] = useState(false);
+  // Issue #113: AbortController scoped to this component's mount. The
+  // helper functions accept an optional `{ signal }` arg; without one
+  // they fall back to their default timeout behaviour. We pass the
+  // signal down so the in-flight request is cancelled when the
+  // Experiments page unmounts.
+  const abortController = useAbortController();
 
   // Load experiments data
   const fetchExperiments = async (showMessage = false) => {
   setLoading(true);
     setError(null);
-    
+
     try {
       appInsights.trackEvent({ name: 'Experiments - Fetching all experiments' });
-      const data = await getAllExperiments(instance);
+      const data = await getAllExperiments(instance, { signal: abortController.signal });
       setExperiments(data);
-      
+
       // Only show success message when explicitly requested (e.g., when Reload button is clicked)
       if (showMessage) {
         notyfService.success('Experiments loaded successfully');
       }
     } catch (err) {
+      // A caller-driven abort (component unmounted) is the silent path.
+      if (err && err.name === 'AbortError') return;
       setError(`Failed to load experiments: ${err.message}`);
       notyfService.error(`Failed to load experiments: ${err.message}`);
       appInsights.trackException({ error: err, severityLevel: 'Error' });
@@ -57,9 +66,11 @@ const Experiments = () => {
   // Get single experiment by ID
   const fetchExperimentById = async (id) => {
     try {
-      const data = await getExperimentById(instance, id);
+      const data = await getExperimentById(instance, id, { signal: abortController.signal });
       return data;
     } catch (err) {
+      // A caller-driven abort (component unmounted) is the silent path.
+      if (err && err.name === 'AbortError') return null;
       notyfService.error(`Failed to load experiment details: ${err.message}`);
       return null;
     }
@@ -70,7 +81,7 @@ const Experiments = () => {
     setLoading(true);
     setActionLoading(true);
     try {
-      await createExperiment(instance, experimentData);
+      await createExperiment(instance, experimentData, { signal: abortController.signal });
       notyfService.success('Experiment created successfully');
       setShowForm(false);
       await fetchExperiments(false); // Don't show "loaded" message after create
@@ -87,7 +98,7 @@ const Experiments = () => {
     setLoading(true);
     setActionLoading(true);
     try {
-      await updateExperiment(instance, id, experimentData);
+      await updateExperiment(instance, id, experimentData, { signal: abortController.signal });
       notyfService.success('Experiment updated successfully');
       setShowForm(false);
       await fetchExperiments(false); // Don't show "loaded" message after update
@@ -105,7 +116,7 @@ const Experiments = () => {
     setLoading(true);
     setActionLoading(true);
     try {
-      await deleteExperiment(instance, experimentToDelete.id);
+      await deleteExperiment(instance, experimentToDelete.id, { signal: abortController.signal });
       notyfService.success('Experiment deleted successfully');
       setShowDeleteModal(false);
       setExperimentToDelete(null);

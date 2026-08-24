@@ -206,9 +206,9 @@ describe('WorldlineMonitor', () => {
     
     // Wait for API data to load
     await waitFor(() => {
-      expect(getWorldlineStatus).toHaveBeenCalledWith(mockInstance);
-      expect(getWorldlineHistory).toHaveBeenCalledWith(mockInstance);
-      expect(getDivergenceReadings).toHaveBeenCalledWith(mockInstance);
+      expect(getWorldlineStatus).toHaveBeenCalledWith(mockInstance, expect.objectContaining({ signal: expect.anything() }));
+      expect(getWorldlineHistory).toHaveBeenCalledWith(mockInstance, expect.objectContaining({ signal: expect.anything() }));
+      expect(getDivergenceReadings).toHaveBeenCalledWith(mockInstance, {}, expect.objectContaining({ signal: expect.anything() }));
     });
     
     // Wait for WebSocket connection

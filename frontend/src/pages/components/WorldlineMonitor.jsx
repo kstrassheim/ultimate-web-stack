@@ -18,6 +18,7 @@ import {
   divergenceReadingsToCsv,
   divergenceReadingsCsvFilename
 } from '@/utils/divergenceReadingsCsv';
+import { useAbortController } from '@/utils/useAbortController';
 
 // Helper function to get status color
 const getStatusColor = (status) => {
@@ -53,17 +54,26 @@ const WorldlineMonitor = () => {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const historyChartRef = useRef(null);
   const [chartKey, setChartKey] = useState(0); // For forcing chart re-renders
+  // Issue #113: AbortController scoped to this component's mount. The
+  // helper functions accept an optional `{ signal }` arg; without one
+  // they fall back to their default timeout behaviour. We pass the
+  // signal down so an in-flight worldline request is cancelled when
+  // the WorldlineMonitor unmounts (e.g. user navigates away from the
+  // Dashboard before the slow status/history fetch settles).
+  const abortController = useAbortController();
 
   // Fetch current worldline status
   const fetchWorldlineStatus = async () => {
     setLoading(prev => ({ ...prev, status: true }));
     setError(null);
-    
+
     try {
       appInsights.trackEvent({ name: 'Worldline - Fetching current status' });
-      const data = await getWorldlineStatus(instance);
+      const data = await getWorldlineStatus(instance, { signal: abortController.signal });
       setWorldlineStatus(data);
     } catch (err) {
+      // A caller-driven abort (component unmounted) is the silent path.
+      if (err && err.name === 'AbortError') return;
       setError(`Failed to load worldline status: ${err.message}`);
       notyfService.error(`Failed to load worldline status: ${err.message}`);
       appInsights.trackException({ error: err });
@@ -75,12 +85,13 @@ const WorldlineMonitor = () => {
   // Fetch worldline history
   const fetchWorldlineHistory = async () => {
     setLoading(prev => ({ ...prev, history: true }));
-    
+
     try {
       appInsights.trackEvent({ name: 'Worldline - Fetching history' });
-      const data = await getWorldlineHistory(instance);
+      const data = await getWorldlineHistory(instance, { signal: abortController.signal });
       setWorldlineHistory(data);
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       notyfService.error(`Failed to load worldline history: ${err.message}`);
       appInsights.trackException({ error: err });
     } finally {
@@ -91,13 +102,14 @@ const WorldlineMonitor = () => {
   // Fetch divergence readings
   const fetchDivergenceReadings = async () => {
     setLoading(prev => ({ ...prev, readings: true }));
-    
+
     try {
       appInsights.trackEvent({ name: 'Worldline - Fetching divergence readings' });
-      const data = await getDivergenceReadings(instance);
+      const data = await getDivergenceReadings(instance, {}, { signal: abortController.signal });
       setReadings(data);
       setFilteredReadings(data);
     } catch (err) {
+      if (err && err.name === 'AbortError') return;
       notyfService.error(`Failed to load divergence readings: ${err.message}`);
       appInsights.trackException({ error: err });
     } finally {

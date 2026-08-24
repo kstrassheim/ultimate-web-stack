@@ -8,6 +8,7 @@ import GroupsList from '@/pages/components/GroupsList';
 import WorldlineMonitor from '@/pages/components/WorldlineMonitor';
 import Loading, {sleep} from '@/components/Loading';
 import notyfService from '@/log/notyfService';
+import { useAbortController } from '@/utils/useAbortController';
 
 const Dashboard = () => {
   const { instance } = useMsal();
@@ -17,21 +18,30 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const initFetchCompleted = useRef(false);
   const currentUserRef = useRef(instance.getActiveAccount()?.username);
+  // Issue #113: keep an AbortController scoped to this component's mount
+  // so an in-flight `getUserData` / `getAllGroups` is cancelled when the
+  // Dashboard unmounts (or when the user-account effect re-runs). The
+  // helper functions accept an optional `{ signal }` arg; without one
+  // they fall back to their default timeout behaviour.
+  const abortController = useAbortController();
 
-  const fetchData = async () => {
+  const fetchData = async (signal) => {
     setLoading(true);
     setError(null);
     try {
       const [userData, groupsData] = await Promise.all([
-        getUserData(instance),
-        getAllGroups(instance)
+        getUserData(instance, { signal }),
+        getAllGroups(instance, { signal })
       ]);
-   
+
       setData(userData);
       setGroupData(groupsData);
       // Show success notification
       notyfService.success('Data loaded successfully!');
     } catch (err) {
+      // A caller-driven abort (component unmounted) is the silent path;
+      // skip surfacing it as a user-visible error.
+      if (err && err.name === 'AbortError') return;
       setError(err.message);
       // Show error notification
       notyfService.error('Failed to load data: ' + err.message);
@@ -41,24 +51,24 @@ const Dashboard = () => {
     }
   }
 
-  useEffect(() => { 
+  useEffect(() => {
     // Get current user
     const currentUser = instance.getActiveAccount()?.username;
-    
+
     // Force a reload of data when the user changes
     if (currentUserRef.current !== currentUser) {
       console.log('User changed, reloading data...');
       currentUserRef.current = currentUser;
       initFetchCompleted.current = false; // Reset to force reload
     }
-    
+
     if (!initFetchCompleted.current) {
       appInsights.trackEvent({ name: 'Home - Fetch data started' });
-      fetchData();
+      fetchData(abortController.signal);
       appInsights.trackEvent({ name: 'Home - Fetch data completed' });
       initFetchCompleted.current = true;
     }
-  }, [instance, instance.getActiveAccount()?.username, instance.getActiveAccount()?.name]);
+  }, [instance, instance.getActiveAccount()?.username, instance.getActiveAccount()?.name, abortController.signal]);
 
   return (
     <div data-testid="dashboard-page">
@@ -66,21 +76,20 @@ const Dashboard = () => {
       <div className="mb-5" data-testid="worldline-container">
         <WorldlineMonitor />
       </div>
-      
+
       <hr className="my-5" />
-      
+
       <Loading visible={loading} message="Fetching data from APIs..." />
-      
+
       <div data-testid="home-container">
 
-       
-        
+
         <div data-testid="groups-container" className="card">
           <h2>Groups from Microsoft Graph API</h2>
           <GroupsList groups={groupData} loading={loading} />
         </div>
         {error && <div data-testid="error-message" className="error">Error: {error}</div>}
-        
+
         <div data-testid="api-response-card" className="card">
           <h2>API Response</h2>
           {data ? (
@@ -89,10 +98,10 @@ const Dashboard = () => {
             <p data-testid="api-message-empty">No data available</p>
           )}
         </div>
-        <button 
+        <button
           data-testid="reload-button"
-          onClick={fetchData} 
-          disabled={loading} 
+          onClick={() => fetchData(abortController.signal)}
+          disabled={loading}
           className="reload-button"
         >
           {loading ? 'Loading...' : 'Reload Data'}

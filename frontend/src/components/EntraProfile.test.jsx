@@ -128,7 +128,7 @@ describe('EntraProfile Component', () => {
     
     // Wait for photo fetch to complete
     await waitFor(() => {
-      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, mockAccount);
+      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, mockAccount, expect.objectContaining({ signal: expect.anything() }));
     });
     
     // Check that authenticated container is rendered
@@ -259,7 +259,7 @@ describe('EntraProfile Component', () => {
     
     // Wait for photo fetch to complete
     await waitFor(() => {
-      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, newAccount);
+      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, newAccount, expect.objectContaining({ signal: expect.anything() }));
     });
     
     // Check authenticated container now present
@@ -576,7 +576,7 @@ describe('EntraProfile Component', () => {
     
     // Wait for photo fetch with new account
     await waitFor(() => {
-      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, accountWithDifferentRoles);
+      expect(getProfilePhoto).toHaveBeenCalledWith(msalInstance, accountWithDifferentRoles, expect.objectContaining({ signal: expect.anything() }));
     });
     
     // Click to open dropdown again

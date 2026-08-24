@@ -604,3 +604,94 @@ describe('Session expiry detection on Future Gadget Lab API (issue #86)', () => 
     expect(result).toEqual([{ id: 'a' }, { id: 'b' }]);
   });
 });
+
+// -------------------------------------------------------------------
+// Request timeout behaviour for issue #113
+// -------------------------------------------------------------------
+describe('Request timeout on Future Gadget Lab API (issue #113)', () => {
+  const mockInstance = { name: 'mockInstance' };
+
+  beforeEach(() => {
+    window.__UWS_API_TIMEOUT_MS = 5;
+  });
+  afterEach(() => {
+    delete window.__UWS_API_TIMEOUT_MS;
+  });
+
+  const installPendingFetch = () => {
+    let rejectFetch;
+    const fetchMock = jest.fn().mockImplementation(
+      () => new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      })
+    );
+    global.fetch = fetchMock;
+    return { fetchMock, rejectFetch: (err) => rejectFetch(err) };
+  };
+
+  const wireAbortRejection = async (pending) => {
+    for (let i = 0; i < 20 && pending.fetchMock.mock.calls.length === 0; i++) {
+      await Promise.resolve();
+    }
+    const call = pending.fetchMock.mock.calls[0];
+    if (!call) throw new Error('fetch was never called');
+    const signal = call[1].signal;
+    signal.addEventListener('abort', () =>
+      pending.rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    );
+  };
+
+  it('surfaces a timeout as RequestTimeoutError and tracks it via App Insights', async () => {
+    const pending = installPendingFetch();
+    const promise = getAllExperiments(mockInstance).catch((err) => err);
+    await wireAbortRejection(pending);
+    const err = await promise;
+    expect(err).toBeDefined();
+    expect(err.name).toBe('RequestTimeoutError');
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(0);
+    expect(err.detection).toBe('timeout');
+    expect(appInsights.trackException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exception: expect.objectContaining({ name: 'RequestTimeoutError' }),
+        properties: expect.objectContaining({
+          source: 'Future Gadget Lab API',
+          detection: 'timeout',
+        }),
+      })
+    );
+  });
+
+  it('works with fake timers (acceptance criterion for issue #113)', async () => {
+    jest.useFakeTimers({
+      doNotFake: ['queueMicrotask', 'nextTick', 'setImmediate', 'clearImmediate'],
+    });
+    try {
+      const pending = installPendingFetch();
+      const promise = getAllExperiments(mockInstance).catch((err) => err);
+      await wireAbortRejection(pending);
+      jest.advanceTimersByTime(10);
+      const err = await promise;
+      expect(err).toBeDefined();
+      expect(err.name).toBe('RequestTimeoutError');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('forwards a caller-provided signal so unmount can abort the request', async () => {
+    const pending = installPendingFetch();
+    const callerController = new AbortController();
+    const promise = getAllExperiments(mockInstance, { signal: callerController.signal }).catch((err) => err);
+    await wireAbortRejection(pending);
+    callerController.abort();
+    const err = await promise;
+    // Caller abort is NOT a timeout: it propagates the AbortError directly.
+    expect(err.name).not.toBe('RequestTimeoutError');
+    const timeoutCalls = (appInsights.trackException.mock.calls || []).filter(([arg]) => {
+      const props = arg && arg.properties;
+      return props && props.detection === 'timeout';
+    });
+    expect(timeoutCalls).toHaveLength(0);
+  });
+});
