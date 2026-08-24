@@ -6,7 +6,7 @@
  *   message and do NOT trigger a re-login flow.
  *
  * - SessionExpiredError: the backend (or proxy) responded with something that
- *   looks like a session expiry — either an HTTP 302 redirect to a login URL,
+ *   looks like a session expiry - either an HTTP 302 redirect to a login URL,
  *   a `text/html` body where JSON was expected (typically the Microsoft
  *   sign-in / Easy Auth login page), or the fetch was short-circuited by a
  *   redirect chain that landed on a login endpoint. The fix in
@@ -87,7 +87,7 @@ export function onSessionExpired(handler) {
  * Notify all subscribed handlers of a session expiry.
  *
  * Listeners are called synchronously but any work they schedule is allowed
- * to complete asynchronously — we do not await their return.
+ * to complete asynchronously - we do not await their return.
  */
 export function notifySessionExpired(payload) {
   for (const handler of sessionExpiredListeners) {
@@ -96,7 +96,7 @@ export function notifySessionExpired(payload) {
     } catch (err) {
       // Don't let a misbehaving handler prevent other handlers from running,
       // and don't let it mask the original SessionExpiredError.
-      // eslint-disable-next-line no-console
+       
       console.error('Session expired handler threw:', err);
     }
   }
@@ -119,7 +119,7 @@ export const LOGIN_PAGE_MARKERS = [
  * Heuristic: does the body look like a Microsoft / Easy Auth login page?
  *
  * Pass the raw text body (truncated) and the Content-Type header value. We
- * avoid pulling this into the main response path on every request — callers
+ * avoid pulling this into the main response path on every request - callers
  * invoke it only after we've already flagged the response as suspicious.
  */
 export function bodyLooksLikeLoginPage(bodyText, contentType) {
@@ -156,7 +156,7 @@ export function bodyLooksLikeLoginPage(bodyText, contentType) {
 export async function inspectResponseForExpiry(response, { expectsJson = true } = {}) {
   // Tolerate partial-mock responses in tests by reading what we can and
   // defaulting to empty values when a field is missing. We default a
-  // missing status to 200 if `ok === true`, otherwise to 500 — the existing
+  // missing status to 200 if `ok === true`, otherwise to 500 - the existing
   // tests use bare `{ ok: true, json: ... }` shapes and the helpers below
   // key off the `ok` flag.
   let status;
@@ -202,7 +202,7 @@ export async function inspectResponseForExpiry(response, { expectsJson = true } 
     detection = 'login-marker';
   } else if (looksHtml && (status === 200 || status === 0) && expectsJson) {
     // HTML body on a JSON endpoint with no obvious marker is still treated
-    // as a likely expiry with the less-specific "html-body" detection —
+    // as a likely expiry with the less-specific "html-body" detection -
     // better than silently rendering an empty page.
     detection = 'html-body';
   } else if (redirected) {
