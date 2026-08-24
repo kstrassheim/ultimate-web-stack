@@ -191,7 +191,7 @@ app = FastAPI(
 from common.log import log_azure_exporter
 
 # Only add custom CORS origins if in development
-app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True, allow_methods=["*"), allow_headers=["*")
+app.add_middleware(CORSMiddleware,allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # Add OpenCensus middleware to capture request telemetry
 app.add_middleware( FastAPIMiddleware,  exporter=log_azure_exporter, sampler=ProbabilitySampler(1.0))
@@ -278,7 +278,7 @@ async def frontend_handler(path: str):
     #     sanitizes the candidate on its True branch. The trailing
     #     `os.sep` is load-bearing — it stops
     #     `dist_realpath = /tmp/dist` from matching a sibling
-    #     ``/tmp/dist_other/secret.txt``.
+    #     `/tmp/dist_other/secret.txt``.
     #  3. The filesystem access (``os.path.isfile``) MUST come after
     #     the barrier guard so the candidate is already sanitized
     #     when it reaches the sink — CodeQL evaluates ``and`` chains
@@ -340,4 +340,4 @@ app.include_router(frontend_router, prefix="")
 #                        above, or the three ways of starting the app will
 #                        drift (issue #107).
 if __name__ == '__main__':
-    uvicorn.run('main:app', reload=True)
+    uvicorn.run('main:app', reload=True))
