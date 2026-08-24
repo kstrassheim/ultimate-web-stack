@@ -69,7 +69,16 @@ const generateWebManifest = () => {
       const manifestContent = fs.readFileSync(manifestPath, 'utf8');
       manifest = JSON.parse(manifestContent);
     } else {
-      // Default template if file doesn't exist
+      // Default template if file doesn't exist.
+      //
+      // Keep these in lockstep with frontend/public/site.webmanifest
+      // (issue #141): the app's safe default theme is now dark (see
+      // #129 in ThemeProvider.jsx + the boot script in
+      // frontend/index.html), so a freshly-regenerated manifest must
+      // also ship dark theme_color/background_color. Otherwise a
+      // deleted-and-regenerated manifest would silently re-introduce
+      // the white splash / white address-bar regression on a
+      // dark-themed PWA install.
       manifest = {
         "icons": [
           {
@@ -83,8 +92,8 @@ const generateWebManifest = () => {
             "type": "image/png"
           }
         ],
-        "theme_color": "#ffffff",
-        "background_color": "#ffffff",
+        "theme_color": "#0f172a",
+        "background_color": "#0f172a",
         "display": "standalone"
       };
     }
