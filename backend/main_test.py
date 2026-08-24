@@ -20,7 +20,7 @@ class TestMainModule:
         with patch('main.FileResponse') as mock:
             mock.return_value = {"mocked": "file_response"}
             yield mock
-    
+
     @pytest.fixture
     def mock_path(self):
         """Mock Path for file existence checks"""
@@ -28,7 +28,7 @@ class TestMainModule:
             # Make dist path return a mock
             mock_dist = MagicMock()
             mock_path.return_value = mock_dist
-            
+
             # Setup behavior for path / "some_file"
             def mock_div(path_str):
                 result = MagicMock()
@@ -38,10 +38,10 @@ class TestMainModule:
                 else:
                     result.exists.return_value = True
                 return result
-            
+
             mock_dist.__truediv__.side_effect = mock_div
             yield mock_path
-    
+
     def test_health_endpoint_minimal_payload(self):
         """Issue #100: GET /health returns only ``{"status": "ok"}``.
 
@@ -118,43 +118,66 @@ class TestMainModule:
         assert response.status_code == 200
         # HEAD requests don't return a body
         assert response.content == b''
-    
+
     def test_frontend_handler_js_file(self, mock_path, mock_file_response):
         """Test the frontend handler with a JS file"""
         response = client.get("/app.js")
-        
+
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "application/javascript"
-    
+
     def test_frontend_handler_css_file(self, mock_path, mock_file_response):
         """Test the frontend handler with a CSS file"""
         response = client.get("/styles.css")
-        
+
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "text/css"
-    
+
     def test_frontend_handler_html_file(self, mock_path, mock_file_response):
         """Test the frontend handler with an HTML file"""
         response = client.get("/page.html")
-        
+
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "text/html"
-    
+
     def test_frontend_handler_json_file(self, mock_path, mock_file_response):
         """Test the frontend handler with a JSON file"""
         response = client.get("/data.json")
-        
+
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "application/json"
-    
+
+    def test_frontend_handler_unreachable_second_return_removed(self):
+        """Issue #108 acceptance criterion: the unreachable second
+        ``return FileResponse(fp)`` at the end of ``frontend_handler``
+        is gone.
+
+        The handler is invoked through the live FastAPI client (not
+        mocked) and is expected to return exactly one response. We
+        assert this structurally by patching FileResponse so the call
+        count is observable: if a future change reintroduces the dead
+        return (or any second FileResponse), this test fails.
+        """
+        with patch("main.FileResponse") as mock_file_response:
+            mock_file_response.return_value = "FILE"
+            response = client.get("/app.js")
+        assert response.status_code == 200, (
+            f"unexpected status from /app.js: {response.status_code}"
+        )
+        assert mock_file_response.call_count == 1, (
+            f"frontend_handler returned more than one FileResponse "
+            f"(issue #108): call_count={mock_file_response.call_count}; "
+            f"calls={mock_file_response.call_args_list!r}"
+        )
+
     def test_frontend_handler_fallback_to_index(self, tmp_path):
         """Unknown routes under dist/ (e.g. a deep link whose path
         doesn't correspond to a real file) must fall back to the SPA
@@ -273,53 +296,53 @@ class TestMainModule:
         # Instead of checking specific headers, just verify CORS middleware is active
         response = client.get("/health", headers={"Origin": "http://localhost:3000"})
         assert response.status_code == 200
-        
+
         # Print all headers for debugging
         print(f"Response headers: {dict(response.headers)}")
-        
+
         # Look for any CORS-related headers to confirm middleware is active
         cors_headers = [h for h in response.headers if 'access-control' in h.lower()]
         assert len(cors_headers) > 0, "No CORS headers found"
-        
+
         # Verify at minimum that credentials are allowed, which indicates CORS is enabled
         assert response.headers.get("access-control-allow-credentials") == "true"
-    
+
     @patch('main.FastAPIMiddleware')
     def test_opencensus_middleware_configuration(self, mock_middleware):
         """Test that OpenCensus middleware is configured with the exporter"""
         # This is a bit tricky to test directly. We'll check that the app has middleware
         # instead of mocking the middleware creation.
-        
+
         # Check that app has middleware
         assert len(app.user_middleware) > 0
-        
+
         # Find the OpenCensus middleware
         found_opencensus = False
         for middleware in app.user_middleware:
             if "FastAPIMiddleware" in str(middleware.cls):
                 found_opencensus = True
                 break
-        
+
         assert found_opencensus, "OpenCensus middleware not found in app middleware"
 
     def test_api_router_is_included(self):
         """Test that the API router is included at the correct prefix"""
         # The issue is likely that your frontend router is handling all paths - 
         # let's modify the assertion to test a different aspect
-        
+
         # First let's patch any auth middleware that might be present
         with patch('main.api_router') as mock_router:
             # Force reload to apply our patch
             import importlib
             importlib.reload(main)
-            
+
             # Now check that our router was included with the correct prefix
             for call in mock_router.mock_calls:
                 if 'include_router' in str(call):
                     # This assertion would pass if the router is properly included
                     assert True
                     return
-                    
+
         # If we get here, no calls to include_router were found
         # Let's verify the router exists in a different way
         assert hasattr(main, 'api_router'), "API router should be defined"
@@ -618,6 +641,228 @@ class TestFrontendHandlerPathContainment:
                 f"{p!r} — layer 1 would over-reject legitimate "
                 f"paths and break the SPA for ordinary deep links"
             )
+
+
+class TestFrontendHandlerMediaTypes:
+    """Regression coverage for issue #108: the media-type ladder in
+    ``frontend_handler`` covers the asset extensions the Vite build
+    emits, not just ``.js``/``.css``/``.html``/``.json``.
+
+    Each test pairs a file extension with the media_type the handler
+    must pass to ``FileResponse``. The mock-based tests follow the
+    pattern set by ``test_frontend_handler_js_file`` et al. in
+    ``TestMainModule``; the ``tmp_path`` round-trip tests at the
+    bottom are a stronger guard — they build a real dist tree, fetch
+    the asset through the live ASGI stack, and check the actual
+    ``Content-Type`` header on the response.
+
+    The two layers are complementary: the mock-based tests fail fast
+    if a future change drops an extension from the map (the call to
+    ``FileResponse`` carries the wrong ``media_type``), and the
+    ``tmp_path`` tests catch the case where the map is correct but
+    the response middleware strips or rewrites the header.
+    """
+
+    # (extension, expected media_type) pairs covering each branch of
+    # the _STATIC_MEDIA_TYPES ladder added for issue #108. Pairing
+    # the extension and the expected mime in one place keeps the
+    # loop test below in sync with the dict in main.py: when an
+    # extension is added to the ladder, add it here too.
+    ASSET_MEDIA_TYPES = [
+        (".js", "application/javascript"),
+        (".mjs", "application/javascript"),
+        (".css", "text/css"),
+        (".html", "text/html"),
+        (".htm", "text/html"),
+        (".json", "application/json"),
+        (".map", "application/json"),
+        (".svg", "image/svg+xml"),
+        (".png", "image/png"),
+        (".jpg", "image/jpeg"),
+        (".jpeg", "image/jpeg"),
+        (".gif", "image/gif"),
+        (".webp", "image/webp"),
+        (".ico", "image/vnd.microsoft.icon"),
+        (".webmanifest", "application/manifest+json"),
+        (".woff", "font/woff"),
+        (".woff2", "font/woff2"),
+        (".ttf", "font/ttf"),
+        (".otf", "font/otf"),
+    ]
+
+    def _assert_media_type(self, captured_path, expected):
+        """Request ``captured_path`` against the mocked handler and
+        assert the matching ``media_type`` kwarg was passed to
+        ``FileResponse``. Shared by every mock-based test below so
+        the assertion message stays consistent across extensions.
+        """
+        with patch("main.FileResponse") as mock_file_response:
+            mock_file_response.return_value = "FILE"
+            response = client.get(captured_path)
+        assert response.status_code == 200, (
+            f"unexpected status from {captured_path!r}: "
+            f"{response.status_code}"
+        )
+        assert mock_file_response.call_count == 1, (
+            f"handler called FileResponse "
+            f"{mock_file_response.call_count} times for "
+            f"{captured_path!r} — issue #108 says exactly one"
+        )
+        _, kwargs = mock_file_response.call_args
+        assert kwargs.get("media_type") == expected, (
+            f"media_type for {captured_path!r} was "
+            f"{kwargs.get('media_type')!r}, expected {expected!r} "
+            f"(issue #108)"
+        )
+
+    @pytest.mark.parametrize("ext,expected", ASSET_MEDIA_TYPES)
+    def test_media_type_for_asset_extension(self, ext, expected):
+        """Issue #108: each extension in ``_STATIC_MEDIA_TYPES`` must
+        map to the documented media_type.
+
+        Parametrised over the full asset table so a regression on
+        any one extension (e.g. a future change that drops ``.woff2``
+        or mistypes its mime) shows up as a single failed parameter
+        case rather than a generic test failure.
+        """
+        self._assert_media_type(f"/asset{ext}", expected)
+
+    def test_media_type_for_nested_asset_path(self):
+        """Issue #108: the ladder matches by suffix, so a deeply-nested
+        path like ``/assets/dummy-avatar-HASH.jpg`` (the form Vite
+        emits for an asset imported from JSX) must still hit the
+        ``.jpg`` entry.
+
+        Pinning the suffix match separately from the parametrised
+        table (which uses flat paths) defends against a future
+        rewrite that switches from ``path.endswith(ext)`` to something
+        segment-aware and accidentally stops matching real hashed
+        asset URLs.
+        """
+        self._assert_media_type(
+            "/assets/dummy-avatar-HASH.jpg",
+            "image/jpeg",
+        )
+
+    def test_unknown_extension_passes_none_to_file_response(self):
+        """Issue #108: an extension that is not in the ladder
+        (e.g. ``.txt``) must leave ``media_type=None`` so Starlette's
+        FileResponse can apply its filename-based guesser.
+
+        This is the explicit design choice from the issue: the
+        ladder covers the asset extensions the build emits, and
+        everything else falls through. A future change that flipped
+        the ladder to raise / log / default to ``text/plain`` would
+        silently override Starlette for paths the build never
+        produces; this test fails fast and points at the regression.
+        """
+        with patch("main.FileResponse") as mock_file_response:
+            mock_file_response.return_value = "FILE"
+            response = client.get("/notes.txt")
+        _, kwargs = mock_file_response.call_args
+        assert kwargs.get("media_type") is None, (
+            f"unknown extension passed media_type="
+            f"{kwargs.get('media_type')!r} to FileResponse; "
+            f"issue #108 expects None so Starlette can guess "
+            f"(got {kwargs!r})"
+        )
+
+    def _build_dist_with_asset(self, tmp_path, name, body):
+        """Fixture helper: build a tmp ``dist/`` tree containing one
+        real asset file and ``index.html``. Returns the dist dir so
+        the caller can patch ``main.dist`` against it.
+        """
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        (dist_dir / name).write_text(body)
+        return dist_dir
+
+    @pytest.mark.parametrize("name,body,expected_content_type", [
+        # .svg and .woff2 are the two extensions called out in the
+        # issue's acceptance criteria. The other three are the
+        # extensions the build currently emits via public/ and
+        # src/assets/ — keeping them in the parametrised set means
+        # the round-trip test doubles as a regression guard for
+        # production-reachable content.
+        ("logo.svg", "<svg>SVG_BYTES</svg>", "image/svg+xml"),
+        ("font.woff2", "WOFF2_BYTES", "font/woff2"),
+        ("favicon.ico", "ICO_BYTES", "image/vnd.microsoft.icon"),
+        ("logo.png", "PNG_BYTES", "image/png"),
+        ("site.webmanifest", "{}", "application/manifest+json"),
+    ])
+    def test_asset_served_with_correct_content_type(
+        self, tmp_path, name, body, expected_content_type,
+    ):
+        """Issue #108 acceptance criterion: static assets the Vite
+        build emits are served with the correct Content-Type.
+
+        End-to-end test that builds a real ``dist/`` tree (same
+        pattern as ``TestFrontendHandlerPathContainment`` so the
+        resolve()/containment code path is also exercised), fetches
+        the asset through the live ASGI stack, and checks both the
+        response body round-trip and the actual Content-Type
+        header.
+
+        Asserting the header (rather than the ``media_type`` kwarg
+        passed to FileResponse like the mock-based tests do) is the
+        stronger guarantee — it catches the case where the map is
+        correct but the response middleware silently drops or
+        rewrites the header on the way out.
+        """
+        dist_dir = self._build_dist_with_asset(tmp_path, name, body)
+        with patch("main.dist", dist_dir):
+            response = client.get(f"/{name}")
+        assert response.status_code == 200, (
+            f"GET /{name} returned {response.status_code}; "
+            f"body: {response.content!r}"
+        )
+        assert response.content == body.encode(), (
+            f"GET /{name} returned unexpected body: "
+            f"{response.content!r}, expected {body!r}"
+        )
+        # Starlette normalises header names to lowercase, so a
+        # direct key match works on the response.headers mapping.
+        actual_ct = response.headers.get("content-type")
+        assert actual_ct == expected_content_type, (
+            f"GET /{name} served with Content-Type {actual_ct!r}, "
+            f"expected {expected_content_type!r} (issue #108)"
+        )
+
+    def test_jpeg_asset_in_nested_dir_served_with_correct_content_type(
+        self, tmp_path,
+    ):
+        """Issue #108: a nested path like
+        ``/assets/dummy-avatar-HASH.jpg`` (the form Vite emits for
+        an asset imported from JSX) must be served with
+        ``image/jpeg``.
+
+        ``dummy-avatar.jpg`` is the only image currently imported
+        from JSX in this repo (``EntraProfile.jsx``), so this
+        matches the production-reachable URL shape end-to-end and
+        confirms the suffix match works through a real
+        directory hop. Without this guard a future change that
+        switched from ``path.endswith(ext)`` to ``os.path.basename``
+        + extension match would silently drop nested-asset support.
+        """
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        assets_dir = dist_dir / "assets"
+        assets_dir.mkdir()
+        (assets_dir / "dummy-avatar-AbCdEf.jpg").write_bytes(b"JPG_BYTES")
+        with patch("main.dist", dist_dir):
+            response = client.get("/assets/dummy-avatar-AbCdEf.jpg")
+        assert response.status_code == 200, (
+            f"GET /assets/dummy-avatar-AbCdEf.jpg returned "
+            f"{response.status_code}; body: {response.content!r}"
+        )
+        assert response.content == b"JPG_BYTES"
+        assert response.headers.get("content-type") == "image/jpeg", (
+            f"nested .jpg served with Content-Type "
+            f"{response.headers.get('content-type')!r}, expected "
+            f"'image/jpeg' (issue #108)"
+        )
 
 
 class TestApiDocsSurface:

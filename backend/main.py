@@ -248,6 +248,49 @@ async def health():
 MAX_PATH_LEN = 255
 dist = Path("./dist")
 frontend_router = APIRouter()
+
+# Media types for the asset extensions the Vite build can emit (issue #108).
+#
+# ``public/`` is copied to ``backend/dist/`` verbatim by Vite, and
+# ``src/assets/`` files imported from JSX come out hashed under
+# ``backend/dist/assets/``. The extensions below cover everything the
+# current build produces plus the asset types a future PR can drop in
+# (SVG icons, woff2 web fonts, source maps when sourcemaps are turned
+# on, web manifests). Starlette's FileResponse can guess a media_type
+# from the filename when this ladder leaves it as ``None``, but
+# spelling the mapping out explicitly:
+#
+#   * keeps the served content-type auditable in one place
+#   * avoids surprise if Starlette's guesser changes upstream
+#   * ensures browsers interpret a fresh asset the same way across
+#     Vite version upgrades
+#
+# The keys are matched as suffixes against the captured ``path``, so
+# ``.mjs``/``.htm``/``.jpeg`` are listed alongside their canonical
+# forms (``.js``/``.html``/``.jpg``) to keep both spellings covered.
+_STATIC_MEDIA_TYPES = {
+    ".js": "application/javascript",
+    ".mjs": "application/javascript",
+    ".css": "text/css",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".json": "application/json",
+    ".map": "application/json",  # Vite/Rollup source maps
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/vnd.microsoft.icon",
+    ".webmanifest": "application/manifest+json",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+}
+
+
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
     if len(path) > MAX_PATH_LEN:
@@ -267,7 +310,7 @@ async def frontend_handler(path: str):
     #
     # The pattern below is the CodeQL ``py/path-injection``
     # recommended sanitizer shape (see
-    # https://codeql.github.com/codeql-query-help/python/py-path-injection/):
+    # https://codeql.github.com/codeql-query-help/python/py/path-injection/):
     #
     #  1. ``os.path.realpath`` is a recognized
     #     ``Path::PathNormalization`` — collapses ``..`` and follows
@@ -305,21 +348,21 @@ async def frontend_handler(path: str):
         ):
             fp = candidate_realpath
 
-        # Set correct MIME types for JavaScript modules
-    media_type = None
-    if path.endswith('.js'):
-        media_type = "application/javascript"
-    elif path.endswith('.css'):
-        media_type = "text/css"
-    elif path.endswith('.html'):
-        media_type = "text/html"
-    elif path.endswith('.json'):
-        media_type = "application/json"
-    
-    # Pass the media_type to FileResponse
-    return FileResponse(fp, media_type=media_type)
+    # Set the media_type to the entry in ``_STATIC_MEDIA_TYPES``
+    # matching the captured ``path``'s suffix. ``None`` is the right
+    # answer for any extension not in the map (e.g. ``.txt``) — it
+    # lets Starlette guess from the filename and is also the value
+    # FileResponse uses for an unknown type.
+    media_type = next(
+        (mime for ext, mime in _STATIC_MEDIA_TYPES.items()
+         if path.endswith(ext)),
+        None,
+    )
 
-    return FileResponse(fp)
+    # There is exactly one FileResponse per served request. A second
+    # ``return FileResponse(fp)`` used to sit below this line as
+    # unreachable dead code (see issue #108) and was removed.
+    return FileResponse(fp, media_type=media_type)
 app.include_router(frontend_router, prefix="")
 
 
