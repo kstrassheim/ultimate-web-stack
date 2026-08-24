@@ -35,10 +35,10 @@ from common.config import tfconfig, origins
 #   - https://login.microsoftonline.com (MSAL / Entra ID auth redirect)
 #   - https://*.in.applicationinsights.azure.com (App Insights telemetry ingest)
 #   - https://js.monitor.azure.com (Application Insights SDK CDN snippet)
-# The img-src allows https://graph.microsoft.com because the SPA fetches
-# the signed-in user's profile photo from Microsoft Graph. Add any new
-# external origin to this list if the SPA or telemetry stack talks to it,
-# otherwise the browser will block the request after deployment.
+# The img-src allows https://graph.microsoft.com because the SPA fetches the
+# signed-in user's profile photo from Microsoft Graph. Add any new
+# external origin that the SPA or telemetry stack talks to here, otherwise
+# the browser will block the request after deployment.
 _SECURITY_HEADERS_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -57,8 +57,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Adds baseline security response headers to every HTTP response.
 
     See issue #98. ``setdefault`` is used on every header so downstream
-    middleware (CORS, OpenCensus) can still emit their own headers without
-    clobbering this layer.
+    middleware (CORS, OpenCensus telemetry) can still emit their own
+    headers without clobbering this layer.
 
     The dispatch body is wrapped in ``try/except`` so that unhandled
     exceptions raised by route handlers (or any inner middleware) still
@@ -124,7 +124,7 @@ mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # is controlled by the ``SEED_FGL_TEST_DATA`` env var:
 #
 #   "true"   - always seed if the store is empty (handy for a first
-#              deploy on a fresh Cosmos container).
+#              deploy to a fresh Cosmos container).
 #   "false"  - never seed.
 #   "auto"   (default) - seed iff MOCK mode is enabled, matching the
 #              pre-#112 dev behaviour where import-time seeding ran
@@ -328,8 +328,8 @@ app.include_router(frontend_router, prefix="")
 #   - Dev (interactive): ``python -m uvicorn main:app --reload``
 #                        from ``./backend`` — this is what
 #                        ``frontend/start-backend.js`` and the
-#                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch configs in
-#                        ``.vscode/launch.json`` wrap.
+#                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch
+#                        configs in ``.vscode/launch.json`` wrap.
 #   - Prod (Azure App Service): ``gunicorn --worker-class
 #                        uvicorn.workers.UvicornWorker main:app`` — set as
 #                        ``app_command_line`` in ``terraform.tf``.
