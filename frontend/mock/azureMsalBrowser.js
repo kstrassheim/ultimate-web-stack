@@ -247,8 +247,8 @@ export class PublicClientApplication {
       
       // If found a matching account, use its index
       if (matchingIndex !== -1) {
-        return matchingIndex;
         console.log(`Mock MSAL: Using account with role "${mockRole}" at index ${matchingIndex}`);
+        return matchingIndex;
       } else {
         console.log(`Mock MSAL: No account found with role "${mockRole}", using default`);
         return 0;
@@ -353,7 +353,7 @@ export class PublicClientApplication {
     // Test-only hook: simulate the "name is plain BrowserAuthError but the
     // message text mentions interaction_required" shape that some MSAL
     // browser builds surface. This drives the regex-based detection branch
-    // in api.js / futureGadgetApi.js — the existing MOCK_INTERACTION_REQUIRED
+    // in api.js / futureGadgetApi.js - the existing MOCK_INTERACTION_REQUIRED
     // hook only hits the name-based detection because InteractionRequiredAuthError
     // sets `name = 'InteractionRequiredAuthError'` and short-circuits the OR
     // chain. No production code reads this flag.
@@ -422,7 +422,7 @@ export class PublicClientApplication {
     // localStorage we simulate the user closing the popup so the
     // SessionRecoveryGuard / authFlow.js failure branches can be
     // exercised. No production code reads this flag, so this is a
-    // test affordance only — production loginPopup returns a successful
+    // test affordance only - production loginPopup returns a successful
     // result unconditionally.
     if (
       typeof window !== 'undefined' &&

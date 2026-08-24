@@ -2,22 +2,24 @@
  * Mock implementation of Application Insights
  */
 
-// Create a full mock that matches the structure of the ApplicationInsights instance
+// Create a full mock that matches the structure of the ApplicationInsights instance.
+// All callbacks are intentionally no-op stubs; their parameter names use a
+// leading underscore so `eslint --fix` and the `no-unused-vars` rule ignore them.
 const mockAppInsights = {
   // Core tracking methods used in your app
-  trackEvent: (event) => {
+  trackEvent: (_event) => {
     //console.log('[Mock AppInsights] trackEvent:', event);
   },
-  trackException: (exception) => {
+  trackException: (_exception) => {
     //console.log('[Mock AppInsights] trackException:', exception);
   },
-  trackPageView: (pageView) => {
+  trackPageView: (_pageView) => {
     //console.log('[Mock AppInsights] trackPageView:', pageView);
   },
-  trackMetric: (metric) => {
+  trackMetric: (_metric) => {
     //console.log('[Mock AppInsights] trackMetric:', metric);
   },
-  setAuthenticatedUserContext: (userId, accountId) => {
+  setAuthenticatedUserContext: (_userId, _accountId) => {
     //console.log('[Mock AppInsights] setAuthenticatedUserContext:', userId, accountId);
   },
   

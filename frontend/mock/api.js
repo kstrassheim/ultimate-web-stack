@@ -1,5 +1,5 @@
 // Mock implementation for backend API calls based on actual API responses
-export const getUserData = async (instance) => {
+export const getUserData = async (_instance) => {
   //console.log('Using mock getUserData');
   
   // Add a small delay to simulate network latency
