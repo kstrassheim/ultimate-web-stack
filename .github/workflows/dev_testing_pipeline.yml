@@ -126,6 +126,7 @@ jobs:
       # Keying on /etc/alpine-release means a base-image bump invalidates
       # the cache instead of serving stale packages.
       - name: Cache Alpine packages
+        id: cache-apk
         uses: actions/cache@v4
         with:
           path: /var/cache/apk
@@ -141,12 +142,31 @@ jobs:
       # restore-keys still hand a partial cache to a brand-new branch, so
       # uv only re-fetches what is actually new.
       - name: Cache uv
+        id: cache-uv
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
           key: ${{ env.IMAGE_TAG }}-py${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('backend/requirements.txt') }}
           restore-keys: |
             ${{ env.IMAGE_TAG }}-py${{ env.PYTHON_VERSION }}-uv-
+
+      # Surface cache hit/miss to the workflow summary so reviewers can see
+      # at a glance whether the caching strategy is paying off, and so a
+      # future bump that silently invalidates the cache is visible in the
+      # run UI without having to grep job logs. Runs unconditionally so the
+      # row still appears even when a downstream step fails.
+      - name: Report cache status
+        if: always()
+        run: |
+          {
+            echo "### Cache status (backend-unit-tests)"
+            echo ""
+            echo "| Cache | Hit |"
+            echo "| --- | --- |"
+            hit() { [ "$1" = "true" ] && echo "✅ hit" || echo "❌ miss"; }
+            echo "| Alpine apk (\`/var/cache/apk\`) | $(hit "${{ steps.cache-apk.outputs.cache-hit }}") |"
+            echo "| uv (\`~/.cache/uv\`) | $(hit "${{ steps.cache-uv.outputs.cache-hit }}") |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Install dependencies (Alpine-specific)
       - name: Install backend dependencies
@@ -212,6 +232,7 @@ jobs:
       # /var/cache/apk. Keying on /etc/alpine-release means a base-image
       # bump invalidates the cache instead of serving stale binaries.
       - name: Cache Alpine packages
+        id: cache-apk
         uses: actions/cache@v4
         with:
           path: /var/cache/apk
@@ -226,12 +247,28 @@ jobs:
       # invalidate the cache when the base image or Node major version
       # bumps.
       - name: Cache npm
+        id: cache-npm
         uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ env.IMAGE_TAG }}-node${{ env.NODE_VERSION }}-npm-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
             ${{ env.IMAGE_TAG }}-node${{ env.NODE_VERSION }}-npm-
+
+      # Surface cache hit/miss to the workflow summary -- see the matching
+      # step in backend-unit-tests for the rationale.
+      - name: Report cache status
+        if: always()
+        run: |
+          {
+            echo "### Cache status (frontend-unit-tests)"
+            echo ""
+            echo "| Cache | Hit |"
+            echo "| --- | --- |"
+            hit() { [ "$1" = "true" ] && echo "✅ hit" || echo "❌ miss"; }
+            echo "| Alpine apk (\`/var/cache/apk\`) | $(hit "${{ steps.cache-apk.outputs.cache-hit }}") |"
+            echo "| npm (\`~/.npm\`) | $(hit "${{ steps.cache-npm.outputs.cache-hit }}") |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Install Alpine build dependencies for npm packages that may need compilation.
       # `--no-cache` is intentionally dropped so apk populates /var/cache/apk,
@@ -328,12 +365,30 @@ jobs:
       # bumps. The fallback restore-keys still hand a partial cache to
       # a brand-new branch, so uv only re-fetches what is actually new.
       - name: Cache uv
+        id: cache-uv
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
           key: ubuntu-py${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('backend/requirements.txt') }}
           restore-keys: |
             ubuntu-py${{ env.PYTHON_VERSION }}-uv-
+
+      # Surface cache hit/miss to the workflow summary -- see the matching
+      # step in backend-unit-tests for the rationale. The npm cache hit
+      # status comes from setup-node's built-in cache step (no id by
+      # default), so we only report the uv cache we control here.
+      - name: Report cache status
+        if: always()
+        run: |
+          {
+            echo "### Cache status (e2e-tests)"
+            echo ""
+            echo "| Cache | Hit |"
+            echo "| --- | --- |"
+            hit() { [ "$1" = "true" ] && echo "✅ hit" || echo "❌ miss"; }
+            echo "| uv (\`~/.cache/uv\`) | $(hit "${{ steps.cache-uv.outputs.cache-hit }}") |"
+            echo "| npm (\`~/.npm\`, setup-node built-in) | n/a (key includes runner.os + node version) |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Install backend dependencies (modified)
       - name: Install backend dependencies
@@ -428,7 +483,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: cypress-videos
-          path: frontend/cypress/videos
+        path: frontend/cypress/videos
           if-no-files-found: ignore
       
       # Upload flattened coverage reports
@@ -439,4 +494,3 @@ jobs:
           name: e2e-coverage-report
           path: frontend/coverage/lcov-report
           if-no-files-found: warn
-
