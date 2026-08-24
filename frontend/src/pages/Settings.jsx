@@ -12,9 +12,11 @@ import './Settings.css';
  * Acceptance criteria for issue #85:
  *   1. Toggling the switch swaps light↔dark immediately, no reload.
  *   2. The choice is written to localStorage so a full reload keeps it.
- *   3. With no stored choice, the OS preference is followed — and a
- *      "Follow my OS preference" button is offered so users who picked
- *      manually can return to auto.
+ *   3. With no stored choice the app opens in dark mode (issue #129
+ *      — dark is the safe default; OS preference no longer participates
+ *      until the user opts in). A "Follow my OS preference" button is
+ *      offered so users who picked manually can return to OS-driven
+ *      theming.
  */
 const Settings = () => {
   const { theme, mode, setMode, resetToOsPreference } = useTheme();

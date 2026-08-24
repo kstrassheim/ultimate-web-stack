@@ -40,6 +40,7 @@
             theme = stored;
           } else if (stored === 'os') {
             theme = (window.matchMedia && window.matchMedia(DARK_QUERY).matches) ? 'dark' : 'light';
+            if (!window.matchMedia) theme = 'dark'; // match ThemeProvider.detectOsTheme
           } else {
             // No stored value — dark is the safe default (issue #129).
             theme = 'dark';
