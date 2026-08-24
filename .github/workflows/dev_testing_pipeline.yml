@@ -108,22 +108,63 @@ jobs:
   backend-unit-tests:
     runs-on: ubuntu-latest
     container: python:3.12-alpine
-    
+    # Cache-key versioning lives in the env block so bumping the Python or
+    # image version is a one-line change that also invalidates the cache
+    # (see the actions/cache steps below).
+    env:
+      PYTHON_VERSION: '3.12'
+      IMAGE_TAG: 'python-3.12-alpine'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-      
+
+      # Persist Alpine's downloaded .apk files (gcc, musl-dev, linux-headers
+      # below) between runs so every PR is not re-fetching the wheel-build
+      # toolchain from scratch. Requires `--no-cache` to be dropped from
+      # `apk add` below so the .apk files actually land in /var/cache/apk.
+      # Keying on /etc/alpine-release means a base-image bump invalidates
+      # the cache instead of serving stale packages.
+      - name: Cache Alpine packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apk
+          key: ${{ env.IMAGE_TAG }}-apk-${{ hashFiles('/etc/alpine-release') }}
+          restore-keys: |
+            ${{ env.IMAGE_TAG }}-apk-
+
+      # Cache uv's wheel downloads (XDG_CACHE_HOME default ~/.cache/uv) so
+      # `uv pip sync` reuses already-fetched wheels across runs. Keyed on
+      # backend/requirements.txt so a lockfile change only invalidates
+      # THAT key; the IMAGE_TAG + PYTHON_VERSION prefixes invalidate the
+      # cache when the base image or Python version bumps. The fallback
+      # restore-keys still hand a partial cache to a brand-new branch, so
+      # uv only re-fetches what is actually new.
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ env.IMAGE_TAG }}-py${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ env.IMAGE_TAG }}-py${{ env.PYTHON_VERSION }}-uv-
+
       # Install dependencies (Alpine-specific)
       - name: Install backend dependencies
         run: |
-          # Install build dependencies required for some Python packages
-          apk add --no-cache gcc musl-dev linux-headers
+          # Install build dependencies required for some Python packages.
+          # `--no-cache` is intentionally dropped so the .apk files land
+          # in /var/cache/apk and the Cache Alpine packages step above can
+          # persist them across runs.
+          apk add gcc musl-dev linux-headers
           # Alpine's pip is not externally-managed (PEP 668), so `pip install uv` is fine.
           pip install --upgrade pip uv
           # backend/requirements.txt is the generated, hashed lock produced by
           #     uv pip compile requirements.in --universal --generate-hashes \
           #         --python-version 3.12 -o requirements.txt
           # (see backend/requirements.in for the hand-edited direct-dependency selector).
+          # `uv pip sync` still installs exactly what requirements.txt pins;
+          # the Cache uv step above only short-circuits the network fetch --
+          # it never relaxes the lockfile contract.
           uv pip sync --system backend/requirements.txt
       
       # Run pytest with coverage
@@ -154,17 +195,54 @@ jobs:
   frontend-unit-tests:
     runs-on: ubuntu-latest
     container: node:22-alpine  # Use the Alpine-based Node.js container
-    
+    # Cache-key versioning lives in the env block so bumping the Node or
+    # image version is a one-line change that also invalidates the cache
+    # (see the actions/cache steps below).
+    env:
+      NODE_VERSION: '22'
+      IMAGE_TAG: 'node-22-alpine'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-      
-      # Install Alpine build dependencies for npm packages that may need compilation
+
+      # Persist Alpine's downloaded .apk files (python3, make, g++, git,
+      # bash below) between runs. Requires `--no-cache` to be dropped
+      # from `apk add` below so the .apk files actually land in
+      # /var/cache/apk. Keying on /etc/alpine-release means a base-image
+      # bump invalidates the cache instead of serving stale binaries.
+      - name: Cache Alpine packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apk
+          key: ${{ env.IMAGE_TAG }}-apk-${{ hashFiles('/etc/alpine-release') }}
+          restore-keys: |
+            ${{ env.IMAGE_TAG }}-apk-
+
+      # Cache npm's downloaded package tarballs so `npm ci` reuses them
+      # across runs instead of re-downloading the entire tree on every
+      # PR. Keyed on frontend/package-lock.json so a lockfile change
+      # invalidates correctly; the IMAGE_TAG + NODE_VERSION prefixes
+      # invalidate the cache when the base image or Node major version
+      # bumps.
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ env.IMAGE_TAG }}-node${{ env.NODE_VERSION }}-npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ env.IMAGE_TAG }}-node${{ env.NODE_VERSION }}-npm-
+
+      # Install Alpine build dependencies for npm packages that may need compilation.
+      # `--no-cache` is intentionally dropped so apk populates /var/cache/apk,
+      # which the Cache Alpine packages step above persists across runs.
       - name: Install build dependencies
         run: |
-          apk add --no-cache python3 make g++ git bash
-      
-      # Install frontend dependencies with retry logic
+          apk add python3 make g++ git bash
+
+      # Install frontend dependencies with retry logic.
+      # `npm ci` still installs exactly what package-lock.json pins;
+      # the Cache npm step above only short-circuits the network fetch.
       - name: Install frontend dependencies
         run: |
           cd frontend
@@ -203,18 +281,30 @@ jobs:
   e2e-tests:
     #needs: frontend-unit-tests  # Ensure frontend unit tests are completed first
     runs-on: ubuntu-latest
-    
+    # Cache-key versioning for the uv cache below. Bumping the Python
+    # version here is the same change as in actions/setup-python above
+    # and invalidates the cache automatically.
+    env:
+      PYTHON_VERSION: '3.12'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-    
-      # Set up Node.js directly on the runner
+
+      # Set up Node.js directly on the runner. The built-in `cache: npm`
+      # + `cache-dependency-path: frontend/package-lock.json` lets the
+      # subsequent `npm ci` reuse the downloaded package tarballs across
+      # runs. The action's default cache key already includes runner.os
+      # + the Node version, so a base or runtime bump invalidates
+      # correctly without any extra wiring here.
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org/'
-      
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
       # Set up Python for backend.
       #
       # We do NOT ask setup-python to cache the pip cache folder: this job
@@ -223,12 +313,28 @@ jobs:
       # The `actions/setup-python` post-action then fails with
       # "Cache folder path is retrieved for pip but doesn't exist on disk",
       # which fails the job even though every actual step succeeded. See the
-      # Install backend dependencies step for the uv install command.
+      # Cache uv step below for the uv-specific cache, and the Install
+      # backend dependencies step for the uv install command.
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      
+
+      # Cache uv's wheel downloads (XDG_CACHE_HOME default ~/.cache/uv)
+      # so `uv pip sync` reuses already-fetched wheels across runs.
+      # Keyed on backend/requirements.txt so a lockfile change only
+      # invalidates THAT key; the runner.os + PYTHON_VERSION prefix
+      # invalidates the cache when the runner image or Python version
+      # bumps. The fallback restore-keys still hand a partial cache to
+      # a brand-new branch, so uv only re-fetches what is actually new.
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ubuntu-py${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ubuntu-py${{ env.PYTHON_VERSION }}-uv-
+
       # Install backend dependencies (modified)
       - name: Install backend dependencies
         run: |
@@ -241,6 +347,8 @@ jobs:
           #     uv pip compile requirements.in --universal --generate-hashes \
           #         --python-version 3.12 -o requirements.txt
           # (see backend/requirements.in for the hand-edited direct-dependency selector).
+          # `uv pip sync` still installs exactly what requirements.txt pins;
+          # the Cache uv step above only short-circuits the network fetch.
           uv venv venv --python 3.12
           source venv/bin/activate
           uv pip sync requirements.txt
