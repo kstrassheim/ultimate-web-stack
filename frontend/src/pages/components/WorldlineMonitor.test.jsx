@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
@@ -519,7 +518,7 @@ describe('WorldlineMonitor', () => {
     });
 
     // The filter is applied via useEffect on the [filters, readings]
-    // dependency — wait for the row count to drop.
+    // dependency - wait for the row count to drop.
     await waitFor(() => {
       const rows = screen.getAllByTestId(/^reading-row-/);
       expect(rows).toHaveLength(1);
@@ -562,7 +561,7 @@ describe('WorldlineMonitor', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('readings-table')).not.toBeInTheDocument();
     });
-    // No readings → no readings table, but the export button is still
+    // No readings - no readings table, but the export button is still
     // rendered in the card header. The handler shouldn't fire.
     const button = screen.getByTestId('export-readings-csv-btn');
     expect(button).toBeInTheDocument();
@@ -586,4 +585,3 @@ describe('WorldlineMonitor', () => {
     expect(appInsights.trackException).toHaveBeenCalled();
   });
 });
-
