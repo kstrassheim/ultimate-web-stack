@@ -42,7 +42,7 @@ export const retrieveTokenForBackend = async (instance, extraScopes = []) => {
   return tokenResponse.accessToken;
 }
 
-export const retrieveTokenForGraph = async (instance, extraScopes = []) => {
+export const retrieveTokenForGraph = async (instance, _extraScopes = []) => {
   appInsights.trackEvent({ name: 'MSAL Retrieving Graph Token' });
   const account = instance.getActiveAccount();
   
@@ -78,5 +78,3 @@ export const retrieveTokenForGraph = async (instance, extraScopes = []) => {
     throw error;
   }
 };
-
-

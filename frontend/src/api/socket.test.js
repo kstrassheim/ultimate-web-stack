@@ -1,5 +1,4 @@
 import { WebSocketClient } from './socket';
-import { backendSocketUrl } from '@/config';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
 

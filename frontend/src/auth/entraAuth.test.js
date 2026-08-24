@@ -1,6 +1,5 @@
 import { msalConfig, loginRequest, retrieveTokenForBackend, retrieveTokenForGraph } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights'; // mock or spy as needed
-import { LogLevel } from '@azure/msal-browser';
 
 describe('entraAuth Module', () => {
   let originalConsoleLog;
@@ -29,7 +28,7 @@ describe('entraAuth Module', () => {
     // Regression guard for issue #92: a debug `console.log("redirect
     // uri:" + frontendUrl)` once lived at the top of `msalConfig()`. It
     // ran on the auth/login path on every page load and reached
-    // production bundles. Removing the call is what closed #92 — keep
+    // production bundles. Removing the call is what closed #92 - keep
     // it removed.
     it('should not call console.* while building the config', () => {
       const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});

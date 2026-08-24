@@ -1,8 +1,8 @@
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 import { useMsal } from '@azure/msal-react';
 
 /**
- * Auth state hook (issue #87 — remove prop drilling).
+ * Auth state hook (issue #87 - remove prop drilling).
  *
  * Until this commit every component that needed auth state reached into
  * `@azure/msal-react` directly via `useMsal()`; the role-normalisation
@@ -12,14 +12,14 @@ import { useMsal } from '@azure/msal-react';
  * `useAuth()` wraps `useMsal()` and exposes the bits the consumer
  * components actually read:
  *
- *   - instance     — the MSAL PublicClientApplication
- *   - account      — the active account, or `null`
- *   - isAuthenticated — boolean
- *   - roles        — lower-cased role list from id token claims
- *   - hasRole(role)        — case-insensitive single-role check
- *   - hasAllRoles(roles[]) — case-insensitive AND-of-roles check
+ *   - instance     - the MSAL PublicClientApplication
+ *   - account      - the active account, or `null`
+ *   - isAuthenticated - boolean
+ *   - roles        - lower-cased role list from id token claims
+ *   - hasRole(role)        - case-insensitive single-role check
+ *   - hasAllRoles(roles[]) - case-insensitive AND-of-roles check
  *
- * Components that don't sit under <MsalProvider> still work — the hook
+ * Components that don't sit under <MsalProvider> still work - the hook
  * falls back to deriving the value from `useMsal()` directly, which is
  * the same call path the old components used. The mock-based jest and
  * cypress suites that mock `@azure/msal-react` keep working without

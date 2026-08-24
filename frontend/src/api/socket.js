@@ -67,7 +67,7 @@ export class WebSocketClient {
             if (messageText.includes('You sent:')) {
               messageType = 'sent';
             }
-          } catch (e) {
+          } catch (_e) {
             // Not valid JSON, treat as plain text
             messageText = event.data;
             // Check for "You sent:" prefix to determine if it's a sent message confirmation

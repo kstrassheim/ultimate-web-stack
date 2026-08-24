@@ -14,7 +14,7 @@ const silentConsoleError = () => {
 };
 
 describe('authFlow', () => {
-  const sessionStorageBackup = {};
+  const _sessionStorageBackup = {};
 
   beforeEach(() => {
     _resetReauthStateForTests();
@@ -66,7 +66,7 @@ describe('authFlow', () => {
     it('does not throw when sessionStorage is absent', () => {
       const original = window.sessionStorage;
       // Pretend we're in a non-browser environment
-      // eslint-disable-next-line no-undef
+       
       delete window.sessionStorage;
       try {
         expect(() => saveRedirectPath('/x')).not.toThrow();

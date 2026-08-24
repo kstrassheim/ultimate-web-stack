@@ -33,7 +33,6 @@ import {
 } from './futureGadgetApi';
 import { retrieveTokenForBackend } from '@/auth/entraAuth';
 import appInsights from '@/log/appInsights';
-import { WebSocketClient } from './socket';
 import { ApiError, SessionExpiredError, onSessionExpired } from './errors';
 
 // Mock global fetch
@@ -473,7 +472,7 @@ describe('Session expiry detection on Future Gadget Lab API (issue #86)', () => 
 
   afterAll(() => {
     console.error = originalConsoleError;
-  });
+  }
   const fakeResponse = ({
     status = 200,
     contentType = 'application/json',
