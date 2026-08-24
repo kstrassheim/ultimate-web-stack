@@ -55,7 +55,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  // eslint-disable-next-line no-console -- this runs before the check, so the rule does not apply
+   
   console.log(`Usage: node scripts/check-no-console-in-build.mjs [--out-dir <path>]
 
 Scans the Vite production build output for surviving console.* calls and
@@ -67,7 +67,7 @@ frontend/ directory). Override with --out-dir for CI smoke checks.`);
 
 // Match a console.<method>( call where method is a JS identifier. We allow
 // member access to handle destructured locals too: `const { log } = console;
-// log(...)` is *not* a regression — the check below intentionally targets
+// log(...)` is *not* a regression - the check below intentionally targets
 // the well-formed `console.foo(...)` shape that esbuild's `drop: ['console']`
 // is supposed to remove.
 //
@@ -132,7 +132,7 @@ async function main() {
     st = await stat(outDir);
   } catch (err) {
     if (err && err.code === 'ENOENT') {
-      // eslint-disable-next-line no-console -- this runs before the check, so the rule does not apply
+       
       console.error(
         `check-no-console-in-build: output directory does not exist: ${repoRel}\n` +
         `Run \`npm run build\` first, or pass --out-dir to point at the production bundle.`
@@ -142,7 +142,7 @@ async function main() {
     throw err;
   }
   if (!st.isDirectory()) {
-    // eslint-disable-next-line no-console -- this runs before the check, so the rule does not apply
+     
     console.error(
         `check-no-console-in-build: ${repoRel} exists but is not a directory.`
       );
@@ -151,7 +151,7 @@ async function main() {
 
   const files = await findJsFiles(outDir);
   if (files.length === 0) {
-    // eslint-disable-next-line no-console -- this runs before the check, so the rule does not apply
+     
     console.error(
       `check-no-console-in-build: no .js files found under ${repoRel}.\n` +
       `Was the build run? Did build.outDir change?`
@@ -171,30 +171,30 @@ async function main() {
   }
 
   if (offenders.length === 0) {
-    // eslint-disable-next-line no-console -- the success path
+     
     console.log(
-      `check-no-console-in-build: ok — scanned ${files.length} bundle file(s) under ${repoRel}, no surviving console.* calls.`
+      `check-no-console-in-build: ok - scanned ${files.length} bundle file(s) under ${repoRel}, no surviving console.* calls.`
     );
     return 0;
   }
 
-  // eslint-disable-next-line no-console -- the failure path
+   
   console.error(
-    `check-no-console-in-build: FAIL — found ${totalHits} surviving console.* call(s) in ${offenders.length} bundle file(s):`
+    `check-no-console-in-build: FAIL - found ${totalHits} surviving console.* call(s) in ${offenders.length} bundle file(s):`
   );
   for (const { file, hits } of offenders) {
-    // eslint-disable-next-line no-console -- the failure path
+     
     console.error(`  ${file}:`);
     for (const h of hits.slice(0, 5)) {
-      // eslint-disable-next-line no-console -- the failure path
+       
       console.error(`    ${h.trim()}`);
     }
     if (hits.length > 5) {
-      // eslint-disable-next-line no-console -- the failure path
+       
       console.error(`    ...and ${hits.length - 5} more`);
     }
   }
-  // eslint-disable-next-line no-console -- the failure path
+   
   console.error(
     `\nA console.* call reached the production bundle. ` +
     `Either remove it from the source, or restore the Vite minifier drop rule:\n` +
@@ -207,7 +207,7 @@ async function main() {
 main().then(
   (code) => process.exit(code),
   (err) => {
-    // eslint-disable-next-line no-console -- unexpected error path
+     
     console.error('check-no-console-in-build: unexpected error:', err);
     process.exit(2);
   }

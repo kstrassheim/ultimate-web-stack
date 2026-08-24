@@ -1,4 +1,4 @@
-export const getProfilePhoto = async (instance, activeAccount) => {
+export const getProfilePhoto = async (_instance, activeAccount) => {
   if (!activeAccount) return null;
   
   try {
@@ -10,7 +10,7 @@ export const getProfilePhoto = async (instance, activeAccount) => {
       // Dynamically import the image based on profile ID
       const avatarModule = await import(`./avatars/${profileId}.png`);
       return avatarModule.default;
-    } catch (importError) {
+    } catch (_importError) {
       console.warn(`No profile image found for ID: ${profileId}, using default`);
       
       // Fallback to role-based default if specific avatar not found
