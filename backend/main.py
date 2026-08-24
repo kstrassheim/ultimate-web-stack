@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 from contextlib import asynccontextmanager
+import mimetypes
 import os.path
 import re
 import uvicorn
@@ -33,10 +34,10 @@ from common.config import tfconfig, origins
 # The CSP connect-src explicitly allows:
 #   - https://login.microsoftonline.com (MSAL / Entra ID auth redirect)
 #   - https://*.in.applicationinsights.azure.com (App Insights telemetry ingest)
-#   - https://js.monitor.azure.com (App Insights SDK CDN snippets)
-# The img-src allows https://graph.microsoft.com because the SPA fetches
-# the signed-in user's profile photo from Microsoft Graph. Add any new
-# external origin that the SPA or telemetry stack talks to here, otherwise
+#   - https://js.monitor.azure.com (Application Insights SDK CDN snippet)
+# The img-src allows https://graph.microsoft.com because the SPA fetches the
+# signed-in user's profile photo from Microsoft Graph. Add any new external
+# origin to this list if the SPA or telemetry stack talks to it, otherwise
 # the browser will block the request after deployment.
 _SECURITY_HEADERS_CSP = (
     "default-src 'self'; "
@@ -53,23 +54,12 @@ _SECURITY_HEADERS_PERMISSIONS = "camera=(), microphone=(), geolocation=()"
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Adds baseline security response headers to every HTTP response.
+    """Adds baseline security response headers to every response.
 
-    See issue #98. ``setdefault`` is used on every header so that
-    downstream middleware (CORS, OpenCensus telemetry) can still emit
-    their own headers without being clobbered by this layer.
-
-    The dispatch body is wrapped in ``try/except`` so that unhandled
-    exceptions raised by route handlers (or any inner middleware) still
-    produce a 500 response with the baseline security headers attached.
-    Starlette's ``ServerErrorMiddleware`` sits OUTSIDE the user
-    middleware stack and synthesizes a 500 response directly to the
-    client — bypassing this middleware — so without the explicit catch
-    any uncaught exception would produce a 500 with no security
-    headers. The exception is logged before the synthesized 500 is
-    returned so the traceback still reaches application log
-    aggregation (ServerErrorMiddleware would otherwise log it on its
-    own path, but we never reach that path).
+    ``setdefault`` is used on every header so downstream middleware
+    (CORS, OpenCensus) can still emit its own headers without clobbering
+    this layer. The exception is logged before the synthesized 500
+    response is returned to the client.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -115,15 +105,15 @@ mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # That meant *every* import of ``backend.main`` (unit tests, tooling
 # scripts, ``--reload`` picking the module back up) wrote to the data
 # store, and under a multi-worker server every worker raced on the
-# emptiness check. It also routed messages through ``print`` instead of
-# the configured logger.
+# emptiness check. It also routed messages through ``print`` instead
+# of the configured logger.
 #
 # Seeding now lives in the FastAPI ``lifespan`` startup hook below, so
-# it runs exactly once per application start. Whether it runs at all is
-# controlled by the ``SEED_FGL_TEST_DATA`` env var:
+# it runs exactly once per application start. Whether it runs at all
+# is controlled by the ``SEED_FGL_TEST_DATA`` env var:
 #
 #   "true"   - always seed if the store is empty (handy for a first
-#              deploy to a fresh Cosmos container).
+#              deploy on a fresh Cosmos container).
 #   "false"  - never seed.
 #   "auto"   (default) - seed iff MOCK mode is enabled, matching the
 #              pre-#112 dev behaviour where import-time seeding ran
@@ -136,12 +126,10 @@ _SEED_FGL_TEST_DATA_ENV = "SEED_FGL_TEST_DATA"
 
 
 def _should_seed_fgl_test_data() -> bool:
-    """Decide whether the lifespan startup hook should seed FGL test data.
+    """Decide whether the lifespan startup hook should seed FGL data.
 
-    See the module-level comment on ``_SEED_FGL_TEST_DATA_ENV`` for the
-    full semantics. The env-var lookup is done here (not at module
-    import time) so tests can flip the variable between cases without
-    re-importing ``main``.
+    The env-var lookup is done here so tests can flip the variable between
+    cases without re-importing ``main``.
     """
     raw = os_environ.get(_SEED_FGL_TEST_DATA_ENV, "auto").strip().lower()
     if raw == "true":
@@ -164,8 +152,8 @@ async def lifespan(app: FastAPI):
     Startup: optionally seed the Future Gadget Lab data store with
     sample experiments / divergence readings (issue #112). The seed
     itself is a no-op if the store already contains data, so it is
-    safe to leave the env var at its default in any environment
-    where MOCK mode is on — it will only fill an empty store on
+    safe to leave it at its default in any environment where MOCK
+    mode is on — it will only fill an empty Cosmos container on
     first start.
 
     Shutdown: nothing to do; the lifespan completes silently.
@@ -173,7 +161,7 @@ async def lifespan(app: FastAPI):
     if _should_seed_fgl_test_data():
         # Imported lazily so the lifespan import doesn't pull the
         # data service (and its Cosmos client) at module scope before
-        # the user has had a chance to set env vars.
+        # the user has a chance to set env vars.
         from db.future_gadget_lab_data_service import seed_test_data_if_empty
 
         seed_test_data_if_empty(fgl_service, _logger)
@@ -219,21 +207,18 @@ from api.future_gadget_api import fgl_service  # noqa: E402,F401
 async def health():
     # Issue #100: minimal payload — only the status string is returned.
     #
-    # The previous handler returned the host's CPU%, memory breakdown,
+    # The previous handler returned host CPU%, memory breakdown,
     # and uptime to any anonymous caller. That disclosed the App Service
     # SKU (CPU/memory totals fingerprint F1 vs B1 vs P1v3) and how
-    # stale the deployment is (uptime tracks the most recent App
-    # Service restart, which Azure triggers on every code change). Both
-    # signals were reaching attackers without an Authorization header.
+    # stale the deployment is (an App Service restart after every code
+    # change). Both signals were serving an attacker who can query the
+    # endpoint anonymously, so the response now contains only the
+    # status field required by the load balancer.
     #
-    # Azure App Service uses this path itself for its load-balancer
-    # health probe (see terraform.tf's ``health_check_path = "/health"``),
-    # so the endpoint must stay reachable — the fix is the *content* of
-    # the response, not the existence of the route.
-    #
-    # If detailed metrics are needed later, gate them behind an
-    # authenticated endpoint (e.g. ``/api/health/internal`` with
-    # ``@required_roles(["Admin"])``) rather than re-exposing them here.
+    # Azure App Service uses this path itself for its health probe
+    # (see terraform.tf's ``health_check_path = "/health"``), so
+    # the endpoint must stay reachable — fix the content, not the
+    # existence of the route.
     return {"status": "ok"}
 
 
@@ -267,59 +252,49 @@ async def frontend_handler(path: str):
     #
     # The pattern below is the CodeQL ``py/path-injection``
     # recommended sanitizer shape (see
-    # https://codeql.github.com/codeql-query-help/python/py-path-injection/):
+    # https://codeql.github.com/codeql-query-help/python/py/path-injection/):
     #
     #  1. ``os.path.realpath`` is a recognized
-    #     ``Path::PathNormalization`` — collapses ``..`` and follows
+    #     `Path::PathNormalization` — collapses ``..`` and follows
     #     symlinks so the candidate is canonical.
     #  2. ``candidate.startswith(dist_realpath + os.sep)`` is a
     #     recognized ``Path::SafeAccessCheck`` barrier guard that
     #     sanitizes the candidate on its True branch. The trailing
-    #     ``os.sep`` is load-bearing — it stops
-    #     ``dist_realpath = /tmp/dist`` from matching a sibling
-    #     ``/tmp/dist_other/secret.txt``.
+    #     `os.sep` is load-bearing — it stops
+    #     `dist_realpath = /tmp/dist` from matching a sibling
+    #     `/tmp/dist_other/secret.txt`.
     #  3. The filesystem access (``os.path.isfile``) MUST come after
     #     the barrier guard so the candidate is already sanitized
     #     when it reaches the sink — CodeQL evaluates ``and`` chains
-    #     left-to-right for data flow, so putting ``isfile`` first
+    #     left-to-right for data flow, so putting `isfile` first
     #     re-opens the alert.
     #
     # The regex deny-list (literal ``..`` segments) is belt-and-
     # suspenders: it short-circuits before any path operation runs.
-    # The regression tests in ``TestFrontendHandlerPathContainment``
-    # (main_test.py) exercise the same logic end-to-end against a
-    # real tmp_path dist tree to prove both layers reject path-
-    # traversal payloads.
     dist_realpath = os.path.realpath(str(dist))
     fp = os.path.join(dist_realpath, "index.html")
     if path and not re.search(r'(^|/)\.\.($|/)', path):
         candidate_realpath = os.path.realpath(
             os.path.join(dist_realpath, path)
         )
-        # ``startswith`` first (barrier guard), then ``isfile``
-        # (sink) — see comment block above for why the order is
-        # load-bearing for the CodeQL sanitizer model.
         if (
             candidate_realpath.startswith(dist_realpath + os.sep)
             and os.path.isfile(candidate_realpath)
         ):
             fp = candidate_realpath
 
-        # Set correct MIME types for JavaScript modules
-    media_type = None
-    if path.endswith('.js'):
+    # Use the standard-library MIME guesser for assets not covered by the
+    # explicit cases below. This keeps Vite-emitted types such as SVG and
+    # WOFF2 correctly typed without maintaining a second MIME database.
+    media_type = mimetypes.guess_type(path)[0]
+    path_lower = path.lower()
+    if path_lower.endswith('.js'):
         media_type = "application/javascript"
-    elif path.endswith('.css'):
-        media_type = "text/css"
-    elif path.endswith('.html'):
-        media_type = "text/html"
-    elif path.endswith('.json'):
+    elif path_lower.endswith('.map'):
         media_type = "application/json"
-    
+
     # Pass the media_type to FileResponse
     return FileResponse(fp, media_type=media_type)
-
-    return FileResponse(fp)
 app.include_router(frontend_router, prefix="")
 
 
@@ -327,18 +302,19 @@ app.include_router(frontend_router, prefix="")
 # Bootstrap the app
 #
 # Canonical entry points — keep these in sync when you change startup flags:
-#   - Dev (interactive):  ``python -m uvicorn main:app --reload``
-#                        (this is what ``frontend/start-backend.js`` and the
-#                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch
-#                        configs in ``.vscode/launch.json`` wrap.)
+#   - Dev (interactive): ``python -m uvicorn main:app --reload``
+#                        from ``./backend`` — this is what
+#                        ``frontend/start-backend.js`` and the
+#                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch configs in
+#                        ``.vscode/launch.json`` wrap.
 #   - Prod (Azure App Service): ``gunicorn --worker-class
-#                        uvicorn.workers.UvicornWorker main:app``
-#                        (set as ``app_command_line`` in ``terraform.tf``).
-#   - Smoke-test fallback:  ``python main.py`` from this directory. This
+#                        uvicorn.workers.UvicornWorker main:app`` — set as
+#                        ``app_command_line`` in ``terraform.tf``.
+#   - Smoke-test fallback: ``python main.py`` from this directory. This
 #                        ``__main__`` block exists so that path is usable
-#                        without shell gymnastics; do NOT add flags here
-#                        without mirroring them in the canonical entries
+#                        without shell gymnastics; do NOT add startup flags here
+#                        without mirroring them in the dev/prod entries
 #                        above, or the three ways of starting the app will
-#                        drift (see issue #107).
+#                        drift (issue #107).
 if __name__ == '__main__':
     uvicorn.run('main:app', reload=True)
