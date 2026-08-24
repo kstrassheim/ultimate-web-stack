@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 from contextlib import asynccontextmanager
-import mimetypes
 import os.path
 import re
 import uvicorn
@@ -34,9 +33,9 @@ from common.config import tfconfig, origins
 # The CSP connect-src explicitly allows:
 #   - https://login.microsoftonline.com (MSAL / Entra ID auth redirect)
 #   - https://*.in.applicationinsights.azure.com (App Insights telemetry ingest)
-#   - https://js.monitor.azure.com (Application Insights SDK CDN snippet)
-# The img-src allows https://graph.microsoft.com because the SPA fetches the
-# signed-in user's profile photo from Microsoft Graph. Add any new
+#   - https://js.monitor.azure.com (App Insights SDK CDN snippets)
+# The img-src allows https://graph.microsoft.com because the SPA fetches
+# the signed-in user's profile photo from Microsoft Graph. Add any new
 # external origin that the SPA or telemetry stack talks to here, otherwise
 # the browser will block the request after deployment.
 _SECURITY_HEADERS_CSP = (
@@ -56,9 +55,9 @@ _SECURITY_HEADERS_PERMISSIONS = "camera=(), microphone=(), geolocation=()"
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Adds baseline security response headers to every HTTP response.
 
-    See issue #98. ``setdefault`` is used on every header so downstream
-    middleware (CORS, OpenCensus telemetry) can still emit their own
-    headers without clobbering this layer.
+    See issue #98. ``setdefault`` is used on every header so that
+    downstream middleware (CORS, OpenCensus telemetry) can still emit
+    their own headers without being clobbered by this layer.
 
     The dispatch body is wrapped in ``try/except`` so that unhandled
     exceptions raised by route handlers (or any inner middleware) still
@@ -70,7 +69,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     headers. The exception is logged before the synthesized 500 is
     returned so the traceback still reaches application log
     aggregation (ServerErrorMiddleware would otherwise log it on its
-    own path, but we never reach this path).
+    own path, but we never reach that path).
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -116,12 +115,12 @@ mock_enabled = os_environ.get("MOCK", "false").lower() == "true"
 # That meant *every* import of ``backend.main`` (unit tests, tooling
 # scripts, ``--reload`` picking the module back up) wrote to the data
 # store, and under a multi-worker server every worker raced on the
-# emptiness check. It also routed messages through ``print`` instead
-# of the configured logger.
+# emptiness check. It also routed messages through ``print`` instead of
+# the configured logger.
 #
 # Seeding now lives in the FastAPI ``lifespan`` startup hook below, so
-# it runs exactly once per application start. Whether it runs at all
-# is controlled by the ``SEED_FGL_TEST_DATA`` env var:
+# it runs exactly once per application start. Whether it runs at all is
+# controlled by the ``SEED_FGL_TEST_DATA`` env var:
 #
 #   "true"   - always seed if the store is empty (handy for a first
 #              deploy to a fresh Cosmos container).
@@ -174,7 +173,7 @@ async def lifespan(app: FastAPI):
     if _should_seed_fgl_test_data():
         # Imported lazily so the lifespan import doesn't pull the
         # data service (and its Cosmos client) at module scope before
-        # the user has a chance to set env vars.
+        # the user has had a chance to set env vars.
         from db.future_gadget_lab_data_service import seed_test_data_if_empty
 
         seed_test_data_if_empty(fgl_service, _logger)
@@ -223,8 +222,8 @@ async def health():
     # The previous handler returned the host's CPU%, memory breakdown,
     # and uptime to any anonymous caller. That disclosed the App Service
     # SKU (CPU/memory totals fingerprint F1 vs B1 vs P1v3) and how
-    # stale the deployment is (uptime tracks the most recent App Service
-    # restart, which Azure triggers on every code change). Both
+    # stale the deployment is (uptime tracks the most recent App
+    # Service restart, which Azure triggers on every code change). Both
     # signals were reaching attackers without an Authorization header.
     #
     # Azure App Service uses this path itself for its load-balancer
@@ -249,6 +248,49 @@ async def health():
 MAX_PATH_LEN = 255
 dist = Path("./dist")
 frontend_router = APIRouter()
+
+# Media types for the asset extensions the Vite build can emit (issue #108).
+#
+# ``public/`` is copied to ``backend/dist/`` verbatim by Vite, and
+# ``src/assets/`` files imported from JSX come out hashed under
+# ``backend/dist/assets/``. The extensions below cover everything the
+# current build produces plus the asset types a future PR can drop in
+# (SVG icons, woff2 web fonts, source maps when sourcemaps are turned
+# on, web manifests). Starlette's FileResponse can guess a media_type
+# from the filename when this ladder leaves it as ``None``, but
+# spelling the mapping out explicitly:
+#
+#   * keeps the served content-type auditable in one place
+#   * avoids surprise if Starlette's guesser changes upstream
+#   * ensures browsers interpret a fresh asset the same way across
+#     Vite version upgrades
+#
+# The keys are matched as suffixes against the captured ``path``, so
+# ``.mjs``/``.htm``/``.jpeg`` are listed alongside their canonical
+# forms (``.js``/``.html``/``.jpg``) to keep both spellings covered.
+_STATIC_MEDIA_TYPES = {
+    ".js": "application/javascript",
+    ".mjs": "application/javascript",
+    ".css": "text/css",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".json": "application/json",
+    ".map": "application/json",  # Vite/Rollup source maps
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/vnd.microsoft.icon",
+    ".webmanifest": "application/manifest+json",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+}
+
+
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
     if len(path) > MAX_PATH_LEN:
@@ -271,18 +313,18 @@ async def frontend_handler(path: str):
     # https://codeql.github.com/codeql-query-help/python/py/path-injection/):
     #
     #  1. ``os.path.realpath`` is a recognized
-    #     `Path::PathNormalization` — collapses ``..`` and follows
+    #     ``Path::PathNormalization`` — collapses ``..`` and follows
     #     symlinks so the candidate is canonical.
     #  2. ``candidate.startswith(dist_realpath + os.sep)`` is a
     #     recognized ``Path::SafeAccessCheck`` barrier guard that
     #     sanitizes the candidate on its True branch. The trailing
-    #     `os.sep` is load-bearing — it stops
-    #     `dist_realpath = /tmp/dist` from matching a sibling
-    #     `/tmp/dist_other/secret.txt``.
+    #     ``os.sep`` is load-bearing — it stops
+    #     ``dist_realpath = /tmp/dist`` from matching a sibling
+    #     ``/tmp/dist_other/secret.txt``.
     #  3. The filesystem access (``os.path.isfile``) MUST come after
     #     the barrier guard so the candidate is already sanitized
     #     when it reaches the sink — CodeQL evaluates ``and`` chains
-    #     left-to-right for data flow, so putting `isfile` first
+    #     left-to-right for data flow, so putting ``isfile`` first
     #     re-opens the alert.
     #
     # The regex deny-list (literal ``..`` segments) is belt-and-
@@ -306,17 +348,20 @@ async def frontend_handler(path: str):
         ):
             fp = candidate_realpath
 
-    # Use the standard-library MIME guesser for assets not covered by the
-    # explicit cases below. This keeps Vite-emitted types such as SVG and
-    # WOFF2 correctly typed without maintaining a second MIME database.
-    media_type = mimetypes.guess_type(path)[0]
-    path_lower = path.lower()
-    if path_lower.endswith('.js'):
-        media_type = "application/javascript"
-    elif path_lower.endswith('.map'):
-        media_type = "application/json"
+    # Set the media_type to the entry in ``_STATIC_MEDIA_TYPES``
+    # matching the captured ``path``'s suffix. ``None`` is the right
+    # answer for any extension not in the map (e.g. ``.txt``) — it
+    # lets Starlette guess from the filename and is also the value
+    # FileResponse uses for an unknown type.
+    media_type = next(
+        (mime for ext, mime in _STATIC_MEDIA_TYPES.items()
+         if path.endswith(ext)),
+        None,
+    )
 
-    # Pass the media_type to FileResponse
+    # There is exactly one FileResponse per served request. A second
+    # ``return FileResponse(fp)`` used to sit below this line as
+    # unreachable dead code (see issue #108) and was removed.
     return FileResponse(fp, media_type=media_type)
 app.include_router(frontend_router, prefix="")
 
@@ -325,19 +370,18 @@ app.include_router(frontend_router, prefix="")
 # Bootstrap the app
 #
 # Canonical entry points — keep these in sync when you change startup flags:
-#   - Dev (interactive): ``python -m uvicorn main:app --reload``
-#                        from ``./backend`` — this is what
-#                        ``frontend/start-backend.js`` and the
+#   - Dev (interactive):  ``python -m uvicorn main:app --reload``
+#                        (this is what ``frontend/start-backend.js`` and the
 #                        ``FastAPI`` / ``FastAPI - Mock`` VSCode launch
-#                        configs in ``.vscode/launch.json`` wrap.
+#                        configs in ``.vscode/launch.json`` wrap.)
 #   - Prod (Azure App Service): ``gunicorn --worker-class
-#                        uvicorn.workers.UvicornWorker main:app`` — set as
-#                        ``app_command_line`` in ``terraform.tf``.
-#   - Smoke-test fallback: ``python main.py`` from this directory. This
+#                        uvicorn.workers.UvicornWorker main:app``
+#                        (set as ``app_command_line`` in ``terraform.tf``).
+#   - Smoke-test fallback:  ``python main.py`` from this directory. This
 #                        ``__main__`` block exists so that path is usable
-#                        without shell gymnastics; do NOT add startup flags here
-#                        without mirroring them in the dev/prod entries
+#                        without shell gymnastics; do NOT add flags here
+#                        without mirroring them in the canonical entries
 #                        above, or the three ways of starting the app will
-#                        drift (issue #107).
+#                        drift (see issue #107).
 if __name__ == '__main__':
-    uvicorn.run('main:app', reload=True))
+    uvicorn.run('main:app', reload=True)
