@@ -18,23 +18,7 @@ const Chat = () => {
   const isSendingRef = useRef(false);
 
 
-  // Parse message content to avoid duplicated usernames
-  const parseMessageContent = (messageText, username) => {
-    if (!messageText) return messageText;
-    
-    // Check for explicit "username: " pattern at beginning
-    const colonIndex = messageText.indexOf(': ');
-    if (colonIndex > 0) {
-      const potentialUsername = messageText.substring(0, colonIndex);
-      if (username && potentialUsername === username) {
-        return messageText.substring(colonIndex + 2);
-      }
-    }
-    
-    return messageText;
-  };
-
-  // Release the in-flight guard. Called when the request settles —
+  // Release the in-flight guard. Called when the request settles -
   // either the server acks the send (success) or the connection drops
   // / the local send reports failure.
   const clearInFlight = () => {
@@ -65,7 +49,7 @@ const Chat = () => {
       // The server echoes "You sent: <text>" via send_personal_message
       // after accepting a message. The WebSocketClient tags the frame
       // with type === 'sent' (see socket.js onmessage), which is the
-      // success signal that the request has settled — release the guard
+      // success signal that the request has settled - release the guard
       // so the next send is allowed.
       if (isSendingRef.current && message && message.type === 'sent') {
         clearInFlight();
@@ -121,7 +105,7 @@ const Chat = () => {
     let ok;
     try {
       ok = socketClientRef.current.send(inputMessage);
-    } catch (e) {
+    } catch (_e) {
       // WebSocket.send can throw synchronously on a half-closed socket;
       // treat that as a send failure so the user can retry.
       clearInFlight();
@@ -133,7 +117,7 @@ const Chat = () => {
     if (ok === false) {
       // WebSocketClient.send() returns false when there is no live socket
       // (e.g. the connection dropped between the status check and the
-      // send call). The request has already failed — release the guard
+      // send call). The request has already failed - release the guard
       // immediately rather than waiting for an ack that will never come.
       clearInFlight();
     }
