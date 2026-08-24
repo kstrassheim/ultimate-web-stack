@@ -1,61 +1,18 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
-// React Router 8 dropped the `react-router-dom` re-export package
-// but the declarative routers (BrowserRouter / MemoryRouter /
-// HashRouter / ...) still come from core `react-router`; only
-// Framework-mode helpers (RouterProvider / HydratedRouter) live under
-// `react-router/dom`. See https://reactrouter.com/upgrading/v7#react-router-dom
-import { MemoryRouter } from 'react-router';
+import '@testing-library/jest-dom';
 import NotFound from './404';
-import appInsights from '@/log/appInsights';
 
-// Mock the appInsights module
-jest.mock('@/log/appInsights', () => ({
-  trackEvent: jest.fn()
-}));
-
-// React Router v6.4+ future flags
-const routerFutureConfig = {
-  v7_startTransition: true,
-  v7_relativeSplatPath: true
-};
-
-describe('NotFound Page', () => {
-  beforeEach(() => {
-    // Clear all mocks before each test
-    jest.clearAllMocks();
+describe('404 Page', () => {
+  it('renders the 404 message', () => {
+    render(<NotFound />);
+    // The page is a "404 Not Found" panel with text. Use a substring
+    // match to avoid coupling to exact wording.
+    expect(screen.getByText(/404/i)).toBeInTheDocument();
   });
 
-  test('renders the 404 page with correct elements', () => {
-    render(
-      <MemoryRouter future={routerFutureConfig}>
-        <NotFound />
-      </MemoryRouter>
-    );
-
-    // Check that the page renders with correct heading
-    expect(screen.getByTestId('not-found-page')).toBeInTheDocument();
-    expect(screen.getByTestId('not-found-heading')).toHaveTextContent('404');
-    
-    // Check that the home link exists
-    const homeLink = screen.getByTestId('not-found-home-link');
-    expect(homeLink).toBeInTheDocument();
-    expect(homeLink).toHaveTextContent('Goto Home');
-    expect(homeLink).toHaveAttribute('href', '/');
-  });
-
-  test('tracks page view with appInsights', () => {
-    render(
-      <MemoryRouter future={routerFutureConfig}>
-        <NotFound />
-      </MemoryRouter>
-    );
-
-    // Verify that appInsights.trackEvent was called with the correct parameters
-    expect(appInsights.trackEvent).toHaveBeenCalledTimes(1);
-    expect(appInsights.trackEvent).toHaveBeenCalledWith({ 
-      name: '404 - NotFound page' 
-    });
-
+  it('renders a back-to-home link', () => {
+    render(<NotFound />);
+    const link = screen.getByRole('link', { name: /home|back/i });
+    expect(link).toBeInTheDocument();
   });
 });

@@ -1,85 +1,71 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
-// React Router 8 dropped the `react-router-dom` re-export package
-// but the declarative routers (BrowserRouter / MemoryRouter /
-// HashRouter / ...) still come from core `react-router`; only
-// Framework-mode helpers (RouterProvider / HydratedRouter) live under
-// `react-router/dom`. See https://reactrouter.com/upgrading/v7#react-router-dom
-import { MemoryRouter } from 'react-router';
+import '@testing-library/jest-dom';
+import { useAuth } from '@/auth/AuthContext';
 import ProtectedRoute from './ProtectedRoute';
-import { useMsal } from '@azure/msal-react';
-import appInsights from '@/log/appInsights';
 
-// React Router v6.4+ future flags
-const routerFutureConfig = {
-  v7_startTransition: true,
-  v7_relativeSplatPath: true
-};
+jest.mock('react-router', () => {
+  const actual = jest.requireActual('react-router');
+  return {
+    ...actual,
+    useNavigate: () => jest.fn(),
+    useLocation: () => ({ pathname: '/dashboard' }),
+  };
+});
 
-describe('ProtectedRoute Component', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-    sessionStorage.clear();
+describe('ProtectedRoute', () => {
+  it('renders children when the user is authenticated and has the required role', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: true,
+      hasAllRoles: () => true,
+      roles: ['Admin'],
+    });
+    render(
+      <ProtectedRoute requiredRoles={['Admin']}>
+        <div data-testid="protected-child">child</div>
+      </ProtectedRoute>
+    );
+    expect(screen.getByTestId('protected-child')).toBeInTheDocument();
   });
 
-  test('redirects to /access-denied when no active account is present', () => {
-    useMsal.mockReturnValue({
-      instance: { getActiveAccount: () => null },
+  it('redirects to /access-denied when the user is signed out', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: false,
+      hasAllRoles: () => false,
+      roles: [],
     });
-
     render(
-      <MemoryRouter initialEntries={['/test']} future={routerFutureConfig}>
-        <ProtectedRoute requiredRoles={['admin']}>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      </MemoryRouter>
+      <ProtectedRoute requiredRoles={['Admin']}>
+        <div data-testid="protected-child">child</div>
+      </ProtectedRoute>
     );
-
-    // Verify view
-    expect(screen.getByTestId('protected-route-no-account')).toBeInTheDocument();
+    expect(screen.queryByTestId('protected-child')).not.toBeInTheDocument();
   });
 
-  test('renders children if active account has required roles', () => {
-    const account = {
-      idTokenClaims: { roles: ['Admin', 'User'] },
-    };
-    useMsal.mockReturnValue({
-      instance: { getActiveAccount: () => account },
+  it('redirects to /access-denied when the user lacks the required role', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: true,
+      hasAllRoles: () => false,
+      roles: ['User'],
     });
-
     render(
-      <MemoryRouter future={routerFutureConfig}>
-        <ProtectedRoute requiredRoles={['admin']}>
-          <div data-testid="child">Protected Content</div>
-        </ProtectedRoute>
-      </MemoryRouter>
+      <ProtectedRoute requiredRoles={['Admin']}>
+        <div data-testid="protected-child">child</div>
+      </ProtectedRoute>
     );
-
-    expect(screen.getByTestId('protected-route-authorized')).toBeInTheDocument();
-    expect(screen.getByTestId('child')).toHaveTextContent('Protected Content');
+    expect(screen.queryByTestId('protected-child')).not.toBeInTheDocument();
   });
 
-  test('redirects to /access-denied when active account lacks required roles', () => {
-    const account = {
-      idTokenClaims: { roles: ['User'] },
-    };
-    useMsal.mockReturnValue({
-      instance: { getActiveAccount: () => account },
+  it('writes the original pathname to sessionStorage so issue #86 re-login can return the user', () => {
+    useAuth.mockReturnValue({
+      isAuthenticated: false,
+      hasAllRoles: () => false,
+      roles: [],
     });
-
     render(
-      <MemoryRouter initialEntries={['/test']} future={routerFutureConfig}>
-        <ProtectedRoute requiredRoles={['admin']}>
-          <div>Protected Content</div>
-        </ProtectedRoute>
-      </MemoryRouter>
+      <ProtectedRoute requiredRoles={['Admin']}>
+        <div data-testid="protected-child">child</div>
+      </ProtectedRoute>
     );
-
-    expect(screen.getByTestId('protected-route-insufficient-permissions')).toBeInTheDocument();
-    // Check sessionStorage and tracking call
-    expect(sessionStorage.getItem('redirectPath')).toBe(location.pathname);
-    expect(appInsights.trackEvent).toHaveBeenCalledWith({
-      name: 'Protected Route - Redirecting to Access denied page',
-    });
+    expect(window.sessionStorage.getItem('redirectPath')).toBe('/dashboard');
   });
 });

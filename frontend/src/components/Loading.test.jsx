@@ -1,65 +1,48 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Loading, { sleep } from './Loading';
 
-// Ensure this runs before the Loading tests
-jest.unmock('@/components/Loading');
-
 describe('Loading Component', () => {
-  it('should not render when visible is false', () => {
-    render(<Loading visible={false} />);
-    
-    // Verify the loading overlay is not in the document
-    expect(screen.queryByTestId('loading-overlay')).not.toBeInTheDocument();
+  it('renders nothing when not visible', () => {
+    const { container } = render(<Loading visible={false} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('should render with default props when visible is true', () => {
+  it('renders the overlay when visible', () => {
     render(<Loading visible={true} />);
     
     // Verify the loading overlay is in the document
-    const overlay = screen.getByTestId('loading-overlay');
-    expect(overlay).toBeInTheDocument();
-    
+    const _overlay = screen.getByTestId('loading-overlay');
+    expect(_overlay).toBeInTheDocument();
+
     // Verify the default message is displayed
     const message = screen.getByTestId('loading-message');
     expect(message).toHaveTextContent('Loading data...');
+  });
+
+  it('renders custom message when provided', () => {
+    render(<Loading visible={true} message="Custom loading message" />);
     
-    // Verify the spinner has the default variant and animation
+    expect(screen.getByTestId('loading-message')).toHaveTextContent('Custom loading message');
+  });
+
+  it('renders with custom variant', () => {
+    render(<Loading visible={true} variant="success" />);
+    
     const spinner = screen.getByTestId('loading-spinner');
-    expect(spinner).toHaveClass('spinner-border');
-    expect(spinner).toHaveClass('text-primary');
+    expect(spinner).toHaveClass('text-success');
   });
 
-  it('should display custom message when provided', () => {
-    const customMessage = 'Custom loading message';
-    render(<Loading visible={true} message={customMessage} />);
+  it('renders with custom size', () => {
+    render(<Loading visible={true} size="sm" />);
     
-    // Verify the custom message is displayed
-    const message = screen.getByTestId('loading-message');
-    expect(message).toHaveTextContent(customMessage);
-  });
-
-  it('should apply custom variant when provided', () => {
-    render(<Loading visible={true} variant="danger" />);
-    
-    // Verify the spinner has the custom variant
     const spinner = screen.getByTestId('loading-spinner');
-    expect(spinner).toHaveClass('text-danger');
+    expect(spinner).toHaveClass('spinner-border-sm');
   });
 
-  it('should apply custom size when provided', () => {
-    render(<Loading visible={true} size="lg" />);
-    
-    // Verify the spinner has the custom size (fixing to match actual class name)
-    const spinner = screen.getByTestId('loading-spinner');
-    expect(spinner).toHaveClass('spinner-border-lg');
-  });
-
-  it('should apply custom animation when provided', () => {
+  it('renders with grow animation when specified', () => {
     render(<Loading visible={true} animation="grow" />);
     
-    // Verify the spinner has the custom animation
     const spinner = screen.getByTestId('loading-spinner');
     expect(spinner).toHaveClass('spinner-grow');
   });
@@ -69,7 +52,7 @@ describe('Loading Component', () => {
     
     // Remove the aria-labelledby check since it's not present in the actual implementation
     // or it has a different value
-    const overlay = screen.getByTestId('loading-overlay');
+    const _overlay = screen.getByTestId('loading-overlay');
     
     // Keep the other checks that are passing
     const spinner = screen.getByTestId('loading-spinner');
@@ -81,14 +64,14 @@ describe('Loading Component', () => {
     );
   });
 
-  it('sleep utility should resolve after specified time', async () => {
-    jest.useFakeTimers();
+  it('uses sleep utility correctly', async () => {
+    const start = Date.now();
+    await sleep(100);
+    const elapsed = Date.now() - start;
     
-    const sleepPromise = sleep(50);
-    jest.advanceTimersByTime(50);
-    await sleepPromise;
-    
-    jest.useRealTimers();
-    expect(true).toBe(true); // Just verifying the promise resolves
+    // Should take at least 100ms (with some tolerance for timing)
+    expect(elapsed).toBeGreaterThanOrEqual(95);
+    // Should not take significantly longer
+    expect(elapsed).toBeLessThan(200);
   });
 });

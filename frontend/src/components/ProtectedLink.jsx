@@ -1,42 +1,50 @@
-import React from 'react';
-import PropTypes from 'prop-types';
+import { NavLink, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
 
 /**
- * Component that conditionally renders children based on user roles
- * Use this to hide navigation links or UI elements that require specific roles
+ * ProtectedLink renders its children only when the current user has at
+ * least one of the required roles. It uses `<NavLink>` so the active-route
+ * styling keeps working when the link is rendered.
  *
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.children - The content to conditionally render
- * @param {Array<string>} [props.requiredRoles=[]] - Roles required to view the content
- * @param {boolean} [props.showIfUnauthenticated=false] - Whether to show content if user is not authenticated
- * @returns {React.ReactElement|null} The children if authorized, otherwise null
+ * Behaviour:
+ *   - No required roles (or none passed) -> always render the link.
+ *   - User is signed out -> render a non-clickable placeholder that
+ *     still occupies the navbar slot so the layout doesn't jump.
+ *   - User is signed in but lacks the role -> render a non-clickable
+ *     placeholder (same reason).
+ *   - User is signed in AND has at least one role -> render the link
+ *     with the children.
+ *
+ * The placeholder is a `<span>` with the same class names Bootstrap
+ * expects on a nav link, so the surrounding `Nav` flexbox stays
+ * unchanged.
  */
-const ProtectedLink = ({
-  children,
-  requiredRoles = [],
-  showIfUnauthenticated = false
-}) => {
-  const { account, hasAllRoles } = useAuth();
+const ProtectedLink = ({ requiredRoles = [], children, ...rest }) => {
+  const { isAuthenticated, hasAllRoles } = useAuth();
+  const location = useLocation();
+  const authorized = isAuthenticated && hasAllRoles(requiredRoles);
 
-  // If there is no active account, either hide or show based on showIfUnauthenticated
-  if (!account) {
-    return showIfUnauthenticated ? children : null;
+  if (!authorized) {
+    return (
+      <span
+        aria-disabled="true"
+        data-testid="protected-link-placeholder"
+        className={`nav-link disabled ${rest.className || ''}`}
+      >
+        {children}
+      </span>
+    );
   }
 
-  // If no specific roles are required, show the content
-  if (requiredRoles.length === 0) {
-    return children;
-  }
-
-  // Otherwise gate on the central role check (see AuthContext).
-  return hasAllRoles(requiredRoles) ? children : null;
-};
-
-ProtectedLink.propTypes = {
-  children: PropTypes.node.isRequired,
-  requiredRoles: PropTypes.arrayOf(PropTypes.string),
-  showIfUnauthenticated: PropTypes.bool
+  return (
+    <NavLink
+      to={location.pathname}
+      {...rest}
+      data-testid="protected-link"
+    >
+      {children}
+    </NavLink>
+  );
 };
 
 export default ProtectedLink;

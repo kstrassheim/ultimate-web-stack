@@ -1,32 +1,38 @@
-import React from 'react';
-import { Navigate } from 'react-router';
+import { Navigate, useLocation } from 'react-router';
 import { useAuth } from '@/auth/AuthContext';
-import appInsights from '@/log/appInsights';
 
-const ProtectedRoute = ({ children, requiredRoles = [] }) => {
-  const { account, hasAllRoles } = useAuth();
+/**
+ * Wraps a route's element so unauthenticated users get bounced to
+ * `/access-denied` (or to the login page once a login flow lands),
+ * and authenticated users lacking the required role get bounced to
+ * `/access-denied` too. The original target is preserved via
+ * sessionStorage so the post-login redirect (issue #86) can return
+ * the user where they were going.
+ */
+const ProtectedRoute = ({ requiredRoles = [], children }) => {
+  const { isAuthenticated, hasAllRoles } = useAuth();
+  const location = useLocation();
 
-  // If there is no active account, redirect to logon (or a login page)
-  if (!account) {
-    return (
-      <div data-testid="protected-route-no-account">
-        <Navigate to="/access-denied" replace />
-      </div>
-    );
+  if (!isAuthenticated || !hasAllRoles(requiredRoles)) {
+    // Preserve the original target so issue #86's re-login flow can
+    // restore the user here once the re-auth completes. We only set
+    // this when there is a meaningful pathname; "/" / "/access-denied"
+    // are no-ops because we don't want the redirect to bounce back to
+    // them in a loop.
+    if (
+      typeof window !== 'undefined' &&
+      location.pathname &&
+      location.pathname !== '/access-denied' &&
+      location.pathname !== '/'
+    ) {
+      try {
+        window.sessionStorage.setItem('redirectPath', location.pathname + (location.search || ''));
+      } catch (_) { /* sessionStorage may be unavailable; swallow */ }
+    }
+    return <Navigate to="/access-denied" replace />;
   }
 
-  if (!hasAllRoles(requiredRoles)) {
-    appInsights.trackEvent({ name: 'Protected Route - Redirecting to Access denied page' });
-    sessionStorage.setItem("redirectPath", location.pathname);
-    // navigate does not work on account change
-    return (
-      <div data-testid="protected-route-insufficient-permissions">
-        <Navigate to="/access-denied" replace state={{ requiredRoles }} />
-      </div>
-    );
-  }
-
-  return <div data-testid="protected-route-authorized">{children}</div>;
+  return children;
 };
 
 export default ProtectedRoute;

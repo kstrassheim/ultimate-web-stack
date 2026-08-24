@@ -1,27 +1,24 @@
-import React from 'react';
-import { useLocation } from 'react-router';
-import appInsights from '@/log/appInsights';
+import { Link } from 'react-router';
+import { Container } from 'react-bootstrap';
 
+/**
+ * 403 page rendered when ProtectedRoute bounces a user without the
+ * required role. Stays deliberately minimal so it works without any
+ * data dependency.
+ */
 const AccessDenied = () => {
-  appInsights.trackEvent({ name: 'Access Denied page' });
-  const location = useLocation();
-  const requiredRoles = location.state?.requiredRoles || [];
   return (
-    <div data-testid="access-denied-page">
-      <h2 data-testid="access-denied-heading">Access Denied</h2>
-      {requiredRoles.length > 0 ? (
-        <>
-          <p data-testid="access-denied-role-message">You do not have permission to view this section.</p>
-          <p data-testid="access-denied-required-roles">Required roles: {requiredRoles.join(', ')}</p>
-          
-        </>
-      ) : (<>
-        <p data-testid="access-denied-login-message">You do not have permission to view this page.</p>
-        <p data-testid="access-denied-signin-prompt">Please sign in for access</p>
-        </>
-      )}
-      
-    </div>
+    <Container className="text-center mt-5" data-testid="access-denied-page">
+      <h1>Access Denied</h1>
+      <p className="lead">
+        You don&apos;t have permission to view this page.
+      </p>
+      <p>
+        <Link to="/" className="btn btn-primary" data-testid="access-denied-home">
+          Return to Home
+        </Link>
+      </p>
+    </Container>
   );
 };
 
