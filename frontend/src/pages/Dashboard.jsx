@@ -6,7 +6,7 @@ import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
 import GroupsList from '@/pages/components/GroupsList';
 import WorldlineMonitor from '@/pages/components/WorldlineMonitor';
-import Loading, {sleep} from '@/components/Loading';
+import Loading from '@/components/Loading';
 import notyfService from '@/log/notyfService';
 import { useAbortController } from '@/utils/useAbortController';
 

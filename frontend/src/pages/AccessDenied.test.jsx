@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 // React Router 8 dropped the `react-router-dom` re-export package
 // but the declarative routers (BrowserRouter / MemoryRouter /

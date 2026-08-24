@@ -1,5 +1,5 @@
-import React, { act } from 'react';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { act } from 'react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Chat from './Chat';
 import { useMsal } from '@azure/msal-react';
@@ -255,14 +255,14 @@ describe('Chat Component', () => {
     expect(sendButton).toBeDisabled();
   });
 
-  // Regression tests for issue #84 — Send button must be disabled while a
+  // Regression tests for issue #84 - Send button must be disabled while a
   // message is in flight and released once the request settles, so a
   // double-click cannot post the same message twice.
 
   test('disables the Send button once a send is in flight', async () => {
     const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
     
-    // A send that hasn't settled yet — never resolves, so the guard
+    // A send that hasn't settled yet - never resolves, so the guard
     // stays held. This mirrors the real flow where the server acks
     // asynchronously after the send call returns.
     let releaseSend;
@@ -293,7 +293,7 @@ describe('Chat Component', () => {
     expect(sendButton).toBeDisabled();
     expect(mockWebSocketClientInstance.send).toHaveBeenCalledWith('In flight message');
     
-    // Sanity — release the dangling Promise so jest doesn't warn.
+    // Sanity - release the dangling Promise so jest doesn't warn.
     if (releaseSend) releaseSend();
   });
 
@@ -325,8 +325,8 @@ describe('Chat Component', () => {
   });
 
   test('a server "sent" ack re-enables the Send button', async () => {
-    const mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
-    
+    const _mockWebSocketClientInstance = WebSocketClient.mock.results[0].value;
+
     await act(async () => {
       mockStatusCallback('connected');
     });
@@ -355,7 +355,7 @@ describe('Chat Component', () => {
     
     // Input was cleared after the synchronous send, so without new
     // text the button stays disabled by the empty-input condition. Type
-    // a follow-up to verify the guard — not the input — has been
+    // a follow-up to verify the guard - not the input - has been
     // released.
     await act(async () => {
       fireEvent.change(input, { target: { value: 'Second message' } });
@@ -382,10 +382,10 @@ describe('Chat Component', () => {
     await act(async () => {
       fireEvent.click(sendButton);
     });
-    // Synchronous send returned false → guard released right away.
+    // Synchronous send returned false - guard released right away.
     expect(mockWebSocketClientInstance.send).toHaveBeenCalledWith('Will fail');
     
-    // With non-empty input the button is enabled again — the user can
+    // With non-empty input the button is enabled again - the user can
     // retry without a refresh, per the issue's acceptance criterion #2.
     await act(async () => {
       fireEvent.change(input, { target: { value: 'Retry after failure' } });
@@ -419,7 +419,7 @@ describe('Chat Component', () => {
     
     expect(sendButton).toBeDisabled();
     
-    // Connection dies before the server acks — the ack will never
+    // Connection dies before the server acks - the ack will never
     // arrive, so the status handler must release the guard.
     await act(async () => {
       mockStatusCallback('error');
@@ -450,7 +450,7 @@ describe('Chat Component', () => {
     const input = screen.getByPlaceholderText('Type a message...');
     const sendButton = screen.getByRole('button', { name: /send/i });
     
-    // First send → ack → second send. Issue #84 acceptance criterion #3:
+    // First send - ack - second send. Issue #84 acceptance criterion #3:
     // the guard must be per-request, not a one-shot.
     await act(async () => {
       fireEvent.change(input, { target: { value: 'one' } });

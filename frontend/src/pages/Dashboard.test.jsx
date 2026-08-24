@@ -1,16 +1,9 @@
-import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
 import Dashboard from './Dashboard';
 import { getUserData } from '@/api/api';
 import { getAllGroups } from '@/api/graphApi';
-import { 
-  getWorldlineStatus,
-  getWorldlineHistory,
-  getDivergenceReadings,
-  worldlineSocket
-} from '@/api/futureGadgetApi';
 import appInsights from '@/log/appInsights';
 import notyfService from '@/log/notyfService';
 
@@ -44,11 +37,16 @@ jest.mock('@/api/futureGadgetApi', () => ({
   formatWorldLineChange: jest.fn(change => String(change))
 }));
 
-// Use the mockMsalInstance that's already defined in your setup
-const { instance: mockMsalInstance } = useMsal();
+// Use the mockMsalInstance that's already defined in your setup.
+// `useMsal()` is mocked by jest.setup.js to return a stable object,
+// so we resolve it from inside `beforeEach` rather than at module
+// top level - calling a `use*()` function outside a React component
+// or custom hook would otherwise trip `react-hooks/rules-of-hooks`.
+let mockMsalInstance;
 
 describe('Dashboard Component', () => {
   beforeEach(() => {
+    ({ instance: mockMsalInstance } = useMsal());
     // Clear all mocks before each test
     jest.clearAllMocks();
   });
