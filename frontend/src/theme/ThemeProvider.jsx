@@ -17,9 +17,13 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
  * The active theme is mirrored to `<html data-bs-theme="...">` so the
  * Bootstrap 5.3 theme tokens (body bg, navbar palette, modal chrome,
  * form controls, etc.) cascade everywhere without per-component work.
- * The inline boot script in `index.html` performs the same assignment
- * synchronously before React mounts to avoid a flash of the wrong theme
- * on first paint.
+ * The boot script in `public/theme-bootstrap.js` (loaded from
+ * `index.html` via `<script src="/theme-bootstrap.js">` in `<head>`)
+ * performs the same assignment synchronously before React mounts to
+ * avoid a flash of the wrong theme on first paint. It is an external
+ * file rather than an inline `<script>` because the SPA's CSP is
+ * `script-src 'self'` with no `'unsafe-inline'` (issue #98); see
+ * issue #145 for the full rationale.
  */
 
 export const THEME_STORAGE_KEY = 'theme-mode';
