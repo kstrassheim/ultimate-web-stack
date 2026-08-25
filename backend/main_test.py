@@ -1046,6 +1046,60 @@ class TestSecurityHeadersMiddleware:
             "https://graph.microsoft.com",
         )
 
+    def test_csp_script_src_rejects_inline_and_hashes(self):
+        """Issue #145: ``script-src`` must stay ``'self'`` only — no
+        ``'unsafe-inline'`` and no ``'sha256-...'`` hash.
+
+        The pre-#145 HTML inlined the theme-bootstrap script in
+        ``index.html`` while the CSP was ``script-src 'self'`` with
+        no allowance for inline execution, so the script was
+        silently blocked at runtime and the user-visible effect
+        was a brief light-themed flash on a dark-by-default site.
+
+        Three options were on the issue's menu:
+
+          1. Add the inline script's SHA-256 to ``script-src``.
+          2. Move the script to an external file (chosen here).
+          3. Switch to a per-request nonce.
+
+        The fix chose option 2 because it keeps CSP clean (no
+        per-script hash bookkeeping, no nonce plumbing) and a
+        same-origin external file is already allowed by ``'self'``.
+        The exact-equality assertion in
+        ``test_csp_includes_required_origins`` catches accidental
+        widening, so this test only needs to pin the failure-mode
+        names so a future contributor who reaches for option 1 or 3
+        (or who tries to quiet the FOUC by adding
+        ``'unsafe-inline'``) sees a CI failure with a comment that
+        points at the issue and the alternative fix paths, rather
+        than a generic "exact equality failed" message.
+        """
+        csp = client.get("/health").headers["content-security-policy"]
+        sources = _csp_sources(csp, "script-src")
+        # All three failure modes are concrete, intentional
+        # deviations from the chosen option-2 fix path.
+        assert "'unsafe-inline'" not in sources, (
+            "script-src must not allow inline execution; the SPA "
+            "ships an external theme-bootstrap.js (issue #145). "
+            "If you need a new inline script, move it to a file "
+            "under frontend/public/ first."
+        )
+        assert not any(src.startswith("'sha256-") for src in sources), (
+            "script-src must not pin a sha256 hash; the boot "
+            "script content can change without the CSP needing to "
+            "follow it (issue #145 chose option 2 — external file, "
+            "not option 1 — hash). If you really need a hash, "
+            "document it inline with the script in "
+            "frontend/public/theme-bootstrap.js."
+        )
+        assert not any(src.startswith("'nonce-") for src in sources), (
+            "script-src must not require a nonce; the boot script "
+            "is a static file (issue #145 chose option 2, not "
+            "option 3 — nonce). If you really need a nonce, "
+            "extend SecurityHeadersMiddleware to mint one per "
+            "request first."
+        )
+
     def test_hsts_policy(self):
         """HSTS must be set for two years (63072000s) including subdomains."""
         hsts = client.get("/health").headers["strict-transport-security"]
