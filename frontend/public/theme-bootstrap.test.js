@@ -39,10 +39,19 @@
  *      boot logic back into `index.html` (e.g. someone trying to
  *      inline a snippet for "convenience") fails here with a clear
  *      message, instead of silently re-opening the FOUC + CSP block.
+ *
+ * The HTML assertions go through JSDOM rather than regex stripping.
+ * JSDOM's HTML parser handles attribute whitespace, comment nesting,
+ * `<script>`/`<SCRIPT>` case variants, and other quirks that a
+ * naive `<script…</script>` regex would silently get wrong — and
+ * more importantly, it's what CodeQL's "bad HTML filtering regexp"
+ * check is steering us away from. JSDOM is already loaded by the
+ * Jest `jsdom` environment so no extra dependency is added.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { JSDOM } = require('jsdom');
 
 const PUBLIC_DIR = path.resolve(__dirname);
 const INDEX_HTML_PATH = path.resolve(__dirname, '..', 'index.html');
@@ -52,6 +61,12 @@ const BOOT_SCRIPT_PATH = path.join(PUBLIC_DIR, 'theme-bootstrap.js');
 // assertions are simpler when the source is a single string.
 const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 const bootScript = fs.readFileSync(BOOT_SCRIPT_PATH, 'utf8');
+
+// One JSDOM parse per test run — re-used by every assertion that
+// needs to walk the parsed DOM tree. Parsing is the slow part; the
+// resulting Document object is read-only for these assertions.
+const parsedIndex = new JSDOM(indexHtml);
+const document = parsedIndex.window.document;
 
 describe('theme-bootstrap.js (issue #145)', () => {
   test('public/theme-bootstrap.js exists', () => {
@@ -74,7 +89,7 @@ describe('theme-bootstrap.js (issue #145)', () => {
     // key/attribute used by ThemeProvider.jsx (THEME_STORAGE_KEY
     // === 'theme-mode', attribute === 'data-bs-theme') and the OS
     // query string used by both ThemeProvider.detectOsTheme and
-    // detectOsTheme in the script.
+    // the script's DARK_QUERY constant.
     expect(bootScript).toMatch(/'theme-mode'/);
     expect(bootScript).toMatch(/prefers-color-scheme: dark/);
     expect(bootScript).toMatch(/setAttribute\('data-bs-theme'/);
@@ -90,30 +105,61 @@ describe('theme-bootstrap.js (issue #145)', () => {
 });
 
 describe('index.html — boot script wiring (issue #145)', () => {
+  // Pull the boot-script <script> tag (and only that one) out of
+  // the parsed DOM. This is the load-bearing assertion: the file
+  // MUST load the boot script via an external `src`, not inline.
+  // Using the JSDOM-parsed tag (rather than regex on the source)
+  // means the test accepts any attribute order / whitespace, and
+  // is robust to a future "tighten the tag shape" refactor that
+  // keeps the semantics identical.
+  const scriptTags = Array.from(document.querySelectorAll('script'));
+  const bootScriptTag = scriptTags.find(
+    (tag) => tag.getAttribute('src') === '/theme-bootstrap.js',
+  );
+
   test('references /theme-bootstrap.js via <script src="...">', () => {
     // The whole point of the fix — the boot script is loaded via
-    // an external src, not as an inline <script>. Match the tag
-    // shape so a future change that adds a `defer`, an `async`, or
-    // a `type="module"` (any of which would change the script's
-    // synchronous-before-body-paint timing) fails this test.
-    expect(indexHtml).toMatch(
-      /<script\s+src="\/theme-bootstrap\.js"\s*><\/script>/,
-    );
+    // an external src, not as an inline <script>. Asserting on the
+    // parsed tag (not the raw markup) means the test is robust to
+    // a future refactor that tightens attribute whitespace but
+    // keeps semantics identical. The tag MUST exist, MUST have the
+    // src we expect, and MUST NOT carry executable inline content.
+    expect(bootScriptTag).toBeDefined();
+    // Inline script tags have no `src`; double-check the parsed
+    // tag really is external so the regression guard below
+    // ("no inline `<script>`") is meaningful.
+    expect(bootScriptTag.hasAttribute('src')).toBe(true);
+    // The text content of an external `<script src="...">` is
+    // intentionally empty — anything in there would be a CSP
+    // violation AND a sign someone tried to inline something for
+    // "convenience". Empty-string check catches that mistake.
+    expect(bootScriptTag.textContent).toBe('');
+    // No defer/async — either of those would change the script's
+    // synchronous-before-body-paint timing and silently re-open
+    // the FOUC.
+    expect(bootScriptTag.hasAttribute('defer')).toBe(false);
+    expect(bootScriptTag.hasAttribute('async')).toBe(false);
   });
 
   test('boot script tag is in <head>, before <body>', () => {
-    // The script must execute before the body parses; Vite / the
-    // browser only guarantee that ordering for tags in <head>
-    // without `defer` / `async`. Pin the order so a future move to
-    // the bottom of <body> (which would break the FOUC prevention
+    // The script must execute before the body parses; the browser
+    // only guarantees that ordering for tags in <head> without
+    // `defer`/`async`. Pin the order so a future move to the
+    // bottom of <body> (which would break the FOUC prevention
     // even with the external script) fails here.
-    const headOpen = indexHtml.indexOf('<head>');
-    const bodyOpen = indexHtml.indexOf('<body>');
-    const scriptAt = indexHtml.indexOf('/theme-bootstrap.js');
-    expect(headOpen).toBeGreaterThan(-1);
-    expect(bodyOpen).toBeGreaterThan(headOpen);
-    expect(scriptAt).toBeGreaterThan(headOpen);
-    expect(scriptAt).toBeLessThan(bodyOpen);
+    const head = document.querySelector('head');
+    const body = document.querySelector('body');
+    expect(head).not.toBeNull();
+    expect(body).not.toBeNull();
+    // document.querySelectorAll returns elements in document
+    // order; the boot script must precede the body.
+    const allElements = Array.from(document.querySelectorAll('head, script[src="/theme-bootstrap.js"], body'));
+    const headIdx = allElements.indexOf(head);
+    const bootIdx = allElements.indexOf(bootScriptTag);
+    const bodyIdx = allElements.indexOf(body);
+    expect(headIdx).toBeGreaterThanOrEqual(0);
+    expect(bootIdx).toBeGreaterThan(headIdx);
+    expect(bodyIdx).toBeGreaterThan(bootIdx);
   });
 
   test('index.html contains no inline <script> with executable content', () => {
@@ -126,23 +172,18 @@ describe('index.html — boot script wiring (issue #145)', () => {
     // blocks it again and the FOUC comes back. This test fails
     // fast in CI with a clear pointer to the offending tag.
     //
-    // Two stripping passes:
-    //
-    //   1. Drop HTML comments so the `<script src="...">` text
-    //      inside the boot-script explanatory comment doesn't
-    //      count as an executable tag.
-    //   2. Drop the two allowed `<script>` tags (the external
-    //      boot script and the Vite `/src/main.jsx` module entry)
-    //      so the residual-text assertion is precisely "any other
-    //      `<script>` would be an inline script CSP blocks".
-    //
-    // After both passes, the only `<script>` text left would be a
-    // re-introduced inline `<script>...</script>` block, which is
-    // the regression this test is here to catch.
-    const withoutComments = indexHtml.replace(/<!--[\s\S]*?-->/g, '');
-    const withoutExternalScripts = withoutComments
-      .replace(/<script\s+src="[^"]*"[^>]*><\/script>/g, '')
-      .replace(/<script\s+type="module"[^>]*><\/script>/g, '');
-    expect(withoutExternalScripts).not.toMatch(/<script[\s>]/i);
+    // Walk every <script> tag in the parsed DOM and flag the ones
+    // that have NO external `src` attribute (those are the inline
+    // ones — CSP blocks them, the FOUC comes back). The two
+    // allowed inline-looking tags are:
+    //   - `<script src="/theme-bootstrap.js">` (the boot script
+    //     that this PR introduces), and
+    //   - `<script type="module" src="/src/main.jsx">` (Vite's
+    //     module entry, present in the original HTML).
+    // Both have an `src`, so neither trips this assertion. The
+    // `<script type="module" src="...">` from the Vite build's
+    // bundle is also caught by `hasAttribute('src')` — same rule.
+    const inlineScripts = scriptTags.filter((tag) => !tag.hasAttribute('src'));
+    expect(inlineScripts).toEqual([]);
   });
 });
