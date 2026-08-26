@@ -108,12 +108,14 @@ def mock_websocket():
     """Create a mock WebSocket object with all necessary attributes"""
     mock_ws = MagicMock()
     
-    # Set up the state with user info
+    # Set up the state with user info.
+    # ``state.user`` is a *dict* in production — ``common.socket.auth_connect`` sets
+    # ``websocket.state.user = {"sub": ..., "name": ..., "roles": [...]}``. Mocking
+    # it as a MagicMock with attribute-style access would make ``getattr(user,
+    # "roles", [])`` return whatever attribute happens to be set, masking the very
+    # bug fixed in #124. Use a real dict so test assertions match production.
     mock_ws.state = MagicMock()
-    mock_ws.state.user = MagicMock()
-    mock_ws.state.user.name = "Test User"
-    mock_ws.state.user.sub = "test-id"
-    mock_ws.state.user.roles = ["Admin"]
+    mock_ws.state.user = {"name": "Test User", "sub": "test-id", "roles": ["Admin"]}
     
     # Set up receive_text that can be overridden in tests
     mock_ws.receive_text = AsyncMock(return_value="Hello, WebSocket!")
@@ -416,7 +418,7 @@ class TestExperimentEndpoints:
 
 class TestExperimentWebSocketEndpoints:
     """Test the Experiment WebSocket endpoints for real-time updates"""
-
+    
     @pytest.fixture
     def mock_websocket(self):
         """Create a mock WebSocket object with all necessary attributes"""
@@ -780,22 +782,30 @@ class TestWorldlineEndpoints:
     
     @pytest.mark.asyncio
     async def test_worldline_websocket_endpoint(self, monkeypatch, mock_websocket):
-        """Test the worldline status WebSocket endpoint handles different user roles correctly"""
+        """Test the worldline status WebSocket endpoint handles different user roles correctly.
+
+        Regression for issue #124 — ``websocket.state.user`` is a *dict* (set by
+        ``common.socket.auth_connect``), not an object. The previous implementation
+        used ``getattr(websocket.state.user, "roles", [])`` which silently fell
+        through to the default for *every* connection, so Admin clients received an
+        unsolicited worldline frame after broadcasting an update. This test fails
+        against the old implementation and passes against the fix.
+        """
         # Set up mock connection manager
         mock_manager = MagicMock()
         sent_messages = []
-        
+
         # Define async methods
         async def mock_auth_connect(websocket):
             return None
-        
+
         async def mock_send_personal_message(message, websocket):
             sent_messages.append(message)
-        
+
         # Assign async methods
         mock_manager.auth_connect = mock_auth_connect
         mock_manager.send_personal_message = mock_send_personal_message
-        
+
         # Apply patches
         monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_manager)
         monkeypatch.setattr("api.future_gadget_api.calculate_worldline_status", MagicMock(return_value={
@@ -807,48 +817,81 @@ class TestWorldlineEndpoints:
         monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_experiments", MagicMock(return_value=[]))
         monkeypatch.setattr("api.future_gadget_api.fgl_service.get_all_divergence_readings", MagicMock(return_value=[]))
         monkeypatch.setattr("api.future_gadget_api.logger", MagicMock())
-        
+
         # Import the WebSocket endpoint
         from api.future_gadget_api import worldline_status_websocket_endpoint
-        
-        # Test with regular user - should send status automatically on message
-        # Set up user roles as a DICT (matching what auth_connect in
-        # common/socket.py actually stores — see issue #124). Using a MagicMock
-        # here previously let the bug slipped through, because getattr on a mock
-        # returns the attribute even when the real value is a dict.
-        mock_websocket.state = MagicMock()
-        mock_websocket.state.user = {
-            "sub": "test-id",
-            "name": "Test User",
-            "roles": ["User"],
-        }
-        
+
+        # ---- Case 1: regular User ---- should receive auto-status on message
+        # ``state.user`` is a real dict; mutate roles in place.
+        mock_websocket.state.user["roles"] = ["User"]
+
         # Set up to receive one message then disconnect
         mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
-        
+
         # Call the endpoint
         try:
             await worldline_status_websocket_endpoint(mock_websocket)
         except WebSocketDisconnect:
             pass
-        
+
         # Verify response was sent
-        assert len(sent_messages) == 1
+        assert len(sent_messages) == 1, (
+            "non-Admin users should receive a worldline status frame on WS ping"
+        )
         assert "current_worldline" in sent_messages[0]
         assert "timestamp" in sent_messages[0]
-        
-        # Test with Admin user - should not send automatic status
+
+        # ---- Case 2: Admin ---- must NOT receive auto-status (this is the #124 fix)
         mock_websocket.state.user["roles"] = ["Admin"]
         sent_messages.clear()
-        
+
         # Reset receive_text
         mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
-        
+
         # Call the endpoint again
         try:
             await worldline_status_websocket_endpoint(mock_websocket)
         except WebSocketDisconnect:
             pass
-        
+
         # Verify no automatic response to Admin
-        assert len(sent_messages) == 0
+        assert len(sent_messages) == 0, (
+            "Admin users must not receive auto worldline-status frames on WS ping "
+            "— that path is for passive subscribers; Admins broadcast via the "
+            "CRUD endpoints and must not see a frame echoed back (issue #124)"
+        )
+
+        # ---- Case 3: Admin with role appearing in mixed case ---- dict.get returns
+        # the value verbatim; the comparison string is "Admin" (capital A), so a
+        # lowercase "admin" role should still be treated as non-Admin. This locks
+        # in the existing exact-case contract rather than re-introducing the bug.
+        mock_websocket.state.user["roles"] = ["admin"]
+        sent_messages.clear()
+
+        mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
+
+        try:
+            await worldline_status_websocket_endpoint(mock_websocket)
+        except WebSocketDisconnect:
+            pass
+
+        assert len(sent_messages) == 1, (
+            "exact-match role check is the contract — lowercase 'admin' is non-Admin"
+        )
+
+        # ---- Case 4: Admin role missing entirely ---- empty roles list means
+        # non-Admin fallback (same branch as Case 1).
+        mock_websocket.state.user["roles"] = []
+        sent_messages.clear()
+
+        mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
+
+        try:
+            await worldline_status_websocket_endpoint(mock_websocket)
+        except WebSocketDisconnect:
+            pass
+
+        assert len(sent_messages) == 1, (
+            "users with no roles at all must receive the auto-status frame "
+            "(they are non-Admin by definition)"
+        )

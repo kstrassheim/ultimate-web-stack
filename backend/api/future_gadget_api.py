@@ -286,12 +286,10 @@ async def worldline_status_websocket_endpoint(websocket: WebSocket):
                 # Wait for messages (mostly for ping/pong to keep connection alive)
                 data = await websocket.receive_text()
                 # Only respond with current worldline status to non-admin users
-                # (they can't send actual updates)
-                # NOTE: websocket.state.user is a dict set in auth_connect
-                # (see common/socket.py). Use dict access — getattr(..., "roles", [])
-                # always returns the default for a dict, so Admin clients were
-                # incorrectly treated as non-Admin and received an auto-status
-                # frame after every broadcast (issue #124).
+                # (they can't send actual updates).
+                # ``websocket.state.user`` is a dict set by ``common.socket.auth_connect``;
+                # use dict-style access (``getattr`` on a dict returns the default for
+                # *every* connection regardless of the actual roles claim, see issue #124).
                 if "Admin" not in websocket.state.user.get("roles", []):
                     # Get current worldline status
                     experiments = fgl_service.get_all_experiments()
@@ -400,7 +398,7 @@ async def get_current_worldline_status(
     
     return response
 
-@future_gadget_api_router.get("/worldline-history", response_model=List[ListDict])
+@future_gadget_api_router.get("/worldline-history", response_model=List[Dict])
 async def get_worldline_history(
     token=Security(azure_scheme, scopes=scopes)
 ):
@@ -465,7 +463,7 @@ async def get_worldline_history(
 
 @future_gadget_api_router.get("/divergence-readings", response_model=List[Dict])
 async def get_divergence_readings(
-    status: Optional[str] = Query(None, description="Filter by experiment status"),
+    status: Optional[str] = Query(None, description="Filter by worldline status"),
     recorded_by: Optional[str] = Query(None, description="Filter by who recorded the reading"),
     min_value: Optional[float] = Query(None, description="Filter by minimum reading value"),
     max_value: Optional[float] = Query(None, description="Filter by maximum reading value"),
