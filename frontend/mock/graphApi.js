@@ -141,26 +141,5 @@ const adminGroups = [
 export const getAllGroups = async (instance) => {
   const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
-
-  // E2E test hook: when the test sets `localStorage["MOCK_GROUPS_OVERRIDE"]`
-  // to a JSON-serialised array of groups, return that array verbatim
-  // instead of the canned mock data. Lets cypress drive the
-  // GroupsList empty-state and falsy-field branches (issue #149) —
-  // the underlying real Graph endpoint isn't hit in mock mode, so
-  // `cy.intercept` cannot reach the call site any other way.
-  // Matches the `MOCK_LOGIN_FAIL` / `MOCK_INTERACTION_REQUIRED`
-  // pattern in `mock/azureMsalBrowser.js`.
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const overrideRaw = window.localStorage.getItem('MOCK_GROUPS_OVERRIDE');
-      if (overrideRaw !== null) {
-        const parsed = JSON.parse(overrideRaw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (_) {
-      // Fall through to the canned mock data on parse error.
-    }
-  }
-
   return isAdmin ? [...userGroups, ...adminGroups] : userGroups;
 };
