@@ -138,7 +138,32 @@ const adminGroups = [
   }
 ];
 
+// Test fixture: when `localStorage.getItem('MOCK_GROUPS_OVERRIDE')` is set
+// to a JSON string of an array, return that array instead of the canned
+// mock data. The e2e suite uses this to drive the empty-state /
+// falsy-field branches of `src/pages/components/GroupsList.jsx` (the
+// canned data always has populated `description` / `mail` fields, so
+// without the override those branches stay at 0%). Read the key here
+// rather than at import time so a spec can write it before the
+// Dashboard mounts.
+const MOCK_GROUPS_OVERRIDE_KEY = 'MOCK_GROUPS_OVERRIDE';
+const readOverride = () => {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(MOCK_GROUPS_OVERRIDE_KEY);
+  if (raw === null || raw === undefined) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+};
+
 export const getAllGroups = async (instance) => {
+  const override = readOverride();
+  if (override !== null) {
+    return override;
+  }
   const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   console.log('Using mock getAllGroups');
   return isAdmin ? [...userGroups, ...adminGroups] : userGroups;
