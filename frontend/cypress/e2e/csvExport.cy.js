@@ -263,6 +263,108 @@ describe('Divergence readings CSV export', () => {
     });
   });
 
+  it('exports readings that use "value" instead of "reading" (legacy backend shape)', () => {
+    // divergenceReadingsCsv.js -> pickReadingValue() accepts the
+    // "value" key for backward compatibility with older backend
+    // payloads that haven't migrated to the "reading" key yet. The
+    // e2e suite normally seeds readings with the modern "reading"
+    // shape (csvExport.cy.js, dashboard.cy.js), so without this
+    // interception the .value branch is never hit from a browser.
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings', {
+      statusCode: 200,
+      body: [
+        {
+          id: 'DR-VALUE',
+          value: 0.571024,
+          status: 'alpha',
+          recorded_by: 'Mayuri Shiina',
+          notes: 'Legacy-shape reading'
+        }
+      ]
+    }).as('valueShapeReadings');
+
+    cy.setMockRole('User');
+    cy.visit('/');
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should(
+      'be.visible',
+    );
+    cy.get('[data-testid="worldline-container"]', { timeout: 15000 }).should(
+      'be.visible',
+    );
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should(
+      'not.exist',
+    );
+    cy.get('[data-testid="readings-table"]', { timeout: 15000 }).should(
+      'be.visible',
+    );
+    installDownloadSpy();
+
+    cy.get('[data-testid="export-readings-csv-btn"]').click();
+
+    cy.wrap(null).then(() => {
+      expect(capture.blobs).to.have.length(1);
+      const csv = blobToCsv(capture.blobs[0]).slice(1); // drop BOM
+      const lines = csv.split('\r\n').filter((line) => line.length > 0);
+      // Header + the one row whose Reading column came from .value
+      // (not .reading).
+      expect(lines).to.have.length(2);
+      expect(lines[1]).to.equal('0.571024,alpha,Mayuri Shiina,Legacy-shape reading');
+    });
+  });
+
+  it('exports empty Reading cells when neither "reading" nor "value" is present', () => {
+    // divergenceReadingsCsv.js -> pickReadingValue()'s terminal
+    // `return null;` branch when the row has neither legacy nor
+    // modern keys. Production data never looks like this, but the
+    // branch is reachable in practice whenever the backend emits a
+    // stub record or a transient formatting bug — it's important
+    // the export renders the empty cell instead of throwing or
+    // emitting "null" / "undefined" as the value.
+    cy.intercept('GET', '**/future-gadget-lab/divergence-readings', {
+      statusCode: 200,
+      body: [
+        {
+          id: 'DR-NULLISH',
+          status: 'beta',
+          recorded_by: 'Suzuha Amane',
+          notes: 'No numeric value attached'
+        }
+      ]
+    }).as('nullishReadings');
+
+    cy.setMockRole('User');
+    cy.visit('/');
+    cy.get('[data-testid="sign-in-button"]').click();
+    cy.get('[data-testid="nav-dashboard"]').click();
+    cy.get('[data-testid="dashboard-page"]', { timeout: 10000 }).should(
+      'be.visible',
+    );
+    cy.get('[data-testid="worldline-container"]', { timeout: 15000 }).should(
+      'be.visible',
+    );
+    cy.get('[data-testid="loading-overlay"]', { timeout: 10000 }).should(
+      'not.exist',
+    );
+    cy.get('[data-testid="readings-table"]', { timeout: 15000 }).should(
+      'be.visible',
+    );
+    installDownloadSpy();
+
+    cy.get('[data-testid="export-readings-csv-btn"]').click();
+
+    cy.wrap(null).then(() => {
+      expect(capture.blobs).to.have.length(1);
+      const csv = blobToCsv(capture.blobs[0]).slice(1); // drop BOM
+      const lines = csv.split('\r\n').filter((line) => line.length > 0);
+      expect(lines).to.have.length(2);
+      // Empty Reading cell — the first column of the data row is a
+      // bare comma, not the string "null" or "undefined".
+      expect(lines[1]).to.equal(',beta,Suzuha Amane,No numeric value attached');
+    });
+  });
+
   it('export surfaces a user-visible error when the download pipeline throws', () => {
     signInAndOpenDashboard();
 
