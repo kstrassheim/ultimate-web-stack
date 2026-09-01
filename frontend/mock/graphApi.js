@@ -1,3 +1,5 @@
+import { retrieveTokenForGraph } from '@/auth/entraAuth';
+
 export const getProfilePhoto = async (instance, activeAccount) => {
   if (!activeAccount) return null;
   
@@ -138,8 +140,23 @@ const adminGroups = [
   }
 ];
 
-export const getAllGroups = async (instance) => {
-  const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
+// The group DATA is mocked, but the TOKEN acquisition deliberately is not:
+// this delegates to the real `retrieveTokenForGraph` so the mock build (and
+// therefore the Cypress run) exercises the popup gating added for issue #151
+// rather than skipping straight past it. Without this the whole
+// consent-required path — the memoised block, the GraphConsentRequiredError,
+// and the dashboard's degraded "Grant access" UI — would be unreachable
+// outside unit tests.
+//
+// `options.interactive` is forwarded exactly as the real graphApi does, so
+// only the dashboard's Grant access button (a user gesture) can prompt.
+export const getAllGroups = async (instance, options) => {
   console.log('Using mock getAllGroups');
+  await retrieveTokenForGraph(
+    instance,
+    ['Group.Read.All'],
+    { interactive: options?.interactive === true },
+  );
+  const isAdmin = instance.getActiveAccount()?.idTokenClaims?.roles?.includes('Admin');
   return isAdmin ? [...userGroups, ...adminGroups] : userGroups;
 };
