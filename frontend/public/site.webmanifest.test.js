@@ -212,3 +212,83 @@ describe('vite.config.js — fallback manifest template (issue #141)', () => {
     );
   });
 });
+
+/**
+ * Issue #151 — PWA install identity.
+ *
+ * Edge decides whether an in-app navigation stays inside the installed app
+ * window by testing the target URL against the manifest's `scope`. With `id`,
+ * `start_url` and `scope` all absent they are derived at INSTALL time from
+ * whatever document the user happened to be on:
+ *
+ *   - `start_url` defaults to that document URL *including* query and
+ *     fragment, so a user who installed while sitting on a post-login URL
+ *     gets a start_url still carrying `?code=…`/`#state=…`;
+ *   - `scope` defaults to `start_url` minus its last path segment, making the
+ *     in-app/out-of-app boundary install-time dependent and unauditable;
+ *   - the install `id` derives from `start_url`, so changing `start_url`
+ *     later orphans existing installs instead of updating them.
+ *
+ * That is why the reported bug reproduced for one user and not another on the
+ * same build. These assertions pin the three fields explicitly.
+ */
+describe('site.webmanifest — pinned install identity (issue #151)', () => {
+  test.each(['id', 'start_url', 'scope'])('declares %s explicitly', (field) => {
+    expect(manifest[field]).toBe('/');
+  });
+
+  test('declares display: standalone', () => {
+    expect(manifest.display).toBe('standalone');
+  });
+
+  test('icon srcs are root-relative and do not point into public/', () => {
+    // Vite flattens public/ into the dist root, so a "public/…" src resolves
+    // to /public/… where nothing is served. The SPA catch-all used to answer
+    // that miss with index.html at HTTP 200 — Edge asked for a PNG and got
+    // HTML, with no error anywhere. backend/main.py now 404s instead.
+    expect(Array.isArray(manifest.icons)).toBe(true);
+    expect(manifest.icons.length).toBeGreaterThan(0);
+    manifest.icons.forEach((icon) => {
+      expect(icon.src).toMatch(/^\//);
+      expect(icon.src).not.toMatch(/^\/public\//);
+      expect(icon.type).toBe('image/png');
+    });
+  });
+
+  test('index.html links the manifest root-relatively', () => {
+    // A document-relative href makes a nested SPA route request e.g.
+    // /entra/site.webmanifest, which the catch-all answers with index.html at
+    // HTTP 200 — the install then reads HTML as its manifest and silently
+    // falls back to the derived defaults this file exists to prevent.
+    const indexHtml = fs.readFileSync(
+      path.resolve(__dirname, '..', 'index.html'),
+      'utf8',
+    );
+    expect(indexHtml).toMatch(/<link rel="manifest" href="\/site\.webmanifest"/);
+  });
+});
+
+describe('vite.config.js — generateWebManifest preserves the identity (issue #151)', () => {
+  const viteConfigSource = fs.readFileSync(
+    path.resolve(__dirname, '..', 'vite.config.js'),
+    'utf8',
+  );
+
+  test.each(['id', 'start_url', 'scope'])(
+    'assigns manifest.%s so a regenerated manifest keeps it',
+    (field) => {
+      // generateWebManifest() reads the checked-in file as a template and
+      // rewrites name/short_name. Without these assignments a build against a
+      // template that predates this fix would ship an identity-less manifest
+      // and quietly re-open the bug.
+      expect(viteConfigSource).toMatch(
+        new RegExp(`manifest\\.${field}\\s*=\\s*'/'`),
+      );
+    },
+  );
+
+  test('normalises icon srcs to root-relative', () => {
+    expect(viteConfigSource).toMatch(/manifest\.icons\s*=/);
+    expect(viteConfigSource).toMatch(/public\\\//);
+  });
+});
