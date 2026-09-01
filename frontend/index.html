@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
-    <link rel="manifest" href="site.webmanifest" />
+    <!-- Root-relative on purpose (issue #151). This document is served for
+         every SPA route by the catch-all in backend/main.py, so a
+         document-relative href makes a nested route request e.g.
+         /entra/site.webmanifest — which the same catch-all answers with
+         index.html at HTTP 200. The install then reads HTML as its manifest
+         and silently falls back to derived defaults. -->
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>%VITE_APP_TITLE%</title>
     <!--

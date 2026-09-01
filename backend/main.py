@@ -1,7 +1,7 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from contextlib import asynccontextmanager
 import os.path
 import re
@@ -291,6 +291,22 @@ _STATIC_MEDIA_TYPES = {
 }
 
 
+# Extensions that name a static asset rather than a client-side route (issue
+# #151). A miss on one of these is a broken reference and must surface as 404
+# instead of being papered over with the SPA shell. SPA routes ("/dashboard",
+# "/chat") carry no suffix and are unaffected.
+#
+# Deriving this from ``_STATIC_MEDIA_TYPES`` above would couple "what
+# content-type do we serve" to "what must 404 when missing"; ``.txt`` and
+# ``.xml`` belong here but not there, so the two lists are kept separate on
+# purpose.
+NON_SPA_SUFFIXES = frozenset({
+    '.js', '.mjs', '.css', '.map', '.json', '.webmanifest',
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot', '.txt', '.xml', '.wasm',
+})
+
+
 @frontend_router.get('/{path:path}')
 async def frontend_handler(path: str):
     if len(path) > MAX_PATH_LEN:
@@ -335,6 +351,11 @@ async def frontend_handler(path: str):
     # traversal payloads.
     dist_realpath = os.path.realpath(str(dist))
     fp = os.path.join(dist_realpath, "index.html")
+    # False while ``fp`` is still the SPA shell fallback; set once the
+    # requested path resolves to a real file inside dist/. Issue #151 keys
+    # its 404 off this rather than off ``fp``'s name, so an explicit request
+    # for /index.html (a real file, and a ``.html`` suffix) still succeeds.
+    resolved_to_file = False
     if path and not re.search(r'(^|/)\.\.($|/)', path):
         candidate_realpath = os.path.realpath(
             os.path.join(dist_realpath, path)
@@ -347,6 +368,19 @@ async def frontend_handler(path: str):
             and os.path.isfile(candidate_realpath)
         ):
             fp = candidate_realpath
+            resolved_to_file = True
+
+    # Only real SPA routes fall back to index.html. A request that names a
+    # static asset must 404 when the asset is missing: answering it with the
+    # HTML shell at HTTP 200 turns a broken reference into a silent, invisible
+    # failure — and the media-type ladder below would even label that HTML
+    # ``image/png``. That is how the manifest's wrong icon paths
+    # ("public/android-chrome-192x192.png", resolving to /public/… which Vite
+    # never emits) went unnoticed: Edge asked for a PNG, got HTML, and no
+    # error was raised anywhere (issue #151).
+    if path and not resolved_to_file and PurePosixPath(path).suffix.lower() in NON_SPA_SUFFIXES:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
 
     # Set the media_type to the entry in ``_STATIC_MEDIA_TYPES``
     # matching the captured ``path``'s suffix. ``None`` is the right

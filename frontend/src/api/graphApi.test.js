@@ -105,7 +105,14 @@ describe('graphApi', () => {
 
       const result = await getAllGroups(mockInstance);
       expect(appInsights.trackEvent).toHaveBeenCalledWith({ name: 'Api Call - getAllGroups (Graph API)' });
-      expect(retrieveTokenForGraph).toHaveBeenCalledWith(mockInstance, ['Group.Read.All']);
+      // Issue #151: the third argument gates the MSAL popup. The mount-time
+      // fetch must pass `interactive: false` so a user missing Graph consent
+      // gets a rejected promise instead of a browser window per navigation.
+      expect(retrieveTokenForGraph).toHaveBeenCalledWith(
+        mockInstance,
+        ['Group.Read.All'],
+        { interactive: false },
+      );
       expect(global.fetch).toHaveBeenCalledWith('https://graph.microsoft.com/v1.0/groups', {
         headers: {
           Authorization: 'Bearer fake-group-token',
@@ -114,6 +121,49 @@ describe('graphApi', () => {
         signal: expect.any(AbortSignal),
       });
       expect(result).toEqual([{ id: 'group1' }]);
+    });
+
+    it('forwards interactive: true only when the caller opts in (issue #151)', async () => {
+      // The "Grant access" button on the dashboard is the one caller allowed
+      // to open a popup, because it runs from a real user gesture. Anything
+      // else — notably the Dashboard mount effect — must stay non-interactive.
+      const mockInstance = { getActiveAccount: jest.fn().mockReturnValue({}) };
+      retrieveTokenForGraph.mockResolvedValue('fake-group-token');
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ value: [] })
+      });
+
+      await getAllGroups(mockInstance, { interactive: true });
+
+      expect(retrieveTokenForGraph).toHaveBeenCalledWith(
+        mockInstance,
+        ['Group.Read.All'],
+        { interactive: true },
+      );
+    });
+
+    it.each([
+      ['no options', undefined],
+      ['an options object without the flag', { timeoutMs: 100 }],
+      ['a truthy-but-not-true value', { interactive: 'yes' }],
+    ])('does not allow a popup for %s (issue #151)', async (_label, options) => {
+      // `interactive` is compared with === true on purpose: a stray truthy
+      // value from a caller must not be enough to open a browser window.
+      const mockInstance = { getActiveAccount: jest.fn().mockReturnValue({}) };
+      retrieveTokenForGraph.mockResolvedValue('fake-group-token');
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ value: [] })
+      });
+
+      await getAllGroups(mockInstance, options);
+
+      expect(retrieveTokenForGraph).toHaveBeenCalledWith(
+        mockInstance,
+        ['Group.Read.All'],
+        { interactive: false },
+      );
     });
 
     it('tracks exception if fetch fails', async () => {

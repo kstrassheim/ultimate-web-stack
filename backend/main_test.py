@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from contextlib import contextmanager
 from unittest.mock import patch, MagicMock, mock_open
 import pytest
 import json
@@ -11,6 +12,29 @@ from main import app
 
 # Create a test client
 client = TestClient(app)
+
+@contextmanager
+def dist_containing(tmp_path, *names):
+    """Patch ``main.dist`` at a real tmp dist/ tree holding ``index.html``
+    plus each named asset.
+
+    Issue #151 made a missing static asset a 404 instead of the SPA shell, so
+    a test that wants the media-type ladder (or any asset-serving behaviour)
+    must put a real file on disk. Before that change these tests passed
+    against files that never existed — the handler quietly answered every one
+    of them with index.html at HTTP 200, which is precisely the masking the
+    issue removed.
+    """
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir(exist_ok=True)
+    (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+    for name in names:
+        target = dist_dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("asset")
+    with patch("main.dist", dist_dir):
+        yield dist_dir
+
 
 class TestMainModule:
 
@@ -119,18 +143,28 @@ class TestMainModule:
         # HEAD requests don't return a body
         assert response.content == b''
 
-    def test_frontend_handler_js_file(self, mock_path, mock_file_response):
-        """Test the frontend handler with a JS file"""
-        response = client.get("/app.js")
+    def test_frontend_handler_js_file(self, tmp_path, mock_file_response):
+        """Test the frontend handler with a JS file.
+
+        The asset is written to a real dist/ tree: since issue #151 a missing
+        ``.js`` is a 404 rather than the SPA shell, so serving
+        it is what exercises the media-type ladder."""
+        with dist_containing(tmp_path, "app.js"):
+            response = client.get("/app.js")
 
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "application/javascript"
 
-    def test_frontend_handler_css_file(self, mock_path, mock_file_response):
-        """Test the frontend handler with a CSS file"""
-        response = client.get("/styles.css")
+    def test_frontend_handler_css_file(self, tmp_path, mock_file_response):
+        """Test the frontend handler with a CSS file.
+
+        The asset is written to a real dist/ tree: since issue #151 a missing
+        ``.css`` is a 404 rather than the SPA shell, so serving
+        it is what exercises the media-type ladder."""
+        with dist_containing(tmp_path, "styles.css"):
+            response = client.get("/styles.css")
 
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
@@ -146,16 +180,21 @@ class TestMainModule:
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "text/html"
 
-    def test_frontend_handler_json_file(self, mock_path, mock_file_response):
-        """Test the frontend handler with a JSON file"""
-        response = client.get("/data.json")
+    def test_frontend_handler_json_file(self, tmp_path, mock_file_response):
+        """Test the frontend handler with a JSON file.
+
+        The asset is written to a real dist/ tree: since issue #151 a missing
+        ``.json`` is a 404 rather than the SPA shell, so serving
+        it is what exercises the media-type ladder."""
+        with dist_containing(tmp_path, "data.json"):
+            response = client.get("/data.json")
 
         # Check that the right media type was passed
         mock_file_response.assert_called_once()
         _, kwargs = mock_file_response.call_args
         assert kwargs["media_type"] == "application/json"
 
-    def test_frontend_handler_unreachable_second_return_removed(self):
+    def test_frontend_handler_unreachable_second_return_removed(self, tmp_path):
         """Issue #108 acceptance criterion: the unreachable second
         ``return FileResponse(fp)`` at the end of ``frontend_handler``
         is gone.
@@ -168,7 +207,8 @@ class TestMainModule:
         """
         with patch("main.FileResponse") as mock_file_response:
             mock_file_response.return_value = "FILE"
-            response = client.get("/app.js")
+            with dist_containing(tmp_path, "app.js"):
+                response = client.get("/app.js")
         assert response.status_code == 200, (
             f"unexpected status from /app.js: {response.status_code}"
         )
@@ -193,6 +233,76 @@ class TestMainModule:
             assert response.text == "<html>SPA_SHELL</html>", (
                 f"unknown route did not serve SPA shell: {response.text!r}"
             )
+
+    def test_missing_static_asset_returns_404_not_the_spa_shell(self, tmp_path):
+        """Issue #151: a request that names a static asset must 404 when the
+        asset is missing. Answering it with index.html at HTTP 200 turns a
+        broken reference into an invisible failure — which is exactly how the
+        web manifest's wrong icon paths went unnoticed: Edge asked for a PNG
+        and was handed HTML (labelled ``image/png`` by the media-type ladder,
+        no less), with nothing anywhere reporting an error."""
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+
+        with patch("main.dist", dist_dir):
+            for url in ('/android-chrome-192x192.png',
+                        '/public/android-chrome-192x192.png',
+                        '/site.webmanifest',
+                        '/assets/missing.js',
+                        '/assets/missing.css',
+                        '/favicon.ico',
+                        '/fonts/missing.woff2'):
+                response = client.get(url)
+                assert response.status_code == 404, (
+                    f"{url} must be 404 when the asset is missing, "
+                    f"got {response.status_code}"
+                )
+                assert b"SPA_SHELL" not in response.content
+
+    def test_asset_extension_check_is_case_insensitive(self, tmp_path):
+        """Issue #151: uppercase extensions name assets just as much as
+        lowercase ones, so ``/LOGO.PNG`` must not slip through into the SPA
+        fallback."""
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+
+        with patch("main.dist", dist_dir):
+            assert client.get("/LOGO.PNG").status_code == 404
+
+    def test_existing_assets_and_spa_routes_are_unaffected(self, tmp_path):
+        """Issue #151 (positive control): the 404 rule keys off the suffix of
+        a path that did not resolve to a real file, so it must not touch
+        assets that do exist, nor extensionless client-side routes."""
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "index.html").write_text("<html>SPA_SHELL</html>")
+        (dist_dir / "site.webmanifest").write_text('{"id": "/"}')
+
+        with patch("main.dist", dist_dir):
+            response = client.get("/site.webmanifest")
+            assert response.status_code == 200
+            assert response.json()["id"] == "/"
+
+            # An explicit request for the shell is a real file, and ``.html``
+            # is deliberately absent from NON_SPA_SUFFIXES.
+            assert client.get("/index.html").status_code == 200
+
+            # Extensionless SPA routes still fall back to the shell.
+            for route in ("/", "/dashboard", "/chat", "/experiments",
+                          "/access-denied"):
+                response = client.get(route)
+                assert response.status_code == 200, (
+                    f"{route} should serve the SPA"
+                )
+                assert response.text == "<html>SPA_SHELL</html>"
+
+            # A route segment containing a dot that is not a known asset
+            # extension is still a route, not an asset.
+            response = client.get("/users/jane.doe")
+            assert response.status_code == 200
+            assert response.text == "<html>SPA_SHELL</html>"
 
     def test_frontend_handler_long_path_falls_back_to_index(self):
         """Regression coverage for issue #99: a captured path longer than
@@ -404,20 +514,26 @@ class TestFrontendHandlerPathContainment:
         with 200. With the fix, ``Path.resolve()`` makes the
         out-of-tree nature of the target explicit and the
         containment check (``fp.is_relative_to(dist_resolved)``)
-        rejects it — the handler falls back to ``index.html``.
+        rejects it. Since issue #151 the rejected asset request then
+        ends in a 404 instead of the SPA shell.
         """
         dist_dir = self._build_dist(tmp_path)
         with patch("main.dist", dist_dir):
             response = client.get("/..%2fsecret.txt")
-        assert response.status_code == 200
+        # Since issue #151 the request ends in 404 rather than the SPA shell:
+        # ``.txt`` names a static asset, and an asset that does not resolve
+        # inside dist/ must not be answered with index.html at HTTP 200. The
+        # containment property under test is unchanged and, if anything,
+        # stated more plainly — the out-of-tree file is never served.
+        assert response.status_code == 404, (
+            f"traversal attempt returned {response.status_code}, "
+            f"expected 404 (issue #151)"
+        )
         assert b"TOP_SECRET_DATA" not in response.content, (
             f"handler leaked out-of-tree file via path traversal: "
             f"{response.content!r}"
         )
-        assert b"SPA_SHELL" in response.content, (
-            f"handler did not fall back to SPA shell on traversal: "
-            f"{response.content!r}"
-        )
+        assert b"SPA_SHELL" not in response.content
 
     def test_dot_segment_traversal_falls_back_to_spa_shell(self, tmp_path):
         """Issue #109: variants like ``GET /.%2e/secret.txt`` and
@@ -433,18 +549,19 @@ class TestFrontendHandlerPathContainment:
         for traversal in ("/.%2e/secret.txt", "/%2e%2e/secret.txt"):
             with patch("main.dist", dist_dir):
                 response = client.get(traversal)
-            assert response.status_code == 200, (
+            # 404 rather than the SPA shell since issue #151 — ``.txt`` names
+            # a static asset, so a miss is reported honestly instead of being
+            # papered over with index.html at HTTP 200. Containment itself is
+            # unchanged: the out-of-tree file is never served.
+            assert response.status_code == 404, (
                 f"{traversal!r} returned {response.status_code}, "
-                f"expected 200 with SPA shell"
+                f"expected 404 (issue #151)"
             )
             assert b"TOP_SECRET_DATA" not in response.content, (
                 f"{traversal!r} leaked out-of-tree file: "
                 f"{response.content!r}"
             )
-            assert b"SPA_SHELL" in response.content, (
-                f"{traversal!r} did not fall back to SPA shell: "
-                f"{response.content!r}"
-            )
+            assert b"SPA_SHELL" not in response.content
 
     def test_normal_asset_still_served(self, tmp_path):
         """Issue #109 (positive case): ``GET /app.js`` must serve the
@@ -577,15 +694,15 @@ class TestFrontendHandlerPathContainment:
             # resolved path is not under ``dist_resolved`` and the
             # handler must fall back to the SPA shell.
             response = client.get("/dist_other/secret.txt")
-        assert response.status_code == 200
+        # 404 rather than the SPA shell since issue #151 (``.txt`` is an asset
+        # extension); the containment property under test — the out-of-prefix
+        # file is never served — is unchanged.
+        assert response.status_code == 404
         assert b"PREFIX_BYPASS_SECRET" not in response.content, (
             f"string-prefix containment check served "
             f"out-of-prefix file: {response.content!r}"
         )
-        assert b"SPA_SHELL" in response.content, (
-            f"handler did not fall back to SPA shell on prefix-bypass "
-            f"attempt: {response.content!r}"
-        )
+        assert b"SPA_SHELL" not in response.content
 
     def test_early_dot_segment_reject_falls_back_to_spa_shell(self):
         """Issue #109: layer 1 of the containment check is an early
@@ -690,7 +807,7 @@ class TestFrontendHandlerMediaTypes:
         (".otf", "font/otf"),
     ]
 
-    def _assert_media_type(self, captured_path, expected):
+    def _assert_media_type(self, tmp_path, captured_path, expected):
         """Request ``captured_path`` against the mocked handler and
         assert the matching ``media_type`` kwarg was passed to
         ``FileResponse``. Shared by every mock-based test below so
@@ -698,7 +815,10 @@ class TestFrontendHandlerMediaTypes:
         """
         with patch("main.FileResponse") as mock_file_response:
             mock_file_response.return_value = "FILE"
-            response = client.get(captured_path)
+            # Issue #151: the asset must exist, otherwise the handler 404s
+            # instead of masking the miss with the SPA shell.
+            with dist_containing(tmp_path, captured_path.lstrip("/")):
+                response = client.get(captured_path)
         assert response.status_code == 200, (
             f"unexpected status from {captured_path!r}: "
             f"{response.status_code}"
@@ -716,7 +836,7 @@ class TestFrontendHandlerMediaTypes:
         )
 
     @pytest.mark.parametrize("ext,expected", ASSET_MEDIA_TYPES)
-    def test_media_type_for_asset_extension(self, ext, expected):
+    def test_media_type_for_asset_extension(self, tmp_path, ext, expected):
         """Issue #108: each extension in ``_STATIC_MEDIA_TYPES`` must
         map to the documented media_type.
 
@@ -725,9 +845,9 @@ class TestFrontendHandlerMediaTypes:
         or mistypes its mime) shows up as a single failed parameter
         case rather than a generic test failure.
         """
-        self._assert_media_type(f"/asset{ext}", expected)
+        self._assert_media_type(tmp_path, f"/asset{ext}", expected)
 
-    def test_media_type_for_nested_asset_path(self):
+    def test_media_type_for_nested_asset_path(self, tmp_path):
         """Issue #108: the ladder matches by suffix, so a deeply-nested
         path like ``/assets/dummy-avatar-HASH.jpg`` (the form Vite
         emits for an asset imported from JSX) must still hit the
@@ -740,11 +860,12 @@ class TestFrontendHandlerMediaTypes:
         asset URLs.
         """
         self._assert_media_type(
+            tmp_path,
             "/assets/dummy-avatar-HASH.jpg",
             "image/jpeg",
         )
 
-    def test_unknown_extension_passes_none_to_file_response(self):
+    def test_unknown_extension_passes_none_to_file_response(self, tmp_path):
         """Issue #108: an extension that is not in the ladder
         (e.g. ``.txt``) must leave ``media_type=None`` so Starlette's
         FileResponse can apply its filename-based guesser.
@@ -758,7 +879,8 @@ class TestFrontendHandlerMediaTypes:
         """
         with patch("main.FileResponse") as mock_file_response:
             mock_file_response.return_value = "FILE"
-            response = client.get("/notes.txt")
+            with dist_containing(tmp_path, "notes.txt"):
+                response = client.get("/notes.txt")
         _, kwargs = mock_file_response.call_args
         assert kwargs.get("media_type") is None, (
             f"unknown extension passed media_type="
@@ -932,12 +1054,27 @@ class TestApiDocsSurface:
             with patch('main.FileResponse') as mock_file:
                 mock_file.return_value = "SPA_SHELL"
                 c = TestClient(reloaded_main.app)
-                for path in ("/docs", "/redoc", "/openapi.json"):
+                # ``/docs`` and ``/redoc`` are extensionless, so the SPA
+                # catch-all answers them with the shell. ``/openapi.json``
+                # carries an asset extension, so since issue #151 it 404s
+                # instead of being answered with the shell at HTTP 200.
+                # Either way the OpenAPI schema itself is never served,
+                # which is the property this test exists to pin.
+                for path in ("/docs", "/redoc"):
                     resp = c.get(path)
                     assert resp.status_code == 200
                     # The handler returned the SPA shell, not the OpenAPI
                     # JSON, so the schema is no longer leaked.
                     assert resp.text != "", f"{path} returned empty body"
+
+                resp = c.get("/openapi.json")
+                assert resp.status_code == 404, (
+                    f"/openapi.json returned {resp.status_code}; issue #151 "
+                    f"makes a missing .json asset an honest 404"
+                )
+                assert "openapi" not in resp.text.lower(), (
+                    f"/openapi.json leaked schema-shaped content: {resp.text!r}"
+                )
         finally:
             # Drop the reloaded module so subsequent tests see the dev app.
             for mod_name in list(sys.modules):

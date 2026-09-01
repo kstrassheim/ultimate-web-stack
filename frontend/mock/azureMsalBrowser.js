@@ -331,13 +331,50 @@ export class PublicClientApplication {
   }
 
   // Public methods (same as in your original mock)
-  acquireTokenSilent() {
+  acquireTokenSilent(request) {
+    // Test-only hook for issue #151: a Graph-scoped silent acquisition that
+    // fails because the user has not consented. Kept SEPARATE from the
+    // session-expiry affordances below, and matched on the requested scopes,
+    // for two reasons:
+    //
+    //   * the session-expiry specs set MOCK_INTERACTION_REQUIRED to drive the
+    //     app-API token path into re-login; before #151 the mock getAllGroups
+    //     never called acquireTokenSilent at all, so groups were unaffected.
+    //     Scoping this flag keeps that true.
+    //   * missing Graph consent is not session expiry — the app must degrade
+    //     to a "Grant access" button, not bounce the user through re-login.
+    //
+    // No production code reads this flag.
+    // The session-expiry affordances further down are guarded on
+    // `!isGraphRequest`: they were written for the app-API token path, and
+    // before #151 the mock getAllGroups never called acquireTokenSilent at
+    // all, so they could not reach Graph. Keeping them scoped preserves those
+    // specs' semantics now that the mock routes Graph through the real helper.
+    const requestedScopes = (request && request.scopes) || [];
+    const isGraphRequest = requestedScopes.some(
+      (scope) => scope === 'Group.Read.All' || String(scope).includes('graph.microsoft.com')
+    );
+    if (
+      isGraphRequest &&
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_GRAPH_CONSENT_REQUIRED') === 'true'
+    ) {
+      return Promise.reject(
+        new InteractionRequiredAuthError(
+          'consent_required',
+          'Mock MSAL: Graph consent required (test affordance)'
+        )
+      );
+    }
+
     // Test-only hook: when the e2e test sets MOCK_INTERACTION_REQUIRED=true
     // in localStorage we simulate MSAL's InteractionRequiredAuthError so
     // the api.js / futureGadgetApi.js acquireTokenSilent-failure branches
     // (the SessionExpiredError publish + rethrow path) can be exercised.
     // No production code reads this flag.
     if (
+      !isGraphRequest &&
       typeof window !== 'undefined' &&
       window.localStorage &&
       window.localStorage.getItem('MOCK_INTERACTION_REQUIRED') === 'true'
@@ -358,6 +395,7 @@ export class PublicClientApplication {
     // sets `name = 'InteractionRequiredAuthError'` and short-circuits the OR
     // chain. No production code reads this flag.
     if (
+      !isGraphRequest &&
       typeof window !== 'undefined' &&
       window.localStorage &&
       window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_MESSAGE') === 'true'
@@ -378,6 +416,7 @@ export class PublicClientApplication {
     // detection's "no match" branch is only exercised on the
     // unit-test side. No production code reads this flag.
     if (
+      !isGraphRequest &&
       typeof window !== 'undefined' &&
       window.localStorage &&
       window.localStorage.getItem('MOCK_TOKEN_ERROR') === 'true'
@@ -397,6 +436,7 @@ export class PublicClientApplication {
     // revoked server-side. Drives the middle OR operand in the
     // three-way detection. No production code reads this flag.
     if (
+      !isGraphRequest &&
       typeof window !== 'undefined' &&
       window.localStorage &&
       window.localStorage.getItem('MOCK_INTERACTION_REQUIRED_BY_CODE') === 'true'
@@ -408,6 +448,25 @@ export class PublicClientApplication {
       return Promise.reject(err);
     }
 
+    return Promise.resolve({
+      accessToken: this.accessTokens[this.activeAccountIndex]
+    });
+  }
+
+  // Test-only counterpart of acquireTokenSilent for issue #151: the
+  // "Grant access" button on the dashboard is the one caller allowed to
+  // prompt interactively, so the e2e run needs a popup that resolves. The
+  // MOCK_GRAPH_CONSENT_REQUIRED flag deliberately does NOT apply here — an
+  // interactive grant is exactly what clears it. No production code reads
+  // MOCK_GRAPH_POPUP_FAIL; it drives the "user dismissed the popup" branch.
+  acquireTokenPopup() {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      window.localStorage.getItem('MOCK_GRAPH_POPUP_FAIL') === 'true'
+    ) {
+      return Promise.reject(new Error('Mock MSAL: consent popup cancelled'));
+    }
     return Promise.resolve({
       accessToken: this.accessTokens[this.activeAccountIndex]
     });
