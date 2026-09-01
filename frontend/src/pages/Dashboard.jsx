@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import './Dashboard.css'
 import { getUserData } from '@/api/api'
 import { getAllGroups } from '@/api/graphApi'
+import { isGraphConsentRequiredError } from '@/auth/entraAuth'
 import { useMsal } from '@azure/msal-react';
 import appInsights from '@/log/appInsights';
 import GroupsList from '@/pages/components/GroupsList';
@@ -16,6 +17,7 @@ const Dashboard = () => {
   const [groupData, setGroupData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [consentRequired, setConsentRequired] = useState(false);
   const initFetchCompleted = useRef(false);
   const currentUserRef = useRef(instance.getActiveAccount()?.username);
   // Issue #113: keep an AbortController scoped to this component's mount
@@ -25,17 +27,50 @@ const Dashboard = () => {
   // they fall back to their default timeout behaviour.
   const abortController = useAbortController();
 
+  // Graph groups are fetched separately from the app's own API so a missing
+  // Graph consent degrades to a "Grant access" prompt instead of failing the
+  // whole dashboard (issue #151). Only `interactive: true` — reached from the
+  // button below, i.e. a real user gesture — may open an MSAL popup; a popup
+  // from this mount effect lands outside the window in an installed PWA.
+  const fetchGroups = async (signal, { interactive = false } = {}) => {
+    try {
+      const groupsData = await getAllGroups(instance, { signal, interactive });
+      setGroupData(groupsData);
+      setConsentRequired(false);
+    } catch (err) {
+      if (!isGraphConsentRequiredError(err)) {
+        throw err;
+      }
+      setGroupData(null);
+      setConsentRequired(true);
+    }
+  };
+
+  const grantGroupAccess = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchGroups(abortController.signal, { interactive: true });
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      setError(err.message);
+      notyfService.error('Failed to load groups: ' + err.message);
+      appInsights.trackException({ exception: err });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchData = async (signal) => {
     setLoading(true);
     setError(null);
     try {
-      const [userData, groupsData] = await Promise.all([
+      const [userData] = await Promise.all([
         getUserData(instance, { signal }),
-        getAllGroups(instance, { signal })
+        fetchGroups(signal)
       ]);
 
       setData(userData);
-      setGroupData(groupsData);
       // Show success notification
       notyfService.success('Data loaded successfully!');
     } catch (err) {
@@ -86,7 +121,21 @@ const Dashboard = () => {
 
         <div data-testid="groups-container" className="card">
           <h2>Groups from Microsoft Graph API</h2>
-          <GroupsList groups={groupData} loading={loading} />
+          {consentRequired ? (
+            <div className="groups-consent" data-testid="groups-consent-required">
+              <p>Your account has not granted this app access to your groups.</p>
+              <button
+                data-testid="grant-groups-access-button"
+                onClick={grantGroupAccess}
+                disabled={loading}
+                className="reload-button"
+              >
+                Grant access
+              </button>
+            </div>
+          ) : (
+            <GroupsList groups={groupData} loading={loading} />
+          )}
         </div>
         {error && <div data-testid="error-message" className="error">Error: {error}</div>}
 

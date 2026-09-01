@@ -80,14 +80,17 @@ const generateWebManifest = () => {
       // the white splash / white address-bar regression on a
       // dark-themed PWA install.
       manifest = {
+        "id": "/",
+        "start_url": "/",
+        "scope": "/",
         "icons": [
           {
-            "src": "android-chrome-192x192.png",
+            "src": "/android-chrome-192x192.png",
             "sizes": "192x192",
             "type": "image/png"
           },
           {
-            "src": "android-chrome-512x512.png",
+            "src": "/android-chrome-512x512.png",
             "sizes": "512x512",
             "type": "image/png"
           }
@@ -101,7 +104,31 @@ const generateWebManifest = () => {
     // Update name fields with app name from terraform config
     manifest.name = appName;
     manifest.short_name = appName;
-    
+
+    // Pin the app identity (issue #151). Left unset, all three are derived at
+    // install time from whatever URL the user happened to be on when they hit
+    // "Install": `start_url` defaults to that document URL *including* any
+    // ?code=/#state= left over from an Entra sign-in, `scope` to its
+    // containing directory, and the install id to `start_url`. Edge tests
+    // every navigation against `scope` to decide whether it stays inside the
+    // app window, so leaving it implicit lets two users on the same build get
+    // different behaviour — one of them having in-app links open a fresh
+    // browser window outside the installed app.
+    manifest.id = '/';
+    manifest.start_url = '/';
+    manifest.scope = '/';
+
+    // Icons are resolved against the manifest URL (/site.webmanifest), and
+    // Vite flattens public/ into the dist root — so a "public/…" prefix here
+    // points at /public/… which does not exist. The catch-all SPA route then
+    // answered that miss with index.html at HTTP 200, handing Edge HTML where
+    // it expects a PNG instead of an honest 404 (see NON_SPA_SUFFIXES in
+    // backend/main.py, which now makes that miss visible).
+    manifest.icons = (manifest.icons || []).map(icon => ({
+      ...icon,
+      src: '/' + String(icon.src).replace(/^\/?(public\/)?/, '')
+    }));
+
     // Write updated manifest back to file
 
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
