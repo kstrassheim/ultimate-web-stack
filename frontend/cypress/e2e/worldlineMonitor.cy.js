@@ -80,14 +80,22 @@ describe('WorldlineMonitor — WebSocket message handling (issue #149)', () => {
     // page becoming visible and the auth handshake firing.
     cy.window()
       .its('__worldlineSocket', { timeout: 15000 })
-      .should('exist')
-      .then((sock) => {
-        const win = sock.ownerDocument.defaultView;
-        const event = new win.MessageEvent('message', {
-          data: JSON.stringify(payload),
-        });
-        sock.onmessage(event);
+      .should('exist');
+
+    // Take the window from cy.window(), not from the socket. A WebSocket is
+    // not a DOM node, so it has no `ownerDocument` — reading
+    // `sock.ownerDocument.defaultView` threw
+    // "Cannot read properties of undefined (reading 'defaultView')" and both
+    // specs in this block failed before they asserted anything. The MessageEvent
+    // must still be constructed from the *application's* window rather than the
+    // spec runner's, so that `instanceof` checks inside the app hold.
+    cy.window().then((win) => {
+      const sock = win.__worldlineSocket;
+      const event = new win.MessageEvent('message', {
+        data: JSON.stringify(payload),
       });
+      sock.onmessage(event);
+    });
   }
 
   it('shows the generic "Worldline status updated" toast when a message without includes_preview arrives', () => {
@@ -123,9 +131,16 @@ describe('WorldlineMonitor — WebSocket message handling (issue #149)', () => {
     // The generic "Worldline status updated" info toast must surface
     // — that's the user-visible signal that the handler ran the
     // non-preview branch end-to-end.
-    cy.get('.notyf__toast--info', { timeout: 10000 })
-      .should('be.visible')
-      .and('contain.text', 'Worldline status updated');
+    // Match the toast by its text, not by a `notyf__toast--info` class.
+    // notyfService registers 'info' as a CUSTOM Notyf type
+    // (`notyf.open({ type: 'info' })`, src/log/notyfService.js), and Notyf
+    // only emits a `notyf__toast--<type>` modifier for its built-in success
+    // and error types — the info toast renders as plain
+    // `notyf__toast notyf__toast--lower`. The old selector could never match,
+    // so both specs here failed on the assertion even once the dispatch
+    // helper worked. The message text is the user-visible signal anyway.
+    cy.contains('.notyf__toast', 'Worldline status updated', { timeout: 10000 })
+      .should('be.visible');
   });
 
   it('shows the preview toast with the experiment name when includes_preview is true', () => {
@@ -152,8 +167,18 @@ describe('WorldlineMonitor — WebSocket message handling (issue #149)', () => {
       preview_experiment: { name: 'Phone Microwave (name)' },
     });
 
-    cy.get('.notyf__toast--info', { timeout: 10000 })
-      .should('be.visible')
-      .and('contain.text', 'Previewing worldline change from: Phone Microwave (name)');
+    // Match the toast by its text, not by a `notyf__toast--info` class.
+    // notyfService registers 'info' as a CUSTOM Notyf type
+    // (`notyf.open({ type: 'info' })`, src/log/notyfService.js), and Notyf
+    // only emits a `notyf__toast--<type>` modifier for its built-in success
+    // and error types — the info toast renders as plain
+    // `notyf__toast notyf__toast--lower`. The old selector could never match,
+    // so both specs here failed on the assertion even once the dispatch
+    // helper worked. The message text is the user-visible signal anyway.
+    cy.contains(
+      '.notyf__toast',
+      'Previewing worldline change from: Phone Microwave (name)',
+      { timeout: 10000 },
+    ).should('be.visible');
   });
 });
