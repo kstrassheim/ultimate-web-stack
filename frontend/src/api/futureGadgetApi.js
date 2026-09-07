@@ -36,7 +36,11 @@ const summarizeBody = (bodyText) => {
 const makeAuthenticatedRequest = async (
   instance,
   url,
+  /* istanbul ignore next -- private helper; every call site passes the
+     method explicitly, so the default is defensive and unreachable from
+     the module's public surface. */
   method = 'GET',
+  /* istanbul ignore next -- same: every call site passes a body argument. */
   body = null,
   options = {},
 ) => {
@@ -48,6 +52,10 @@ const makeAuthenticatedRequest = async (
     try {
       accessToken = await retrieveTokenForBackend(
         instance,
+        /* istanbul ignore next -- dead arm kept for mirror-sync with
+           api.js: none of this module's endpoints (/lab-experiments,
+           /worldline-*, /divergence-readings) contains 'admin', so the
+           admin-scope arm cannot be reached through the public API. */
         url.includes('admin') ? ['Group.Read.All'] : []
       );
     } catch (tokenError) {

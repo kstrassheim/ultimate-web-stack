@@ -230,5 +230,47 @@ describe('authFlow', () => {
         window.removeEventListener('uws:recovery:finished', finished);
       }
     });
+
+    it('returns success: false when called without an MSAL instance', async () => {
+      const result = await reauthenticate(null);
+      expect(result.success).toBe(false);
+      expect(result.error.message).toMatch(/requires an MSAL instance/);
+    });
+  });
+
+  describe('storage failure paths', () => {
+    it('saveRedirectPath swallows a throwing sessionStorage and reports it', async () => {
+      const appInsights = (await import('@/log/appInsights')).default;
+      const trackExceptionSpy = jest.spyOn(appInsights, 'trackException');
+      const setItemSpy = jest
+        .spyOn(window.sessionStorage.__proto__, 'setItem')
+        .mockImplementation(() => { throw new Error('QuotaExceeded'); });
+      try {
+        expect(() => saveRedirectPath('/chat')).not.toThrow();
+        expect(trackExceptionSpy).toHaveBeenCalledWith({
+          exception: expect.any(Error),
+          properties: { operation: 'saveRedirectPath' },
+        });
+      } finally {
+        setItemSpy.mockRestore();
+      }
+    });
+
+    it('consumeRedirectPath returns "/" when sessionStorage reads throw', async () => {
+      const appInsights = (await import('@/log/appInsights')).default;
+      const trackExceptionSpy = jest.spyOn(appInsights, 'trackException');
+      const getItemSpy = jest
+        .spyOn(window.sessionStorage.__proto__, 'getItem')
+        .mockImplementation(() => { throw new Error('SecurityError'); });
+      try {
+        expect(consumeRedirectPath()).toBe('/');
+        expect(trackExceptionSpy).toHaveBeenCalledWith({
+          exception: expect.any(Error),
+          properties: { operation: 'consumeRedirectPath' },
+        });
+      } finally {
+        getItemSpy.mockRestore();
+      }
+    });
   });
 });

@@ -82,4 +82,24 @@ describe('ProtectedRoute Component', () => {
       name: 'Protected Route - Redirecting to Access denied page',
     });
   });
+
+  test('defaults requiredRoles to none when the prop is omitted', () => {
+    const account = {
+      idTokenClaims: { roles: ['User'] },
+    };
+    useMsal.mockReturnValue({
+      instance: { getActiveAccount: () => account },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/test']} future={routerFutureConfig}>
+        <ProtectedRoute>
+          <div data-testid="child">Protected Content</div>
+        </ProtectedRoute>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('protected-route-authorized')).toBeInTheDocument();
+    expect(screen.getByTestId('child')).toHaveTextContent('Protected Content');
+  });
 });

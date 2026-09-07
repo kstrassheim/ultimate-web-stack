@@ -405,4 +405,87 @@ describe('WebSocketClient', () => {
       expect(client.statusListeners).not.toContain(listener);
     });
   });
+
+  describe('URL building edge cases', () => {
+    // The trailing-slash arm of the base-URL cond-expr lives in
+    // socket.trailingSlash.test.js: '@/config' is mocked per test FILE, so a
+    // different backendSocketUrl needs its own file.
+    it('strips a leading slash from the client path', async () => {
+      const slashClient = new WebSocketClient('/api/leading-slash');
+      await slashClient.connect(mockInstance);
+      expect(global.WebSocket).toHaveBeenCalledWith('wss://test.example.com/api/leading-slash');
+    });
+  });
+
+  describe('open handshake edge cases', () => {
+    it('does not send the auth message when the socket is not OPEN yet', async () => {
+      await client.connect(mockInstance);
+      mockWebSocket.readyState = MockWebSocket.CONNECTING;
+      mockWebSocket.simulateOpen();
+
+      expect(mockWebSocket.send).not.toHaveBeenCalled();
+      expect(client.connectionStatus).not.toBe('connected');
+    });
+  });
+
+  describe('message handling edge cases', () => {
+    let messageListener;
+
+    beforeEach(async () => {
+      messageListener = jest.fn();
+      client.subscribe(messageListener);
+      await client.connect(mockInstance);
+    });
+
+    it('serialises a message-type frame without content in full', () => {
+      const frame = { type: 'message', id: '42' };
+      mockWebSocket.simulateMessage(JSON.stringify(frame));
+
+      expect(messageListener).toHaveBeenCalledWith(expect.objectContaining({
+        text: JSON.stringify(frame),
+        type: 'received',
+      }));
+    });
+
+    it('serialises a non-message frame without content in full', () => {
+      const frame = { type: 'delete', id: '42' };
+      mockWebSocket.simulateMessage(JSON.stringify(frame));
+
+      expect(messageListener).toHaveBeenCalledWith(expect.objectContaining({
+        text: `[delete] ${JSON.stringify(frame)}`,
+        type: 'received',
+      }));
+    });
+
+    it('marks a plain-text "You sent:" confirmation as sent', () => {
+      mockWebSocket.simulateMessage('You sent: hello');
+
+      expect(messageListener).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'You sent: hello',
+        type: 'sent',
+        rawData: 'You sent: hello',
+      }));
+    });
+
+    it('reports a throwing listener instead of crashing the handler', () => {
+      const badListener = jest.fn(() => { throw new Error('listener exploded'); });
+      client.subscribe(badListener);
+
+      expect(() => mockWebSocket.simulateMessage('boom')).not.toThrow();
+      expect(console.error).toHaveBeenCalledWith(
+        'Error processing WebSocket message:',
+        expect.any(Error),
+      );
+      expect(appInsights.trackException).toHaveBeenCalledWith({ error: expect.any(Error) });
+    });
+  });
+
+  describe('getStatus', () => {
+    it('reflects the current connection status', async () => {
+      expect(client.getStatus()).toBe('disconnected');
+      await client.connect(mockInstance);
+      mockWebSocket.simulateOpen();
+      expect(client.getStatus()).toBe('connected');
+    });
+  });
 });

@@ -263,4 +263,90 @@ describe('entraAuth Module', () => {
       expect(error.cause).toBe(cause);
     });
   });
+
+  describe('msalConfig loggerCallback', () => {
+    const getLogger = () => msalConfig().system.loggerOptions.loggerCallback;
+
+    it('never logs PII-containing messages', () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+      try {
+        getLogger()(LogLevel.Error, 'secret message', true);
+        expect(errorSpy).not.toHaveBeenCalled();
+        expect(infoSpy).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+        infoSpy.mockRestore();
+      }
+    });
+
+    it('routes Error-level messages to console.error', () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        getLogger()(LogLevel.Error, 'boom', false);
+        expect(errorSpy).toHaveBeenCalledWith('boom');
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('routes non-Error-level messages to console.info', () => {
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+      try {
+        getLogger()(LogLevel.Info, 'fyi', false);
+        expect(infoSpy).toHaveBeenCalledWith('fyi');
+      } finally {
+        infoSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('retrieveTokenForBackend — default scopes', () => {
+    it('requests only the backend scope when no extra scopes are passed', async () => {
+      const mockAcquireTokenSilent = jest.fn().mockResolvedValue({ accessToken: 'tok' });
+      const mockInstance = {
+        getActiveAccount: jest.fn().mockReturnValue({ username: 'u' }),
+        acquireTokenSilent: mockAcquireTokenSilent,
+      };
+      jest.spyOn(appInsights, 'trackEvent').mockImplementation(() => {});
+
+      await retrieveTokenForBackend(mockInstance);
+
+      expect(mockAcquireTokenSilent).toHaveBeenCalledWith({
+        scopes: ['mock-api://00000000-0000-0000-0000-000000000001/user_impersonation'],
+        account: { username: 'u' },
+      });
+    });
+  });
+
+  describe('retrieveTokenForGraph — accountless edge case', () => {
+    beforeEach(() => {
+      resetGraphConsentState();
+      jest.spyOn(appInsights, 'trackEvent').mockImplementation(() => {});
+      jest.spyOn(appInsights, 'trackException').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      resetGraphConsentState();
+    });
+
+    it('still fails closed when there is no active account at all', async () => {
+      // accountKeyOf(null) falls back to the empty string; the consent block
+      // must work for that key too, not just for populated accounts.
+      const interactionError = Object.assign(new Error('consent'), {
+        name: 'InteractionRequiredAuthError',
+      });
+      const mockInstance = {
+        getActiveAccount: jest.fn().mockReturnValue(null),
+        acquireTokenSilent: jest.fn().mockRejectedValue(interactionError),
+        acquireTokenPopup: jest.fn(),
+      };
+
+      await expect(retrieveTokenForGraph(mockInstance)).rejects.toThrow(GraphConsentRequiredError);
+      // The empty-string key is now blocked: a second call must not reach MSAL.
+      await expect(retrieveTokenForGraph(mockInstance)).rejects.toThrow(GraphConsentRequiredError);
+      expect(mockInstance.acquireTokenSilent).toHaveBeenCalledTimes(1);
+      expect(mockInstance.acquireTokenPopup).not.toHaveBeenCalled();
+    });
+  });
 });

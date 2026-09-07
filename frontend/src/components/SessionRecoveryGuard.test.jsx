@@ -161,6 +161,87 @@ describe('SessionRecoveryGuard', () => {
     expect(reauthenticate).toHaveBeenCalledTimes(1);
   });
 
+  it('handles an event with no payload at all', async () => {
+    const instance = mockMsalInstance();
+    renderGuard({ msalInstance: instance });
+
+    await act(async () => {
+      notifySessionExpired();
+    });
+
+    expect(reauthenticate).toHaveBeenCalledTimes(1);
+    expect(appInsights.trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'SessionRecoveryGuard - Triggered',
+        properties: expect.objectContaining({
+          source: 'unknown',
+          detection: 'unknown',
+          status: '0',
+        }),
+      })
+    );
+  });
+
+  it('falls back to an empty query string when the location has none', async () => {
+    const instance = mockMsalInstance();
+    window.history.pushState({}, '', '/dashboard');
+    renderGuard({ msalInstance: instance });
+
+    await act(async () => {
+      notifySessionExpired({ source: '/api/user-data' });
+    });
+
+    expect(reauthenticate).toHaveBeenCalledWith(
+      instance,
+      expect.objectContaining({ target: '/dashboard' }),
+    );
+  });
+
+  it('reports the detection and status of a shaped error', async () => {
+    const instance = mockMsalInstance();
+    renderGuard({ msalInstance: instance });
+
+    await act(async () => {
+      notifySessionExpired({
+        error: { detection: 'login-marker', status: 200 },
+      });
+    });
+
+    expect(appInsights.trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'SessionRecoveryGuard - Triggered',
+        properties: expect.objectContaining({
+          source: 'unknown',
+          detection: 'login-marker',
+          status: '200',
+        }),
+      })
+    );
+  });
+
+  it('logs the failure with an unknown source when recovery fails without one', async () => {
+    const instance = mockMsalInstance();
+    reauthenticate.mockResolvedValueOnce({
+      success: false,
+      error: new Error('popup closed'),
+    });
+    renderGuard({ msalInstance: instance });
+
+    await act(async () => {
+      notifySessionExpired();
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(appInsights.trackException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          operation: 'SessionRecoveryGuard',
+          source: 'unknown',
+        }),
+      })
+    );
+  });
+
   it('unsubscribes on unmount', async () => {
     const instance = mockMsalInstance();
 

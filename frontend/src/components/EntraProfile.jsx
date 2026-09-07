@@ -90,7 +90,11 @@ const EntraProfile = () => {
     };
   }, []);
 
-  const logonFunc = async (forcePopup = false) => {
+  const logonFunc = async (
+    /* istanbul ignore next -- both call sites (Sign In, Change Account)
+       pass forcePopup explicitly; the default is defensive-only. */
+    forcePopup = false
+  ) => {
     setRecoveryInFlight(true);
     try {
       // Do NOT touch sessionStorage.redirectPath here. `reauthenticate`

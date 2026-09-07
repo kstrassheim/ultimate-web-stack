@@ -153,5 +153,10 @@ beforeEach(() => {
 
 // Automatically open preview after each test
 afterEach(() => {
-  debug();
+  // jest-preview is a DOM tool; test files that opt into the plain node
+  // environment (e.g. authFlow.node.test.js, covering the no-window guards)
+  // have no document for it to render into.
+  if (typeof document !== 'undefined') {
+    debug();
+  }
 });

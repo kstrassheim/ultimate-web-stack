@@ -587,4 +587,106 @@ describe('EntraProfile Component', () => {
     expect(screen.getByTestId('role-badge-PowerUser')).toBeInTheDocument();
     expect(screen.queryByTestId('role-badge-User')).not.toBeInTheDocument();
   });
+
+  test('uses the dummy avatar when the photo fetch returns an empty value', async () => {
+    // Graph answered but produced no usable URL (null / empty string) — the
+    // component must fall back to the dummy avatar rather than rendering a
+    // broken <img>.
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    getProfilePhoto.mockResolvedValue(null);
+
+    renderWithRouter(<EntraProfile />);
+
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-image')).toHaveAttribute('src', 'dummy-avatar-path.jpg');
+    });
+  });
+
+  test('treats a caller-driven photo-fetch abort as the silent path', async () => {
+    // Unmount aborts the in-flight Graph request via useAbortController.
+    // That AbortError must NOT surface as an error log or telemetry — it is
+    // the normal unmount path, not a failure.
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    getProfilePhoto.mockRejectedValue(abortError);
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderWithRouter(<EntraProfile />);
+
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith('Error fetching profile photo:', abortError);
+    expect(appInsights.trackException).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  test('logs an error when sign-in fails', async () => {
+    msalInstance.getActiveAccount.mockReturnValue(null);
+    msalInstance.loginPopup.mockRejectedValue(new Error('popup blocked by browser'));
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderWithRouter(<EntraProfile />);
+
+    fireEvent.click(screen.getByTestId('sign-in-button'));
+
+    await waitFor(() => {
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Logon failed:', expect.any(Error));
+    });
+    // The button must become usable again after the failure.
+    await waitFor(() => {
+      expect(screen.getByTestId('sign-in-button')).not.toBeDisabled();
+    });
+    consoleErrorSpy.mockRestore();
+  });
+
+  test('hides the tooltip on mouse leave from the toggle itself', async () => {
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+    renderWithRouter(<EntraProfile />);
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+
+    // CustomToggle is defined inline, so every EntraProfile render remounts
+    // the toggle DOM node — re-query it after the mouseEnter re-render,
+    // then fire the leave on the FRESH node.
+    fireEvent.mouseEnter(
+      screen.getByTestId('profile-dropdown').querySelector('.dropdown-toggle'),
+    );
+    expect(screen.getByTestId('profile-custom-tooltip')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(
+      screen.getByTestId('profile-dropdown').querySelector('.dropdown-toggle'),
+    );
+    fireEvent.mouseOut(
+      screen.getByTestId('profile-dropdown').querySelector('.dropdown-toggle'),
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId('profile-custom-tooltip')).not.toBeInTheDocument();
+    });
+  });
+
+  test('tolerates a redundant account-effect run under StrictMode', async () => {
+    // main.jsx renders the app inside <React.StrictMode>, which double-
+    // invokes effects in development: the second invocation sees the account
+    // state already set to the current account and must do nothing.
+    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
+
+    renderWithRouter(
+      <React.StrictMode>
+        <EntraProfile />
+      </React.StrictMode>
+    );
+
+    await waitFor(() => {
+      expect(getProfilePhoto).toHaveBeenCalled();
+    });
+    expect(screen.getByTestId('authenticated-container')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-dropdown')).toBeInTheDocument();
+  });
 });

@@ -71,7 +71,11 @@ const summarizeBody = (bodyText) => {
 const makeAuthenticatedRequest = async (
   instance,
   url,
+  /* istanbul ignore next -- private helper; both call sites (getUserData,
+     getAdminData) always pass the method explicitly, so the default is
+     defensive and unreachable from the module's public surface. */
   method = 'GET',
+  /* istanbul ignore next -- same: both call sites pass a body argument. */
   body = null,
   options = {},
 ) => {
@@ -130,6 +134,12 @@ const makeAuthenticatedRequest = async (
     };
 
     // Add request body for non-GET requests
+    /* istanbul ignore next -- the PUT arm is dead today: the only public
+       call sites are getUserData (GET, no body) and getAdminData (POST).
+       Evaluation never reaches `method === 'PUT'` because a truthy body
+       always arrives together with method 'POST'. Kept (not deleted) so
+       this helper stays in mirror-sync with futureGadgetApi.js, which does
+       have PUT endpoints. */
     if (body && (method === 'POST' || method === 'PUT')) {
       fetchOptions.body = JSON.stringify(body);
     }

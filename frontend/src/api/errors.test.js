@@ -6,6 +6,7 @@ import {
   bodyLooksLikeLoginPage,
   inspectResponseForExpiry,
   inspectionJson,
+  LOGIN_PAGE_MARKERS,
 } from './errors';
 
 const silentConsoleError = () => {
@@ -135,6 +136,15 @@ describe('api/errors', () => {
 
     it('does not match when both content-type is wrong and body matches markers', () => {
       expect(bodyLooksLikeLoginPage('Sign in to your account', 'application/json')).toBe(false);
+    });
+
+    it('keeps the Easy Auth marker list recognisable', () => {
+      // The heuristic only works while the marker list carries the strings
+      // the Microsoft login page actually serves.
+      expect(LOGIN_PAGE_MARKERS).toEqual(expect.arrayContaining([
+        'login.microsoftonline.com',
+        '.auth/login/aad',
+      ]));
     });
   });
 
@@ -266,6 +276,76 @@ describe('api/errors', () => {
 
     it('throws ApiError when inspection has no body', () => {
       expect(() => inspectionJson(null)).toThrow(ApiError);
+    });
+  });
+
+  describe('inspectResponseForExpiry — partial-mock tolerance', () => {
+    it('defaults status to 200 when only ok: true is present', async () => {
+      const result = await inspectResponseForExpiry({
+        ok: true,
+        text: async () => '{"a":1}',
+      });
+      expect(result.status).toBe(200);
+      expect(result.looksLikeExpiry).toBe(false);
+    });
+
+    it('defaults status to 0 when neither status nor ok is present', async () => {
+      const result = await inspectResponseForExpiry({});
+      expect(result.status).toBe(0);
+      expect(result.looksLikeExpiry).toBe(false);
+    });
+
+    it('survives a headers.get() that throws', async () => {
+      const response = {
+        status: 200,
+        ok: true,
+        headers: {
+          get: () => { throw new Error('headers broken'); },
+        },
+        text: async () => '{"a":1}',
+      };
+      const result = await inspectResponseForExpiry(response);
+      expect(result.contentType).toBe('');
+      expect(result.looksLikeExpiry).toBe(false);
+    });
+
+    it('survives a headers.get() that returns null', async () => {
+      const response = {
+        status: 200,
+        ok: true,
+        headers: { get: () => null },
+        text: async () => '{"a":1}',
+      };
+      const result = await inspectResponseForExpiry(response);
+      expect(result.contentType).toBe('');
+      expect(result.looksLikeExpiry).toBe(false);
+    });
+
+    it('survives a response.text() that rejects', async () => {
+      const response = {
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        text: async () => { throw new Error('body stream gone'); },
+      };
+      const result = await inspectResponseForExpiry(response);
+      expect(result.bodyText).toBe('');
+      expect(result.looksLikeExpiry).toBe(false);
+    });
+
+    it('flags any non-login redirect as a suspicious redirect', async () => {
+      // Redirected, but NOT to a recognisable login URL: still suspicious
+      // on a same-origin JSON API call, with the weaker detection string.
+      const response = makeResponse({
+        status: 200,
+        contentType: 'application/json',
+        bodyText: '{}',
+        redirected: true,
+        url: 'https://app.example.com/api/somewhere-else',
+      });
+      const result = await inspectResponseForExpiry(response);
+      expect(result.looksLikeExpiry).toBe(true);
+      expect(result.detection).toBe('redirected');
     });
   });
 });

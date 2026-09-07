@@ -541,5 +541,78 @@ describe('API Module', () => {
       expect(result).toBeUndefined();
       expect(onExpiryCalls).toHaveLength(0);
     });
+
+    it('records an empty body preview when the expiring response has no body', async () => {
+      global.fetch.mockReset();
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      // HTML 200 with an EMPTY body: still flagged (html-body detection),
+      // and the telemetry preview must be '' rather than throwing.
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({ status: 200, contentType: 'text/html', bodyText: '' })
+      );
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      expect(appInsights.trackEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Api Session Expired',
+          properties: expect.objectContaining({ bodyPreview: '' }),
+        })
+      );
+    });
+
+    it('truncates the telemetry body preview at 200 chars plus an ellipsis', async () => {
+      global.fetch.mockReset();
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      const longBody = `Sign in to your account ${'x'.repeat(300)}`;
+      global.fetch.mockResolvedValueOnce(
+        fakeResponse({ status: 200, contentType: 'text/html', bodyText: longBody })
+      );
+
+      await expect(getUserData(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+      const call = appInsights.trackEvent.mock.calls.find(
+        ([arg]) => arg && arg.name === 'Api Session Expired'
+      );
+      expect(call).toBeDefined();
+      const { bodyPreview } = call[0].properties;
+      expect(bodyPreview).toHaveLength(201);
+      expect(bodyPreview.endsWith('…')).toBe(true);
+      expect(bodyPreview.startsWith('Sign in to your account')).toBe(true);
+    });
+
+    it('treats a token error with no message at all as a genuine token failure', async () => {
+      // Neither name nor errorCode match, and errorMessage/message are both
+      // empty — the regex fallback tests an empty string and must NOT
+      // classify this as session expiry, and the ApiError must fall back to
+      // stringifying the error object itself.
+      const weirdError = { name: 'SomeOtherError' };
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockRejectedValueOnce(weirdError);
+
+      await expect(getUserData(mockInstance)).resolves.toBeUndefined();
+      expect(onExpiryCalls).toHaveLength(0);
+      expect(appInsights.trackException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            name: 'ApiError',
+            message: expect.stringContaining('Failed to acquire access token'),
+          }),
+        })
+      );
+    });
+
+    it('labels a non-OK response without a statusText as "Unknown"', async () => {
+      global.fetch.mockReset();
+      retrieveTokenForBackend.mockReset();
+      retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+      const response = fakeResponse({ status: 500, contentType: 'application/json', bodyText: '{}' });
+      response.statusText = '';
+      global.fetch.mockResolvedValueOnce(response);
+
+      await expect(getAdminData(mockInstance)).rejects.toThrow(
+        /Network response was not ok \(500\): Unknown/,
+      );
+    });
   });
 });
