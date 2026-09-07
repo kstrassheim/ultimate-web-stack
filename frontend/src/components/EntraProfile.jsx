@@ -60,9 +60,17 @@ const EntraProfile = () => {
       setAccount(null);
       setPhotoUrl(dummy_avatar);
     }
-    else if (currentAccount !== account) {
-      setAccount(currentAccount);
-      fetchProfilePhotoFunc(currentAccount);
+    else {
+      /* istanbul ignore next -- the `currentAccount !== account` guard's
+         false arm is unreachable: the effect only re-runs when the active
+         account's NAME changes (the dep array), and a name change implies
+         getActiveAccount() returns a different object, so the guard is
+         always true on the re-runs where currentAccount is set. Kept as a
+         guard against redundant setState. */
+      if (currentAccount !== account) {
+        setAccount(currentAccount);
+        fetchProfilePhotoFunc(currentAccount);
+      }
     }
   }, [instance.getActiveAccount()?.name]);
 

@@ -478,3 +478,131 @@ describe('Chat Component', () => {
     expect(mockWebSocketClientInstance.send).toHaveBeenNthCalledWith(2, 'two');
   });
 });
+describe('Chat Component — failure and edge paths', () => {
+  test('surfaces a configuration error when the socket client has no subscribe method', async () => {
+    // The mount effect must fail loudly (console + visible error) rather
+    // than crashing when the client object doesn't match the expected
+    // interface — this is the guard that catches a socket.js refactor
+    // that drops both subscribe and subscribeToMessages.
+    cleanup();
+    jest.clearAllMocks();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    WebSocketClient.mockImplementationOnce(() => ({
+      connect: jest.fn().mockResolvedValue(true),
+      // Deliberately no subscribe / subscribeToMessages.
+      subscribeToStatus: jest.fn().mockImplementation((cb) => { cb('disconnected'); return jest.fn(); }),
+      send: jest.fn(),
+      disconnect: jest.fn(),
+      getStatus: jest.fn().mockReturnValue('disconnected')
+    }));
+
+    render(<Chat />);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'WebSocketClient is missing subscribe/subscribeToMessages method'
+    );
+    await waitFor(() => {
+      expect(document.querySelector('.error-message')).toHaveTextContent(
+        'WebSocket client configuration error'
+      );
+    });
+    consoleErrorSpy.mockRestore();
+  });
+
+  test('reuses the existing WebSocketClient when the effect re-runs with a new instance identity', async () => {
+    // The client is created once per mount; a later effect re-run (here:
+    // the msal instance object identity changes) must reconnect the
+    // EXISTING client, not construct a second one.
+    cleanup();
+    jest.clearAllMocks();
+
+    const configuredMsal = useMsal();
+    const { rerender } = render(<Chat />);
+    const clientInstance = WebSocketClient.mock.results[0].value;
+    expect(WebSocketClient).toHaveBeenCalledTimes(1);
+    clientInstance.connect.mockClear();
+
+    try {
+      useMsal.mockReturnValue({
+        instance: { name: 'recreated-msal-instance' },
+        accounts: [],
+        inProgress: 'none'
+      });
+      rerender(<Chat />);
+
+      expect(WebSocketClient).toHaveBeenCalledTimes(1);
+      expect(clientInstance.connect).toHaveBeenCalledTimes(1);
+      expect(clientInstance.connect).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'recreated-msal-instance' })
+      );
+    } finally {
+      useMsal.mockReturnValue(configuredMsal);
+    }
+  });
+
+  test('a synchronous throw from send() releases the in-flight guard and keeps the draft', async () => {
+    render(<Chat />);
+    const clientInstance = WebSocketClient.mock.results[0].value;
+    clientInstance.send.mockImplementation(() => {
+      throw new Error('socket is half-closed');
+    });
+
+    await act(async () => {
+      WebSocketClient.getStatusCallback()('connected');
+    });
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    const sendButton = screen.getByRole('button', { name: /send/i });
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'unsent draft' } });
+    });
+    await act(async () => {
+      fireEvent.click(sendButton);
+    });
+
+    expect(clientInstance.send).toHaveBeenCalledWith('unsent draft');
+    // The send never went out, so the draft must survive for a retry...
+    expect(input.value).toBe('unsent draft');
+    // ...and the guard must have been released so the retry is possible.
+    expect(sendButton).not.toBeDisabled();
+  });
+
+  test('pressing Enter with a whitespace-only draft does not send', async () => {
+    render(<Chat />);
+    const clientInstance = WebSocketClient.mock.results[0].value;
+
+    await act(async () => {
+      WebSocketClient.getStatusCallback()('connected');
+    });
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    await act(async () => {
+      fireEvent.change(input, { target: { value: '   ' } });
+    });
+    await act(async () => {
+      fireEvent.keyPress(input, { key: 'Enter', code: 'Enter', charCode: 13 });
+    });
+
+    expect(clientInstance.send).not.toHaveBeenCalled();
+  });
+
+  test('pressing a non-Enter key does not send', async () => {
+    render(<Chat />);
+    const clientInstance = WebSocketClient.mock.results[0].value;
+
+    await act(async () => {
+      WebSocketClient.getStatusCallback()('connected');
+    });
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'a real message' } });
+    });
+    await act(async () => {
+      fireEvent.keyPress(input, { key: 'a', code: 'KeyA', charCode: 97 });
+    });
+
+    expect(clientInstance.send).not.toHaveBeenCalled();
+  });
+});

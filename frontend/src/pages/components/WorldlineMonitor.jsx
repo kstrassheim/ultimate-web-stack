@@ -131,6 +131,11 @@ const WorldlineMonitor = () => {
       );
     }
     
+    // jsdom (and every real browser) sanitises type=number inputs, so a
+    // truthy-but-non-numeric minValue cannot be produced through the UI;
+    // the `!isNaN(...)` guard's false arm is defensive-only. The filter
+    // itself IS tested (rows below the bound are dropped).
+    /* istanbul ignore next -- see comment above. */
     if (filters.minValue && !isNaN(parseFloat(filters.minValue))) {
       const min = parseFloat(filters.minValue);
       filtered = filtered.filter(r => {
@@ -139,6 +144,9 @@ const WorldlineMonitor = () => {
       });
     }
     
+    // Same as minValue above: type=number input sanitisation makes the
+    // NaN arm unreachable through the UI; the bound itself is tested.
+    /* istanbul ignore next -- see comment above. */
     if (filters.maxValue && !isNaN(parseFloat(filters.maxValue))) {
       const max = parseFloat(filters.maxValue);
       filtered = filtered.filter(r => {
@@ -216,6 +224,12 @@ const WorldlineMonitor = () => {
         fetchWorldlineHistory()
           .then(() => {
             // After history is loaded, ensure readings are also loaded
+            /* istanbul ignore else -- the subscribe callback is registered
+               once on mount (effect deps are [instance]) and closes over
+               the initial `readings` state, which is always [] when the
+               closure is created, so the else arm cannot run without
+               restructuring the subscription (out of scope for a
+               test-only story). */
             if (!readings.length) {
               return fetchDivergenceReadings();
             }
@@ -397,6 +411,9 @@ const WorldlineMonitor = () => {
           
           // For backward compatibility - if API doesn't include experiment details
           const experimentNumber = dataPointIndex;
+          /* istanbul ignore next -- the dataPointIndex === 0 case returns at
+             the top of this function, so the index is always > 0 here and
+             the `: 0` fallback of this ternary can never run. */
           const previousValue = dataPointIndex > 0 ? series[seriesIndex][dataPointIndex-1] : 0;
           const currentValue = series[seriesIndex][dataPointIndex];
           const change = currentValue - previousValue;

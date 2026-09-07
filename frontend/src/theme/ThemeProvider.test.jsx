@@ -197,3 +197,180 @@ describe('ThemeProvider — localStorage-throws path (issue #129)', () => {
     expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
   });
 });
+
+describe('ThemeProvider — OS-detection and listener edge paths', () => {
+  let originalMatchMedia;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setOsDark(false);
+    window.localStorage.removeItem(THEME_STORAGE_KEY);
+    document.documentElement.removeAttribute('data-bs-theme');
+    originalMatchMedia = window.matchMedia;
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  test('falls back to dark when window.matchMedia is unavailable entirely', () => {
+    // Pre-flight jsdom and genuinely old browsers have no matchMedia at
+    // all: detectOsTheme must return the safe default instead of throwing,
+    // and the OS-follow effect must bail out instead of subscribing.
+    delete window.matchMedia;
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'os');
+
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('os');
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+    expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
+  });
+
+  test('follows OS changes through the legacy addListener API (pre-14 Safari)', () => {
+    const listeners = new Set();
+    const legacyMql = {
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      // Deliberately NO addEventListener/removeEventListener — this is the
+      // deprecated MediaQueryList shape the fallback branch exists for.
+      addListener: (cb) => listeners.add(cb),
+      removeListener: (cb) => listeners.delete(cb),
+    };
+    window.matchMedia = () => legacyMql;
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'os');
+
+    const { unmount } = render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    );
+
+    // Initial resolution came from the legacy `.matches` read.
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+    expect(listeners.size).toBe(1);
+
+    // A legacy change event to light is honoured...
+    act(() => {
+      listeners.forEach((cb) => cb({ matches: false, media: legacyMql.media }));
+    });
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('light');
+
+    // ...and back to dark, exercising both arms of the handler ternary.
+    act(() => {
+      listeners.forEach((cb) => cb({ matches: true, media: legacyMql.media }));
+    });
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+
+    // Unmount removes the legacy listener.
+    unmount();
+    expect(listeners.size).toBe(0);
+  });
+
+  test('tolerates a matchMedia result with no listener API at all', () => {
+    // A MediaQueryList with neither addEventListener nor addListener: the
+    // effect must give up cleanly and serve the static OS reading.
+    window.matchMedia = () => ({ matches: false, media: '(prefers-color-scheme: dark)' });
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'os');
+
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('os');
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('light');
+  });
+
+  test('an OS flip to light propagates when in os mode (dark → light direction)', () => {
+    // The existing suite only walks light → dark; the handler ternary's
+    // dark arm needs the reverse transition too.
+    setOsDark(true);
+    renderProbe('os');
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+
+    act(() => {
+      setOsDark(false);
+    });
+
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('light');
+  });
+});
+describe('ThemeProvider — setMode validation, toggleTheme and context guard', () => {
+  // Probe variant exposing setMode and toggleTheme in addition to the
+  // values the shared ThemeProbe already exposes.
+  const ControlProbe = () => {
+    const { theme, mode, setMode, toggleTheme } = useTheme();
+    return (
+      <div>
+        <span data-testid="probe-theme">{theme}</span>
+        <span data-testid="probe-mode">{mode}</span>
+        <button type="button" data-testid="probe-toggle" onClick={toggleTheme}>toggle</button>
+        <button type="button" data-testid="probe-setmode-invalid" onClick={() => setMode('midnight')}>invalid</button>
+      </div>
+    );
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setOsDark(false);
+    window.localStorage.removeItem(THEME_STORAGE_KEY);
+    document.documentElement.removeAttribute('data-bs-theme');
+  });
+
+  test('toggleTheme flips dark → light → dark and persists each choice', () => {
+    render(
+      <ThemeProvider>
+        <ControlProbe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+
+    act(() => {
+      screen.getByTestId('probe-toggle').click();
+    });
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('light');
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('light');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+
+    act(() => {
+      screen.getByTestId('probe-toggle').click();
+    });
+    expect(screen.getByTestId('probe-theme')).toHaveTextContent('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+  });
+
+  test('setMode ignores values outside light/dark/os', () => {
+    render(
+      <ThemeProvider>
+        <ControlProbe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('dark');
+
+    act(() => {
+      screen.getByTestId('probe-setmode-invalid').click();
+    });
+
+    // Nothing changed: no state update, no persistence.
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  test('useTheme throws a descriptive error outside a ThemeProvider', () => {
+    // React logs render errors noisily; swallow them for this assertion.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => render(<ThemeProbe />)).toThrow(
+        'useTheme must be used inside <ThemeProvider>',
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+});

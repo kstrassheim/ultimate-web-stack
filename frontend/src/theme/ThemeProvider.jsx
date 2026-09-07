@@ -42,6 +42,9 @@ function readStoredMode() {
 }
 
 function writeStoredMode(mode) {
+  /* istanbul ignore next -- only called from setMode inside a mounted
+     provider; under jsdom `window` always exists, and during SSR setMode
+     never fires, so the no-window arm cannot run in the test suite. */
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, mode);
@@ -73,6 +76,9 @@ export function ThemeProvider({ children }) {
 
   // Mirror the effective theme to <html data-bs-theme> for Bootstrap 5.3.
   useEffect(() => {
+    /* istanbul ignore next -- effects never run during SSR, and jsdom
+       always provides document, so the no-document arm cannot run in the
+       test suite. */
     if (typeof document === 'undefined') return;
     document.documentElement.setAttribute('data-bs-theme', theme);
   }, [theme]);
