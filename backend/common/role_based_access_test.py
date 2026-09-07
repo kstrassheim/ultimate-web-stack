@@ -173,3 +173,26 @@ class TestRoleBasedAccess:
         assert 'param1' in sig.parameters
         assert 'param2' in sig.parameters
         assert 'token' in sig.parameters
+
+# ---------------------------------------------------------------------------
+# Branch-coverage closure (issue #147): the `hasattr(inspect, 'signature')`
+# guard's false branch in the decorator wrapper.
+# ---------------------------------------------------------------------------
+
+def test_wrapper_without_inspect_signature_still_works(monkeypatch):
+    """If inspect.signature were unavailable, the wrapper must still be
+    returned and enforce roles (the signature assignment is best-effort)."""
+    import inspect
+    import asyncio
+    import common.role_based_access as rba
+
+    monkeypatch.delattr(inspect, "signature")
+
+    @rba.required_roles(["Admin"])
+    async def handler(token=None):
+        return "ok"
+
+    from types import SimpleNamespace
+
+    result = asyncio.run(handler(token=SimpleNamespace(roles=["Admin"])))
+    assert result == "ok"

@@ -922,3 +922,168 @@ async def test_auth_connect_closes_on_claims_missing_sub(
     # rejected after the token was accepted.
     assert not hasattr(fake_websocket.state, "user")
     assert any("missing required 'sub' claim" in w for w in warnings), warnings
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap closures (issue #147)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_connect_accepts_and_registers(manager):
+    """The unauthenticated `connect` accepts the socket and tracks it."""
+    ws = FakeWebSocket()
+    await manager.connect(ws)
+    assert ws.accepted is True
+    assert ws in manager.active_connections
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_timeout_with_non_subscriptable_client(manager, monkeypatch, fake_websocket):
+    """Timeout logging must survive WebSocket implementations whose `client`
+    attribute is not a (host, port) tuple — the peer falls back to
+    'unknown' instead of raising."""
+    import common.socket
+
+    monkeypatch.setattr(common.socket, "AUTH_HANDSHAKE_TIMEOUT_SECONDS", 0.05)
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    # An int is not subscriptable -> client[0] raises TypeError.
+    fake_websocket.client = 12345
+
+    async def _block_forever():
+        await asyncio.Event().wait()
+        return {}  # unreachable
+
+    fake_websocket.receive_json = _block_forever
+
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.closed is not None
+    code, _ = fake_websocket.closed
+    assert code == 1008
+    assert any("unknown" in w for w in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_close_with_policy_violation_reraises_cancellation(manager):
+    """A CancelledError during the close handshake is re-raised, not swallowed."""
+    class _CancellingWebSocket(FakeWebSocket):
+        async def close(self, code: int, reason: str):
+            raise asyncio.CancelledError()
+
+    ws = _CancellingWebSocket()
+    with pytest.raises(asyncio.CancelledError):
+        await manager._close_with_policy_violation(ws, reason="x")
+
+
+@pytest.mark.asyncio
+async def test_close_with_policy_violation_swallows_transport_errors(manager):
+    """If the peer already went away, the close error is ignored."""
+    class _BrokenWebSocket(FakeWebSocket):
+        async def close(self, code: int, reason: str):
+            raise RuntimeError("peer gone")
+
+    ws = _BrokenWebSocket()
+    await manager._close_with_policy_violation(ws, reason="x")  # must not raise
+
+
+def test_validate_sender_roles_any_match(manager, fake_websocket):
+    manager.sender_roles = ["Admin"]
+    fake_websocket.state.user = {"roles": ["admin"]}  # case-insensitive
+    assert manager._validate_sender_roles(fake_websocket) is True
+
+    fake_websocket.state.user = {"roles": ["User"]}
+    assert manager._validate_sender_roles(fake_websocket) is False
+
+
+def test_validate_sender_roles_check_all(fake_websocket):
+    manager = ConnectionManager(sender_roles=["Admin", "Researcher"], check_all=True)
+    fake_websocket.state.user = {"roles": ["Admin", "Researcher"]}
+    assert manager._validate_sender_roles(fake_websocket) is True
+
+    fake_websocket.state.user = {"roles": ["Admin"]}
+    assert manager._validate_sender_roles(fake_websocket) is False
+
+
+@pytest.mark.asyncio
+async def test_send_rejects_sender_without_role(monkeypatch, fake_websocket):
+    """`send` from a websocket whose user lacks the sender role is dropped."""
+    manager = ConnectionManager(sender_roles=["Admin"])
+    sender = FakeWebSocket()
+    sender.state.user = {"name": "Nope", "roles": ["User"]}
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr("common.socket.logger", _CapturingLogger())
+
+    await manager.send({"x": 1}, "message", fake_websocket, sender_websocket=sender)
+    assert fake_websocket.sent_jsons == []
+    assert any("without sender role" in w for w in warnings)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_rejects_sender_without_role(monkeypatch, fake_websocket):
+    """`broadcast` from a websocket whose user lacks the sender role is dropped."""
+    manager = ConnectionManager(sender_roles=["Admin"])
+    manager.active_connections = [fake_websocket]
+    sender = FakeWebSocket()
+    sender.state.user = {"name": "Nope", "roles": ["User"]}
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr("common.socket.logger", _CapturingLogger())
+
+    await manager.broadcast({"x": 1}, "message", sender_websocket=sender)
+    assert fake_websocket.sent_jsons == []
+    assert any("without sender role" in w for w in warnings)
+
+
+def test_get_server_sender_returns_admin_pseudo_sender(manager):
+    sender = manager.get_server_sender()
+    assert sender.state.user.roles == ["Admin"]
+
+
+@pytest.mark.asyncio
+async def test_auth_connect_timeout_without_client_attribute(manager, monkeypatch, fake_websocket):
+    """Timeout logging must also work when the WebSocket has no `client`
+    attribute at all — the peer is reported as 'unknown'."""
+    import common.socket
+
+    monkeypatch.setattr(common.socket, "AUTH_HANDSHAKE_TIMEOUT_SECONDS", 0.05)
+
+    warnings: list[str] = []
+
+    class _CapturingLogger(DummyLogger):
+        def warning(self, message):
+            warnings.append(message)
+
+    monkeypatch.setattr(common.socket, "logger", _CapturingLogger())
+
+    # No client metadata at all.
+    del fake_websocket.client
+
+    async def _block_forever():
+        await asyncio.Event().wait()
+        return {}  # unreachable
+
+    fake_websocket.receive_json = _block_forever
+
+    await manager.auth_connect(fake_websocket)
+
+    assert fake_websocket.closed is not None
+    assert any("unknown" in w for w in warnings), warnings

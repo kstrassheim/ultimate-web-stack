@@ -164,3 +164,43 @@ class TestLogModule:
         exporter = MockAzureExporter()
         result = exporter.export("test", span="test-span")
         assert result is None
+
+# ---------------------------------------------------------------------------
+# Coverage gap closures (issue #147)
+# ---------------------------------------------------------------------------
+
+class TestLogModuleGaps:
+    def test_create_fixed_logger_repairs_handler_without_lock(self, reset_log_module):
+        """A handler whose `lock` attribute is missing/None gets a fresh RLock."""
+        mc = MockConfig()
+        mc.mock_enabled = True
+
+        handler_without_lock = DummyHandler()  # class-level lock = None
+        logger = MockLogger()
+        logger.level = logging.INFO
+        logger.handlers = [handler_without_lock]
+
+        with patch("common.log.logging.getLogger", return_value=logger), \
+            patch("common.log.logging.StreamHandler", return_value=DummyAzureLogHandler()), \
+            patch("common.log.MockAzureLogHandler", DummyAzureLogHandler), \
+            patch("common.config.tfconfig", mc.tfconfig), \
+            patch("common.config.mock_enabled", mc.mock_enabled), \
+            patch("common.log.tfconfig", mc.tfconfig), \
+            patch("common.log.mock_enabled", mc.mock_enabled):
+            import common.log
+            common.log.create_fixed_logger()
+
+        assert handler_without_lock.lock is not None
+        assert hasattr(handler_without_lock.lock, "acquire")
+        assert hasattr(handler_without_lock.lock, "release")
+
+    def test_warning_log_level_suppresses_uvicorn_loggers(self, reset_log_module, monkeypatch):
+        """With LOG_LEVEL >= WARNING the module sets uvicorn access/websocket
+        loggers to WARNING at import time."""
+        monkeypatch.setenv("LOG_LEVEL", "WARNING")
+        with patch('opencensus.ext.azure.common.utils.validate_instrumentation_key', lambda k: None):
+            import common.log
+
+            assert common.log.log_level == logging.WARNING
+            assert logging.getLogger("uvicorn.access").level == logging.WARNING
+            assert logging.getLogger("uvicorn.protocols.websockets.websockets").level == logging.WARNING

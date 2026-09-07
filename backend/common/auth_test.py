@@ -450,3 +450,59 @@ class TestVerifyTokenRealPath:
         with pytest.raises(HTTPException) as excinfo:
             real_path_config.verify_token("any.token.value")
         assert excinfo.value.status_code == 401
+
+# --- coverage gap closures (issue #147) --------------------------------------
+
+
+class TestVerifyTokenRoleCheckGaps:
+    """Cover the three `if required_roles: _verify_roles(...)` call sites that
+    no existing test reaches (common/auth.py lines 103, 151, 168)."""
+
+    def test_real_path_role_check_runs_when_roles_required(self, real_path_config, monkeypatch):
+        from common.auth_test import TestVerifyTokenRealPath  # reuse stub helper
+        helper = TestVerifyTokenRealPath()
+        helper._stub_jwks(
+            monkeypatch,
+            decode_returns={"sub": "u", "roles": ["Admin"], "aud": "test-client-id"},
+        )
+        token = _build_test_jwt({"sub": "u", "roles": ["Admin"]})
+        claims = real_path_config.verify_token(token, required_roles=["Admin"])
+        assert claims["roles"] == ["Admin"]
+
+    def test_mock_path_non_jwt_token_with_required_roles(self, mock_path_config):
+        """Non-JWT token + required roles -> role check on mock_claims."""
+        claims = mock_path_config.verify_token("not-a-jwt", required_roles=["User"])
+        assert claims["roles"] == ["User"]
+        assert claims["mock_generated"] is True
+
+    def test_mock_path_undecodable_jwt_with_required_roles(self, mock_path_config):
+        """A 3-part token whose payload is not JSON falls back to default
+        claims, and the role check still runs on those defaults."""
+        import base64
+        bad_payload = base64.urlsafe_b64encode(b"not json at all").decode().rstrip("=")
+        token = f"header.{bad_payload}.signature"
+        claims = mock_path_config.verify_token(token, required_roles=["User"])
+        assert claims["sub"] == "mock-subject-id"
+        assert claims["mock_generated"] is True
+
+    def test_mock_path_undecodable_jwt_role_check_failure_raises_403(self, mock_path_config):
+        """Same fallback path, but with a role the default claims lack."""
+        import base64
+        from fastapi import HTTPException
+        bad_payload = base64.urlsafe_b64encode(b"not json at all").decode().rstrip("=")
+        token = f"header.{bad_payload}.signature"
+        with pytest.raises(HTTPException) as excinfo:
+            mock_path_config.verify_token(token, required_roles=["Admin"])
+        assert excinfo.value.status_code == 403
+
+
+class TestVerifyTokenBranchGaps:
+    def test_mock_path_undecodable_jwt_without_required_roles(self, mock_path_config):
+        """Fallback default claims are returned without a role check when no
+        roles are required (covers the `if required_roles:` false branch)."""
+        import base64
+        bad_payload = base64.urlsafe_b64encode(b"not json at all").decode().rstrip("=")
+        token = f"header.{bad_payload}.signature"
+        claims = mock_path_config.verify_token(token)
+        assert claims["sub"] == "mock-subject-id"
+        assert claims["mock_generated"] is True
