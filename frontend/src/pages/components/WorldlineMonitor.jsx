@@ -19,6 +19,11 @@ import {
   divergenceReadingsCsvFilename
 } from '@/utils/divergenceReadingsCsv';
 import { useAbortController } from '@/utils/useAbortController';
+// Issue #155: ApexCharts consumes the tooltip HTML string below and
+// writes it straight into the DOM, bypassing React's auto-escaping.
+// Escape every experiment field here so a stored XSS on any of the
+// fields the backend never sanitizes stays as text.
+import { escapeHtml } from '@/utils/htmlEscape';
 
 // Helper function to get status color
 const getStatusColor = (status) => {
@@ -414,16 +419,16 @@ const WorldlineMonitor = () => {
           return `
             <div class="custom-tooltip">
               <div class="tooltip-title">
-                ${experiment?.name || `Experiment ${experimentNumber}`}
+                ${experiment?.name ? escapeHtml(experiment.name) : `Experiment ${experimentNumber}`}
               </div>
               <div class="tooltip-value">Value: ${currentValue.toFixed(6)}</div>
               <div class="tooltip-change">Change: ${changeDisplay}</div>
               ${experiment ? `
                 <div class="tooltip-divider"></div>
-                <div class="tooltip-creator">By: ${experiment.creator_id || 'Unknown'}</div>
-                ${experiment.status ? `<div class="tooltip-status">Status: ${experiment.status}</div>` : ''}
-                ${experiment.description ? `<div class="tooltip-description">${experiment.description}</div>` : ''}
-                ${experiment.results ? `<div class="tooltip-results"><strong>Results:</strong> ${experiment.results}</div>` : ''}
+                <div class="tooltip-creator">By: ${escapeHtml(experiment.creator_id) || 'Unknown'}</div>
+                ${experiment.status ? `<div class="tooltip-status">Status: ${escapeHtml(experiment.status)}</div>` : ''}
+                ${experiment.description ? `<div class="tooltip-description">${escapeHtml(experiment.description)}</div>` : ''}
+                ${experiment.results ? `<div class="tooltip-results"><strong>Results:</strong> ${escapeHtml(experiment.results)}</div>` : ''}
               ` : ''}
             </div>
           `;
