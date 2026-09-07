@@ -131,11 +131,6 @@ const WorldlineMonitor = () => {
       );
     }
     
-    // jsdom (and every real browser) sanitises type=number inputs, so a
-    // truthy-but-non-numeric minValue cannot be produced through the UI;
-    // the `!isNaN(...)` guard's false arm is defensive-only. The filter
-    // itself IS tested (rows below the bound are dropped).
-    /* istanbul ignore next -- see comment above. */
     if (filters.minValue && !isNaN(parseFloat(filters.minValue))) {
       const min = parseFloat(filters.minValue);
       filtered = filtered.filter(r => {
@@ -144,9 +139,6 @@ const WorldlineMonitor = () => {
       });
     }
     
-    // Same as minValue above: type=number input sanitisation makes the
-    // NaN arm unreachable through the UI; the bound itself is tested.
-    /* istanbul ignore next -- see comment above. */
     if (filters.maxValue && !isNaN(parseFloat(filters.maxValue))) {
       const max = parseFloat(filters.maxValue);
       filtered = filtered.filter(r => {
