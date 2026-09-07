@@ -89,6 +89,23 @@ describe('divergenceReadingsToCsv', () => {
     );
   });
 
+  it('renders a null row as a fully-empty CSV row', () => {
+    const csv = divergenceReadingsToCsv([null, undefined]);
+    expect(csv).toBe(
+      'Reading,Status,Recorded By,Notes\r\n,,,\r\n,,,\r\n'
+    );
+  });
+
+  it('renders a reading whose numeric value is missing in both shapes as empty', () => {
+    const csv = divergenceReadingsToCsv([
+      { reading: null, value: null, status: 'beta' },
+      { reading: undefined, value: undefined },
+    ]);
+    expect(csv).toBe(
+      'Reading,Status,Recorded By,Notes\r\n,beta,,\r\n,,,\r\n'
+    );
+  });
+
   it('escapes commas, double quotes, and newlines in any column', () => {
     const csv = divergenceReadingsToCsv([
       {

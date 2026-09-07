@@ -204,6 +204,85 @@ describe('fetchWithTimeout', () => {
     ).rejects.toBe(networkError);
   });
 
+  it('passes an already-aborted caller signal straight into the internal controller', async () => {
+    // The caller aborted before the request even fired — the helper must
+    // still hand fetch an aborted signal rather than silently dropping it.
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true });
+    global.fetch = fetchMock;
+
+    const callerController = new AbortController();
+    callerController.abort();
+
+    await fetchWithTimeout(
+      'https://example.test/api',
+      {},
+      { signal: callerController.signal, timeoutMs: 1_000 },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it('times out without an onTimeout hook — telemetry is optional', async () => {
+    jest.useFakeTimers();
+    try {
+      let rejectFetch;
+      global.fetch = jest.fn().mockImplementation(
+        () => new Promise((_resolve, reject) => {
+          rejectFetch = reject;
+        }),
+      );
+
+      // No onTimeout at all.
+      const promise = fetchWithTimeout(
+        'https://example.test/api',
+        {},
+        { timeoutMs: 50, operation: 'GET /slow' },
+      );
+      const fetchSignal = global.fetch.mock.calls[0][1].signal;
+      fetchSignal.addEventListener('abort', () => {
+        rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      });
+
+      jest.advanceTimersByTime(50);
+
+      await expect(promise).rejects.toMatchObject({
+        name: 'RequestTimeoutError',
+        detection: 'timeout',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('ignores an onTimeout hook whose trackException is not a function', async () => {
+    jest.useFakeTimers();
+    try {
+      let rejectFetch;
+      global.fetch = jest.fn().mockImplementation(
+        () => new Promise((_resolve, reject) => {
+          rejectFetch = reject;
+        }),
+      );
+
+      const promise = fetchWithTimeout(
+        'https://example.test/api',
+        {},
+        { timeoutMs: 50, operation: 'GET /slow', onTimeout: { trackException: 'nope' } },
+      );
+      const fetchSignal = global.fetch.mock.calls[0][1].signal;
+      fetchSignal.addEventListener('abort', () => {
+        rejectFetch(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      });
+
+      jest.advanceTimersByTime(50);
+
+      await expect(promise).rejects.toMatchObject({ name: 'RequestTimeoutError' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('falls back to the documented default timeout when none is provided', async () => {
     // Use a stub fetch that records the signal we received so the test
     // can assert we *did* set a timer (and would have aborted at the

@@ -42,10 +42,18 @@ const SessionRecoveryGuard = () => {
       // they were when the API rejected them.
       let target;
       try {
+        /* istanbul ignore next -- jsdom always provides window.location;
+           this guard exists for non-browser hosts and cannot be exercised
+           under the jest jsdom environment. */
         if (typeof window !== 'undefined' && window.location) {
+          /* istanbul ignore next -- jsdom URLs always have a non-empty
+             pathname ('/' at minimum), so the `|| '/'` fallback is
+             defensive-only and unreachable under test. */
           target = `${window.location.pathname || '/'}${window.location.search || ''}`;
         }
       } catch (_) {
+        /* istanbul ignore next -- window.location access never throws under
+           jsdom, so this fallback cannot be exercised under test. */
         target = '/';
       }
 

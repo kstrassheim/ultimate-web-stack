@@ -33,6 +33,9 @@ export function saveRedirectPath(path) {
   let target = path;
   if (!target) {
     const { pathname, search } = window.location;
+    /* istanbul ignore next -- jsdom URLs always have a non-empty pathname
+       ('/' at minimum) and the node environment returns before this line,
+       so the `|| '/'` fallback is defensive-only and cannot be exercised. */
     target = `${pathname || '/'}${search || ''}`;
   }
   try {

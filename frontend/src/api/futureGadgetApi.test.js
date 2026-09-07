@@ -603,6 +603,108 @@ describe('Session expiry detection on Future Gadget Lab API (issue #86)', () => 
     const result = await getAllExperiments(mockInstance);
     expect(result).toEqual([{ id: 'a' }, { id: 'b' }]);
   });
+
+  it('records an empty body preview when the expiring response has no body', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({ status: 200, contentType: 'text/html', bodyText: '' })
+    );
+
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(appInsights.trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Future Gadget Api Session Expired',
+        properties: expect.objectContaining({ bodyPreview: '' }),
+      })
+    );
+  });
+
+  it('truncates the telemetry body preview at 200 chars plus an ellipsis', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    const longBody = `Sign in to your account ${'x'.repeat(300)}`;
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({ status: 200, contentType: 'text/html', bodyText: longBody })
+    );
+
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    const call = appInsights.trackEvent.mock.calls.find(
+      ([arg]) => arg && arg.name === 'Future Gadget Api Session Expired'
+    );
+    expect(call).toBeDefined();
+    const { bodyPreview } = call[0].properties;
+    expect(bodyPreview).toHaveLength(201);
+    expect(bodyPreview.endsWith('…')).toBe(true);
+  });
+
+  it('classifies a token error whose errorMessage mentions interaction_required as expiry', async () => {
+    // No matching name, no matching errorCode — only the errorMessage regex
+    // fallback recognises this MSAL shape.
+    const errorMessageOnly = Object.assign(new Error('generic'), {
+      name: 'AuthError',
+      errorCode: 'something_else',
+      errorMessage: 'AADSTS50076: interaction_required by policy',
+    });
+    retrieveTokenForBackend.mockRejectedValueOnce(errorMessageOnly);
+
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(onExpiryCalls).toHaveLength(1);
+  });
+
+  it('classifies a token error whose message alone mentions interaction_required as expiry', async () => {
+    retrieveTokenForBackend.mockRejectedValueOnce(new Error('interaction_required'));
+
+    await expect(getAllExperiments(mockInstance)).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(onExpiryCalls).toHaveLength(1);
+  });
+
+  it('surfaces a token error with no message at all as a genuine ApiError', async () => {
+    // No name/errorCode match and no errorMessage/message to regex — this
+    // must NOT be misread as session expiry, and the ApiError message must
+    // fall back to stringifying the thrown value itself.
+    retrieveTokenForBackend.mockRejectedValueOnce({ name: 'SomeOtherError' });
+
+    const promise = getAllExperiments(mockInstance);
+    await expect(promise).rejects.toBeInstanceOf(ApiError);
+    await expect(promise).rejects.toThrow(/Failed to acquire access token/);
+    expect(onExpiryCalls).toHaveLength(0);
+  });
+
+  it('labels a DELETE failure without a statusText as "Unknown"', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    const response = fakeResponse({ status: 500, contentType: 'application/json', bodyText: '{}' });
+    response.statusText = '';
+    global.fetch.mockResolvedValueOnce(response);
+
+    await expect(deleteExperiment(mockInstance, 'exp-1')).rejects.toThrow(
+      /Request failed \(500\): Unknown/,
+    );
+  });
+
+  it('labels a GET failure without a statusText as "Unknown"', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    const response = fakeResponse({ status: 500, contentType: 'application/json', bodyText: '{}' });
+    response.statusText = '';
+    global.fetch.mockResolvedValueOnce(response);
+
+    await expect(getAllExperiments(mockInstance)).rejects.toThrow(
+      /Request failed \(500\): Unknown/,
+    );
+  });
+
+  it('surfaces a JSON parse failure on a 200 JSON response as ApiError', async () => {
+    global.fetch.mockReset();
+    retrieveTokenForBackend.mockResolvedValueOnce('fake-token');
+    global.fetch.mockResolvedValueOnce(
+      fakeResponse({ status: 200, contentType: 'application/json', bodyText: 'not actually json' })
+    );
+
+    await expect(getAllExperiments(mockInstance)).rejects.toThrow(/parse/i);
+    expect(onExpiryCalls).toHaveLength(0);
+  });
 });
 
 // -------------------------------------------------------------------

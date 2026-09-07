@@ -37,6 +37,10 @@ jest.mock('@/utils/divergenceReadingsCsv', () => ({
 // Improved mock for react-apexcharts to test annotations (horizontal lines)
 jest.mock('react-apexcharts', () => {
   return function DummyChart({ options, series, height }) {
+    // Stash the latest props so tests can invoke the option callbacks
+    // (custom tooltip, data-label formatter) the way ApexCharts itself
+    // would at runtime.
+    globalThis.__apexLastProps = { options, series, height };
     // Extract annotations count for testing
     const annotationsCount = options?.annotations?.yaxis?.length || 0;
     
@@ -587,3 +591,289 @@ describe('WorldlineMonitor', () => {
   });
 });
 
+
+describe('WorldlineMonitor — failure paths, filters and chart callbacks', () => {
+  const mockInstance = { name: 'mockInstance' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    useMsal.mockReturnValue({ instance: mockInstance });
+
+    getWorldlineStatus.mockResolvedValue({
+      current_worldline: 1.337192,
+      base_worldline: 1.0,
+      total_divergence: 0.337192,
+      experiment_count: 5,
+      timestamp: '2025-04-07T12:34:56.789Z',
+      closest_reading: {
+        value: 1.382733,
+        status: 'beta',
+        recorded_by: 'Suzuha Amane',
+        notes: 'Beta worldline variant',
+        distance: 0.045541
+      }
+    });
+    getWorldlineHistory.mockResolvedValue([
+      { current_worldline: 1.0, total_divergence: 0.0, timestamp: '2025-04-07T12:00:00.000Z', added_experiment: null },
+      { current_worldline: 1.337192, total_divergence: 0.337192, timestamp: '2025-04-07T12:30:00.000Z', added_experiment: { id: 'EXP-001', name: 'Phone Microwave' } }
+    ]);
+    getDivergenceReadings.mockResolvedValue([
+      { id: 'DR-001', reading: 1.048596, status: 'steins_gate', recorded_by: 'Rintaro Okabe', notes: 'Steins;Gate worldline' },
+      { id: 'DR-002', reading: 0.571024, status: 'alpha', recorded_by: 'Rintaro Okabe', notes: 'Alpha worldline' }
+    ]);
+
+    worldlineSocket.connect = jest.fn();
+    worldlineSocket.disconnect = jest.fn();
+    worldlineSocket.subscribe = jest.fn().mockReturnValue(jest.fn());
+    worldlineSocket.subscribeToStatus = jest.fn().mockImplementation(callback => {
+      callback('connected');
+      return jest.fn();
+    });
+
+    formatDivergenceReading.mockImplementation(reading =>
+      reading.reading !== undefined ? reading.reading.toFixed(6)
+        : reading.value !== undefined ? reading.value.toFixed(6)
+        : 'N/A'
+    );
+    formatWorldLineChange.mockImplementation(change =>
+      change >= 0 ? `+${change.toFixed(6)}` : change.toFixed(6)
+    );
+  });
+
+  const renderAndSettle = async () => {
+    render(<WorldlineMonitor />);
+    await waitFor(() => {
+      expect(screen.getByTestId('readings-table')).toBeInTheDocument();
+    });
+  };
+
+  test('caller-driven aborts of all three fetches stay silent', async () => {
+    const abort = () => Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    getWorldlineStatus.mockRejectedValueOnce(abort());
+    getWorldlineHistory.mockRejectedValueOnce(abort());
+    getDivergenceReadings.mockRejectedValueOnce(abort());
+
+    render(<WorldlineMonitor />);
+
+    await waitFor(() => {
+      expect(getWorldlineStatus).toHaveBeenCalled();
+      expect(getWorldlineHistory).toHaveBeenCalled();
+      expect(getDivergenceReadings).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('no-worldline-status')).toBeInTheDocument();
+      expect(screen.getByTestId('no-worldline-history')).toBeInTheDocument();
+      expect(screen.getByTestId('no-readings')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('worldline-error')).not.toBeInTheDocument();
+    expect(notyfService.error).not.toHaveBeenCalled();
+    expect(appInsights.trackException).not.toHaveBeenCalled();
+  });
+
+  test('history and readings failures are reported via notyf and telemetry', async () => {
+    getWorldlineHistory.mockRejectedValueOnce(new Error('history 500'));
+    getDivergenceReadings.mockRejectedValueOnce(new Error('readings 500'));
+
+    render(<WorldlineMonitor />);
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to load worldline history: history 500');
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to load divergence readings: readings 500');
+    });
+    expect(appInsights.trackException).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ message: 'history 500' }) })
+    );
+    expect(appInsights.trackException).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ message: 'readings 500' }) })
+    );
+  });
+
+  test('recorded-by, min and max filters narrow the table; reset restores it', async () => {
+    // Shapes chosen to exercise all three value arms of the min/max
+    // filters: `reading`, `value`-only, and neither (counts as 0).
+    getDivergenceReadings.mockResolvedValueOnce([
+      { id: 'R1', reading: 1.048596, status: 'alpha', recorded_by: 'Rintaro Okabe' },
+      { id: 'R2', value: 0.3, status: 'beta', recorded_by: 'Suzuha Amane' },
+      { id: 'R3', status: 'gamma', recorded_by: 'Daru Hashida' },
+      { id: 'R4', reading: 2.5, status: 'delta', recorded_by: 'Kiryu Moeka' },
+    ]);
+    await renderAndSettle();
+    expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(4);
+
+    // Recorded-by (case-insensitive substring).
+    fireEvent.change(screen.getByTestId('recorded-by-filter'), {
+      target: { name: 'recordedBy', value: 'okabe' }
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(1);
+      expect(screen.getByTestId('reading-row-R1')).toBeInTheDocument();
+    });
+
+    // Reset restores the full list.
+    fireEvent.click(screen.getByTestId('reset-filters-btn'));
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(4);
+    });
+
+    // Min bound: R1 (1.048596) and R4 (2.5) survive; R2 (0.3 via `value`)
+    // and R3 (0 via neither field) drop out.
+    fireEvent.change(screen.getByTestId('min-value-filter'), {
+      target: { name: 'minValue', value: '1.0' }
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(2);
+      expect(screen.getByTestId('reading-row-R1')).toBeInTheDocument();
+      expect(screen.getByTestId('reading-row-R4')).toBeInTheDocument();
+    });
+
+    // Max bound on top: only R4 remains above 1.0 and at/below 2.0... no
+    // wait — R4 is 2.5, so only R1 survives the combination.
+    fireEvent.change(screen.getByTestId('max-value-filter'), {
+      target: { name: 'maxValue', value: '2.0' }
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(1);
+      expect(screen.getByTestId('reading-row-R1')).toBeInTheDocument();
+    });
+
+    // A non-numeric entry into a type=number input is sanitised to '' by
+    // the DOM itself, so the filter simply disengages.
+    fireEvent.change(screen.getByTestId('min-value-filter'), {
+      target: { name: 'minValue', value: 'abc' }
+    });
+    fireEvent.change(screen.getByTestId('max-value-filter'), {
+      target: { name: 'maxValue', value: '' }
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId(/^reading-row-/)).toHaveLength(4);
+    });
+  });
+
+  test('a reading with an unmapped status falls back to the secondary badge color', async () => {
+    getDivergenceReadings.mockResolvedValueOnce([
+      { id: 'DR-X', reading: 3.141592, status: 'epsilon', recorded_by: 'Nobody', notes: 'Unmapped status' }
+    ]);
+    await renderAndSettle();
+
+    const badge = within(screen.getByTestId('reading-row-DR-X')).getByTestId('reading-status-badge');
+    expect(badge).toHaveClass('bg-secondary');
+    expect(badge).toHaveTextContent('epsilon');
+  });
+
+  test('a rawData-wrapped WebSocket message without a preview notifies a plain status update', async () => {
+    await renderAndSettle();
+    const subscribeCallback = worldlineSocket.subscribe.mock.calls[0][0];
+
+    notyfService.info.mockClear();
+    act(() => {
+      subscribeCallback({
+        rawData: {
+          current_worldline: 2.0,
+          base_worldline: 1.0,
+          total_divergence: 1.0,
+          experiment_count: 6,
+          timestamp: '2025-04-07T13:00:00.000Z'
+        }
+      });
+    });
+
+    await waitFor(() => {
+      expect(notyfService.info).toHaveBeenCalledWith('Worldline status updated');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('worldline-value')).toHaveTextContent('2.000000');
+    });
+  });
+
+  test('a WebSocket message without a current_worldline is ignored', async () => {
+    await renderAndSettle();
+    const subscribeCallback = worldlineSocket.subscribe.mock.calls[0][0];
+
+    getWorldlineHistory.mockClear();
+    notyfService.info.mockClear();
+    act(() => {
+      subscribeCallback({ some: 'heartbeat' });
+    });
+
+    // No status update, no history refresh, no notification.
+    expect(screen.getByTestId('worldline-value')).toHaveTextContent('1.337192');
+    expect(getWorldlineHistory).not.toHaveBeenCalled();
+    expect(notyfService.info).not.toHaveBeenCalled();
+  });
+
+  test('an empty connection-status update keeps the current badge', async () => {
+    await renderAndSettle();
+    const statusCallback = worldlineSocket.subscribeToStatus.mock.calls[0][0];
+    expect(screen.getByTestId('ws-status-badge')).toHaveTextContent('Live');
+
+    act(() => {
+      statusCallback(null);
+    });
+    expect(screen.getByTestId('ws-status-badge')).toHaveTextContent('Live');
+
+    act(() => {
+      statusCallback('');
+    });
+    expect(screen.getByTestId('ws-status-badge')).toHaveTextContent('Live');
+  });
+
+  test('the chart tooltip formats the base point and experiment points, and data labels round to 6 decimals', async () => {
+    getWorldlineHistory.mockResolvedValueOnce([
+      { current_worldline: 1.0, total_divergence: 0.0, timestamp: 't0', added_experiment: null },
+      {
+        current_worldline: 1.5, total_divergence: 0.5, timestamp: 't1',
+        added_experiment: {
+          name: 'Full Experiment',
+          creator_id: 'Rintaro Okabe',
+          status: 'completed',
+          description: 'Has every field',
+          results: 'It worked'
+        }
+      },
+      { current_worldline: 0.9, total_divergence: 0.4, timestamp: 't2', added_experiment: {} },
+      { current_worldline: 1.2, total_divergence: 0.6, timestamp: 't3', added_experiment: null },
+    ]);
+
+    render(<WorldlineMonitor />);
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-apex-chart')).toBeInTheDocument();
+    });
+
+    const { options } = globalThis.__apexLastProps;
+    const series = [[1.0, 1.5, 0.9, 1.2]];
+    const callTooltip = (dataPointIndex) =>
+      options.tooltip.custom({ series, seriesIndex: 0, dataPointIndex, w: {} });
+
+    // Base point.
+    expect(callTooltip(0)).toContain('Base Worldline');
+    expect(callTooltip(0)).toContain('Value: 1.000000');
+
+    // Fully-populated experiment: positive change (+0.5).
+    const full = callTooltip(1);
+    expect(full).toContain('Full Experiment');
+    expect(full).toContain('Change: +0.500000');
+    expect(full).toContain('By: Rintaro Okabe');
+    expect(full).toContain('Status: completed');
+    expect(full).toContain('Has every field');
+    expect(full).toContain('It worked');
+
+    // Bare experiment object: negative change (-0.6), no optional fields.
+    const bare = callTooltip(2);
+    expect(bare).toContain('Experiment 2');
+    expect(bare).toContain('Change: -0.600000');
+    expect(bare).toContain('By: Unknown');
+    expect(bare).not.toContain('Status:');
+    expect(bare).not.toContain('Results:');
+
+    // No experiment object at all (backward compatibility).
+    const none = callTooltip(3);
+    expect(none).toContain('Experiment 3');
+    expect(none).not.toContain('By:');
+
+    // Data labels round to six decimals.
+    expect(options.dataLabels.formatter(1.23456789)).toBe('1.234568');
+    expect(options.dataLabels.formatter(0)).toBe('0.000000');
+  });
+});

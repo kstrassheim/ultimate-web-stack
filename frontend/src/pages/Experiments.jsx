@@ -38,7 +38,12 @@ const Experiments = () => {
   const abortController = useAbortController();
 
   // Load experiments data
-  const fetchExperiments = async (showMessage = false) => {
+  const fetchExperiments = async (
+    /* istanbul ignore next -- every call site (mount effect, Reload button,
+       post-create/update/delete refetch) passes showMessage explicitly, so
+       the default is defensive-only. */
+    showMessage = false
+  ) => {
   setLoading(true);
     setError(null);
 
@@ -112,6 +117,10 @@ const Experiments = () => {
 
   // Delete experiment
   const handleDeleteExperiment = async () => {
+    /* istanbul ignore next -- this handler is only wired to the confirm
+       button inside the delete modal, and that modal is only opened by
+       openDeleteModal, which always sets experimentToDelete first — the
+       null guard can never fire through the UI. */
     if (!experimentToDelete) return;
     setLoading(true);
     setActionLoading(true);
@@ -451,11 +460,20 @@ const Experiments = () => {
 
 // Helper component for experiment form
 const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
-  const [formData, setFormData] = useState(experiment || {});
+  // ExperimentForm is only mounted inside the form Modal, which only opens
+  // after currentExperiment has been set (openCreateForm / openEditForm),
+  // so `experiment` is always provided at runtime.
+  const [formData, setFormData] = useState(
+    /* istanbul ignore next -- see note above: the Modal never mounts this
+       form without an experiment, so the `|| {}` fallback cannot run. */
+    experiment || {}
+  );
   const [validated, setValidated] = useState(false);
   const [timestampError, setTimestampError] = useState('');
   
   useEffect(() => {
+    /* istanbul ignore next -- same reasoning as the useState initializer
+       above: this component never exists without an experiment prop. */
     if (experiment) {
       setFormData(experiment);
     }
@@ -477,6 +495,10 @@ const ExperimentForm = ({ experiment, onSubmit, mode, loading }) => {
   
   // Validate if a string is a valid ISO date
   const isValidISODate = (dateString) => {
+    /* istanbul ignore next -- both call sites guard on truthiness first
+       (`value && !isValidISODate(value)` in handleChange and
+       `formData.timestamp && ...` in handleSubmit), so the empty-string
+       arm can never be reached through the component. */
     if (!dateString) return true; // Empty is valid (will be auto-generated)
     
     // Basic ISO format regex: YYYY-MM-DDTHH:MM:SS.sssZ

@@ -18,22 +18,6 @@ const Chat = () => {
   const isSendingRef = useRef(false);
 
 
-  // Parse message content to avoid duplicated usernames
-  const parseMessageContent = (messageText, username) => {
-    if (!messageText) return messageText;
-    
-    // Check for explicit "username: " pattern at beginning
-    const colonIndex = messageText.indexOf(': ');
-    if (colonIndex > 0) {
-      const potentialUsername = messageText.substring(0, colonIndex);
-      if (username && potentialUsername === username) {
-        return messageText.substring(colonIndex + 2);
-      }
-    }
-    
-    return messageText;
-  };
-
   // Release the in-flight guard. Called when the request settles —
   // either the server acks the send (success) or the connection drops
   // / the local send reports failure.
@@ -102,6 +86,9 @@ const Chat = () => {
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
+    /* istanbul ignore next -- messagesEndRef points at an element that
+       renders unconditionally, and React attaches refs before running
+       effects, so the null arm cannot occur under test (or at runtime). */
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }

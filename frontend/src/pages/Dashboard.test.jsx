@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
 import Dashboard from './Dashboard';
@@ -277,5 +277,120 @@ describe('Dashboard Component', () => {
       expect(screen.queryByTestId('groups-consent-required')).not.toBeInTheDocument();
       expect(notyfService.error).toHaveBeenCalled();
     });
+  });
+});
+describe('Dashboard — abort, grant-access failure and user-change paths', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // mockClear keeps non-once implementations other describes set, so
+    // pin explicit defaults here instead of inheriting a rejecting mock.
+    getUserData.mockResolvedValue({ message: 'Hello from API' });
+    getAllGroups.mockResolvedValue([{ id: '1', displayName: 'Test Group' }]);
+  });
+
+  test('a caller-driven abort of the initial fetch is silent', async () => {
+    // Issue #113: unmounting mid-fetch rejects with AbortError; that is
+    // the normal path, not an error — nothing user-visible may fire.
+    getUserData.mockRejectedValueOnce(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    );
+
+    render(<Dashboard />);
+
+    // Let the fetch settle.
+    await waitFor(() => {
+      expect(getUserData).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('api-message-empty')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('error-message')).not.toBeInTheDocument();
+    expect(notyfService.error).not.toHaveBeenCalled();
+    expect(appInsights.trackException).not.toHaveBeenCalledWith(
+      expect.objectContaining({ exception: expect.objectContaining({ name: 'AbortError' }) })
+    );
+  });
+
+  test('a failing Grant access request is reported and the page stays usable', async () => {
+    // Mount without consent → prompt; the interactive retry then fails
+    // for a non-consent reason, which grantGroupAccess must surface.
+    getAllGroups.mockRejectedValueOnce(
+      new GraphConsentRequiredError(['User.Read', 'Group.Read.All'])
+    );
+    getUserData.mockResolvedValueOnce({ message: 'Hello from API' });
+
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId('grant-groups-access-button')).toBeInTheDocument();
+    });
+
+    getAllGroups.mockRejectedValueOnce(new Error('Graph API error (503)'));
+    fireEvent.click(screen.getByTestId('grant-groups-access-button'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('error-message')).toHaveTextContent('Graph API error (503)');
+    });
+    expect(notyfService.error).toHaveBeenCalledWith('Failed to load groups: Graph API error (503)');
+    expect(appInsights.trackException).toHaveBeenCalledWith({
+      exception: expect.objectContaining({ message: 'Graph API error (503)' })
+    });
+    // The consent prompt stays up so the user can retry.
+    expect(screen.getByTestId('grant-groups-access-button')).toBeInTheDocument();
+  });
+
+  test('an aborted Grant access request is silent', async () => {
+    getAllGroups.mockRejectedValueOnce(
+      new GraphConsentRequiredError(['User.Read', 'Group.Read.All'])
+    );
+    getUserData.mockResolvedValueOnce({ message: 'Hello from API' });
+
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId('grant-groups-access-button')).toBeInTheDocument();
+    });
+
+    getAllGroups.mockRejectedValueOnce(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    );
+    fireEvent.click(screen.getByTestId('grant-groups-access-button'));
+
+    await waitFor(() => {
+      expect(getAllGroups).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.queryByTestId('error-message')).not.toBeInTheDocument();
+    expect(notyfService.error).not.toHaveBeenCalled();
+  });
+
+  test('re-fetches when the signed-in user changes, and leaves the cache alone otherwise', async () => {
+    const accountSpy = jest.spyOn(mockMsalInstance, 'getActiveAccount')
+      .mockReturnValue({ username: 'user-a@example.com', name: 'User A' });
+
+    try {
+      const { rerender } = render(<Dashboard />);
+      await waitFor(() => {
+        expect(screen.getByTestId('api-message-data')).toBeInTheDocument();
+      });
+      expect(getUserData).toHaveBeenCalledTimes(1);
+
+      // A re-render where only the display NAME changed: the effect
+      // re-runs (the name is in its dep array) but must neither log a
+      // user change nor refetch.
+      accountSpy.mockReturnValue({ username: 'user-a@example.com', name: 'User A (renamed)' });
+      rerender(<Dashboard />);
+      await act(async () => { await Promise.resolve(); });
+      expect(getUserData).toHaveBeenCalledTimes(1);
+
+      // The username itself changed → the cached data belongs to a
+      // different user; the dashboard must reload.
+      accountSpy.mockReturnValue({ username: 'user-b@example.com', name: 'User B' });
+      rerender(<Dashboard />);
+      await waitFor(() => {
+        expect(getUserData).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      accountSpy.mockRestore();
+    }
   });
 });

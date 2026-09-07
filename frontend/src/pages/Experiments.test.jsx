@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Experiments from './Experiments';
 import { 
@@ -904,6 +904,426 @@ describe('WebSocket Experiment Notifications', () => {
     // Verify notification formats username correctly
     expect(notyfService.info).toHaveBeenCalledWith(
       expect.stringContaining('hashida itaru')
+    );
+  });
+});
+describe('Experiments — failure paths, edge branches and modal chrome', () => {
+  const OWN_EMAIL = 'okabe.rintaro@future-gadget-lab.org';
+  let messageHandler;
+  let originalConsoleLog;
+  let consoleErrorSpy;
+
+  const lastStatusCallback = () =>
+    experimentsSocket.subscribeToStatus.mock.calls.at(-1)[0];
+
+  beforeEach(() => {
+    originalConsoleLog = console.log;
+    console.log = jest.fn();
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.clearAllMocks();
+
+    // The instance object must be identity-stable across renders — the
+    // WebSocket effect depends on [instance], so a fresh object per
+    // useMsal() call would re-run the effect (and refetch) on every
+    // render.
+    const stableInstance = {
+      getActiveAccount: () => ({ username: OWN_EMAIL }),
+      setActiveAccount: jest.fn(),
+    };
+    useMsal.mockImplementation(() => ({ instance: stableInstance }));
+
+    getAllExperiments.mockResolvedValue(mockExperiments);
+    formatExperimentTimestamp.mockImplementation(() => 'formatted-ts');
+    formatWorldLineChange.mockImplementation((change) => String(change));
+
+    experimentsSocket.subscribe.mockImplementation((handler) => {
+      messageHandler = handler;
+      return jest.fn();
+    });
+    experimentsSocket.subscribeToStatus.mockImplementation((cb) => {
+      cb('connected');
+      return jest.fn();
+    });
+  });
+
+  afterEach(() => {
+    console.log = originalConsoleLog;
+    consoleErrorSpy.mockRestore();
+  });
+
+  const renderAndWaitForGrid = async () => {
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    });
+  };
+
+  it('shows the loaded message only on an explicit Reload click', async () => {
+    await renderAndWaitForGrid();
+    expect(notyfService.success).not.toHaveBeenCalledWith('Experiments loaded successfully');
+
+    fireEvent.click(screen.getByTestId('reload-experiments-btn'));
+
+    await waitFor(() => {
+      expect(notyfService.success).toHaveBeenCalledWith('Experiments loaded successfully');
+    });
+    expect(getAllExperiments).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats an aborted initial load as the silent path', async () => {
+    getAllExperiments.mockRejectedValueOnce(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    );
+
+    render(<Experiments />);
+
+    await waitFor(() => {
+      expect(getAllExperiments).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('experiments-heading')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('experiments-error')).not.toBeInTheDocument();
+    expect(notyfService.error).not.toHaveBeenCalled();
+  });
+
+  it('does not open the edit form when the detail fetch is aborted', async () => {
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockRejectedValueOnce(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    );
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+
+    await waitFor(() => {
+      expect(getExperimentById).toHaveBeenCalled();
+    });
+
+    // No form, no error noise — the abort is the unmount path.
+    expect(screen.queryByTestId('experiment-form-title')).not.toBeInTheDocument();
+    expect(notyfService.error).not.toHaveBeenCalled();
+  });
+
+  it('reports a failing detail fetch and keeps the form closed', async () => {
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockRejectedValueOnce(new Error('detail 404'));
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to load experiment details: detail 404');
+    });
+    expect(screen.queryByTestId('experiment-form-title')).not.toBeInTheDocument();
+  });
+
+  it('reports a create failure', async () => {
+    createExperiment.mockRejectedValueOnce(new Error('create 500'));
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('new-experiment-btn'));
+    fireEvent.change(screen.getByLabelText(/experiment name/i), { target: { value: 'Doomed' } });
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: 'Fails' } });
+    fireEvent.change(screen.getByLabelText(/creator id/i), { target: { value: 'okabe' } });
+    fireEvent.click(screen.getByTestId('experiment-form-submit'));
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to create experiment: create 500');
+    });
+  });
+
+  it('reports an update failure', async () => {
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockResolvedValue(mockExperiments[0]);
+    updateExperiment.mockRejectedValueOnce(new Error('update 500'));
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-title')).toHaveTextContent('Edit Experiment');
+    });
+    fireEvent.click(screen.getByTestId('experiment-form-submit'));
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to update experiment: update 500');
+    });
+  });
+
+  it('reports a delete failure and keeps the modal open', async () => {
+    deleteExperiment.mockRejectedValueOnce(new Error('delete 500'));
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('delete-btn-exp-1'));
+    fireEvent.click(screen.getByTestId('confirm-delete-btn'));
+
+    await waitFor(() => {
+      expect(notyfService.error).toHaveBeenCalledWith('Failed to delete experiment: delete 500');
+    });
+  });
+
+  it('opens the create form with an empty creator when no account is active', async () => {
+    const noAccountInstance = {
+      getActiveAccount: () => null,
+      setActiveAccount: jest.fn(),
+    };
+    useMsal.mockImplementation(() => ({ instance: noAccountInstance }));
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('new-experiment-btn'));
+
+    expect(screen.getByLabelText(/creator id/i)).toHaveValue('');
+  });
+
+  it('ignores a WebSocket message in an unknown envelope', async () => {
+    await renderAndWaitForGrid();
+
+    act(() => {
+      messageHandler({ unexpected: 'shape' });
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Unknown WebSocket message format:',
+      expect.objectContaining({ unexpected: 'shape' })
+    );
+    expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+  });
+
+  it('ignores a WebSocket message of an unknown type', async () => {
+    await renderAndWaitForGrid();
+
+    act(() => {
+      messageHandler({ type: 'purge', id: 'exp-1', name: 'Phone Microwave', actor: 'other@x.y' });
+    });
+
+    // The grid is untouched and no notification fired.
+    expect(screen.getByText('Phone Microwave')).toBeInTheDocument();
+    expect(notyfService.info).not.toHaveBeenCalled();
+    expect(notyfService.warning).not.toHaveBeenCalled();
+  });
+
+  it('does not add a duplicate row when a create message arrives twice', async () => {
+    await renderAndWaitForGrid();
+
+    const message = {
+      type: 'create',
+      id: 'exp-dup',
+      name: 'Duplicate Experiment',
+      actor: 'other@x.y'
+    };
+    act(() => {
+      messageHandler(message);
+    });
+    act(() => {
+      messageHandler({ ...message });
+    });
+
+    expect(screen.getAllByText('Duplicate Experiment')).toHaveLength(1);
+  });
+
+  it('refreshes the open edit form silently when the update was your own action', async () => {
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockResolvedValue(mockExperiments[0]);
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-title')).toHaveTextContent('Edit Experiment');
+    });
+
+    act(() => {
+      messageHandler({
+        type: 'update',
+        id: 'exp-1',
+        name: 'Phone Microwave (self-edit)',
+        status: 'completed',
+        actor: OWN_EMAIL
+      });
+    });
+
+    // Your own action needs no "someone else changed this" warning...
+    expect(notyfService.warning).not.toHaveBeenCalled();
+    expect(notyfService.info).not.toHaveBeenCalled();
+    // ...but the form still picks up the fresh data.
+    await waitFor(() => {
+      expect(screen.getByLabelText(/experiment name/i)).toHaveValue('Phone Microwave (self-edit)');
+    });
+  });
+
+  it('stays quiet for your own update to an experiment you are not editing', async () => {
+    await renderAndWaitForGrid();
+
+    act(() => {
+      messageHandler({
+        type: 'update',
+        id: 'exp-2',
+        name: 'Divergence Meter (self)',
+        actor: OWN_EMAIL
+      });
+    });
+
+    expect(notyfService.info).not.toHaveBeenCalled();
+    expect(notyfService.warning).not.toHaveBeenCalled();
+    expect(screen.getByText('Divergence Meter (self)')).toBeInTheDocument();
+  });
+
+  it('closes the edit form without a warning when you delete the experiment yourself elsewhere', async () => {
+    const { getExperimentById } = require('@/api/futureGadgetApi');
+    getExperimentById.mockResolvedValue(mockExperiments[0]);
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('edit-btn-exp-1'));
+    await waitFor(() => {
+      expect(screen.getByTestId('experiment-form-title')).toBeInTheDocument();
+    });
+
+    act(() => {
+      messageHandler({ type: 'delete', id: 'exp-1', name: 'Phone Microwave', actor: OWN_EMAIL });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('experiment-form-title')).not.toBeInTheDocument();
+    });
+    expect(notyfService.warning).not.toHaveBeenCalled();
+    expect(notyfService.info).not.toHaveBeenCalled();
+  });
+
+  it('removes the row silently for your own delete of an experiment you are not editing', async () => {
+    await renderAndWaitForGrid();
+
+    act(() => {
+      messageHandler({ type: 'delete', id: 'exp-2', name: 'Divergence Meter', actor: OWN_EMAIL });
+    });
+
+    expect(screen.queryByText('Divergence Meter')).not.toBeInTheDocument();
+    expect(notyfService.info).not.toHaveBeenCalled();
+  });
+
+  it('renders the disconnected badge and ignores empty status updates', async () => {
+    await renderAndWaitForGrid();
+    expect(screen.getByTestId('status-badge')).toHaveTextContent('Connected');
+
+    act(() => {
+      lastStatusCallback()(null);
+    });
+    expect(screen.getByTestId('status-badge')).toHaveTextContent('Connected');
+
+    act(() => {
+      lastStatusCallback()('disconnected');
+    });
+    expect(screen.getByTestId('status-badge')).toHaveTextContent('Disconnected');
+    expect(screen.getByTestId('status-badge')).toHaveClass('bg-danger');
+  });
+
+  it('renders a badge for every known status and a fallback for unknown ones', async () => {
+    getAllExperiments.mockResolvedValueOnce([
+      { id: 's-1', name: 'Planned Exp', status: 'planned', world_line_change: 0.1 },
+      { id: 's-2', name: 'Failed Exp', status: 'failed', world_line_change: 0.2 },
+      { id: 's-3', name: 'Abandoned Exp', status: 'abandoned', world_line_change: 0.3 },
+      { id: 's-4', name: 'Mystery Exp', status: 'retrocausal', world_line_change: 0.4 },
+    ]);
+
+    render(<Experiments />);
+    await waitFor(() => {
+      expect(screen.getByText('Planned Exp')).toBeInTheDocument();
+    });
+
+    const badgeByRow = (id) =>
+      within(screen.getByTestId(`experiment-row-${id}`)).getByTestId('experiment-status');
+    expect(badgeByRow('s-1')).toHaveClass('bg-info');
+    expect(badgeByRow('s-2')).toHaveClass('bg-danger');
+    expect(badgeByRow('s-3')).toHaveClass('bg-secondary');
+    expect(badgeByRow('s-4')).toHaveClass('bg-light');
+  });
+
+  it('parses the collaborators field into a trimmed list on submit', async () => {
+    createExperiment.mockResolvedValue({ id: 'exp-new' });
+
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('new-experiment-btn'));
+    fireEvent.change(screen.getByLabelText(/experiment name/i), { target: { value: 'Collab test' } });
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: 'x' } });
+    fireEvent.change(screen.getByLabelText(/collaborators/i), { target: { value: 'kurisu, daru,, suzuha' } });
+    fireEvent.click(screen.getByTestId('experiment-form-submit'));
+
+    await waitFor(() => {
+      expect(createExperiment).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ collaborators: ['kurisu', 'daru', 'suzuha'] }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('blocks submit while required fields are missing and marks the form validated', async () => {
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('new-experiment-btn'));
+
+    // Submit with the name left empty.
+    fireEvent.click(screen.getByTestId('experiment-form-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Please provide an experiment name.')).toBeVisible();
+    });
+    expect(createExperiment).not.toHaveBeenCalled();
+  });
+
+  it('closes the form modal via its close button', async () => {
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('new-experiment-btn'));
+    expect(screen.getByTestId('experiment-form-title')).toBeInTheDocument();
+
+    const modal = screen.getByTestId('experiment-form-modal');
+    fireEvent.click(modal.querySelector('.btn-close'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('experiment-form-title')).not.toBeInTheDocument();
+    });
+  });
+
+  it('closes the delete modal via Cancel without deleting', async () => {
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('delete-btn-exp-1'));
+    expect(screen.getByText(/Are you sure you want to delete/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('cancel-delete-btn'));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Are you sure you want to delete/)).not.toBeInTheDocument();
+    });
+    expect(deleteExperiment).not.toHaveBeenCalled();
+  });
+
+  it('closes the delete modal via its close button without deleting', async () => {
+    await renderAndWaitForGrid();
+    fireEvent.click(screen.getByTestId('delete-btn-exp-1'));
+    expect(screen.getByText(/Are you sure you want to delete/)).toBeInTheDocument();
+
+    const modal = screen.getByTestId('delete-confirmation-modal');
+    fireEvent.click(modal.querySelector('.btn-close'));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Are you sure you want to delete/)).not.toBeInTheDocument();
+    });
+    expect(deleteExperiment).not.toHaveBeenCalled();
+  });
+
+  it('formats a missing actor as "Unknown user" and a non-email actor verbatim', async () => {
+    await renderAndWaitForGrid();
+
+    act(() => {
+      messageHandler({ type: 'create', id: 'exp-noactor', name: 'No Actor Exp' });
+    });
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'New experiment "No Actor Exp" created by Unknown user'
+    );
+
+    act(() => {
+      messageHandler({ type: 'create', id: 'exp-plainactor', name: 'Plain Actor Exp', actor: 'daru' });
+    });
+    expect(notyfService.info).toHaveBeenCalledWith(
+      'New experiment "Plain Actor Exp" created by daru'
     );
   });
 });

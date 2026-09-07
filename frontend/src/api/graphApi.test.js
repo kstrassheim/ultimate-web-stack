@@ -316,5 +316,71 @@ describe('graphApi', () => {
         })
       );
     });
+
+    it('logs and returns undefined when Graph answers the photo request with a non-OK status', async () => {
+      const mockInstance = {
+        acquireTokenSilent: jest.fn().mockResolvedValue({ accessToken: 'fake-token' })
+      };
+      fetch.mockResolvedValueOnce({ ok: false, statusText: 'Forbidden' });
+
+      const result = await getProfilePhoto(mockInstance, { username: 'testuser' });
+
+      expect(result).toBeUndefined();
+      expect(console.error).toHaveBeenCalledWith('Failed to fetch profile photo:', 'Forbidden');
+    });
+  });
+
+    it('throws a descriptive error when Graph answers with a non-OK status', async () => {
+      const mockInstance = { getActiveAccount: jest.fn().mockReturnValue({}) };
+      retrieveTokenForGraph.mockResolvedValue('fake-group-token');
+      fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: jest.fn().mockResolvedValue('Internal Server Error'),
+      });
+
+      await expect(getAllGroups(mockInstance)).rejects.toThrow(
+        'Graph API error (500): Internal Server Error',
+      );
+      expect(appInsights.trackException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          properties: expect.objectContaining({ operation: 'getAllGroups' }),
+        })
+      );
+    });
+
+  describe('window override hooks', () => {
+    // The Cypress/vite mock build replaces these endpoints by stashing
+    // implementations on window before the module evaluates; the conditional
+    // export arms exist for that. Re-require the module with the override in
+    // place to cover them.
+    afterEach(() => {
+      delete window.getProfilePhoto;
+      delete window.getAllGroups;
+    });
+
+    it('exports window.getProfilePhoto unchanged when the override is installed', () => {
+      const override = jest.fn();
+      window.getProfilePhoto = override;
+
+      let mod;
+      jest.isolateModules(() => {
+        mod = require('./graphApi');
+      });
+
+      expect(mod.getProfilePhoto).toBe(override);
+    });
+
+    it('exports window.getAllGroups unchanged when the override is installed', () => {
+      const override = jest.fn();
+      window.getAllGroups = override;
+
+      let mod;
+      jest.isolateModules(() => {
+        mod = require('./graphApi');
+      });
+
+      expect(mod.getAllGroups).toBe(override);
+    });
   });
 });

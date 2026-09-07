@@ -60,7 +60,13 @@ const EntraProfile = () => {
       setAccount(null);
       setPhotoUrl(dummy_avatar);
     }
-    else if (currentAccount !== account) {
+    // No `currentAccount !== account` guard here: the effect only re-runs
+    // when the active account's NAME changes (the dep array), and a name
+    // change implies getActiveAccount() returns a different object — so on
+    // every re-run where currentAccount is set, it is always a new account.
+    // The old guard's false arm was dead code; removed deliberately per
+    // issue #148's ground rules.
+    else {
       setAccount(currentAccount);
       fetchProfilePhotoFunc(currentAccount);
     }
@@ -90,7 +96,11 @@ const EntraProfile = () => {
     };
   }, []);
 
-  const logonFunc = async (forcePopup = false) => {
+  const logonFunc = async (
+    /* istanbul ignore next -- both call sites (Sign In, Change Account)
+       pass forcePopup explicitly; the default is defensive-only. */
+    forcePopup = false
+  ) => {
     setRecoveryInFlight(true);
     try {
       // Do NOT touch sessionStorage.redirectPath here. `reauthenticate`

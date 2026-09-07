@@ -21,11 +21,11 @@
 // existing JSX / TS / syntax behaviour is preserved.
 const { createTransformer } = require('@swc/jest');
 
-// Allow-list: only react-router's ssr/routeModules subpath actually
-// uses `import.meta`. We don't want to mask real bugs elsewhere —
-// future source-level `import.meta` usage in this repo will surface
-// here first because the regex below would also neutralise it, so
-// keep this scoped.
+// process() below rewrites exactly two allow-listed `import.meta`
+// accesses: react-router's `import.meta.hot` and src/config.js's
+// `import.meta.env.MODE`. Any OTHER source-level `import.meta` usage in
+// this repo still fails to parse — that failure is deliberate, it keeps
+// new usages visible instead of silently masking them.
 const REACT_ROUTER_ROUTE_MODULES_PATTERN =
   /\/node_modules\/react-router\/dist\/[^/]+\/lib\/dom\/ssr\/routeModules\.[mc]?js$/;
 
@@ -34,6 +34,16 @@ const REACT_ROUTER_ROUTE_MODULES_PATTERN =
 // runtime anyway because no HMR client is attached.
 const IMPORT_META_HOT_REGEX = /\bimport\s*\.\s*meta\s*\.\s*hot\b/g;
 
+// src/config.js reads `import.meta.env.MODE` — the same CJS problem
+// (`SyntaxError: Cannot use 'import.meta' outside a module`) the moment a
+// test loads the REAL module instead of the global '@/config' mock from
+// jest.setup.js. jest.setup.js already installs a stub at
+// `global.import.meta.env` (MODE: 'test') for exactly this purpose, so
+// the substitution points the read at that stub; tests can vary the mode
+// by mutating `global.import.meta.env.MODE` and re-requiring the module.
+const SRC_CONFIG_PATTERN = /\/src\/config\.[jt]s$/;
+const IMPORT_META_ENV_MODE_REGEX = /\bimport\s*\.\s*meta\s*\.\s*env\s*\.\s*MODE\b/g;
+
 const transformer = createTransformer();
 
 module.exports = {
@@ -41,14 +51,18 @@ module.exports = {
   process(src, filename, jestOptions) {
     const result = transformer.process(src, filename, jestOptions);
     // @swc/jest returns `{ code, map }` (not a string). Most tests
-    // never hit the allow-list path, so the fast-path returns the
-    // object untouched; only the RR route-modules file gets post-
-    // processed.
-    if (!REACT_ROUTER_ROUTE_MODULES_PATTERN.test(filename)) {
-      return result;
-    }
+    // never hit an allow-list path, so the fast-path returns the
+    // object untouched.
     if (result && typeof result.code === 'string') {
-      result.code = result.code.replace(IMPORT_META_HOT_REGEX, 'false');
+      if (REACT_ROUTER_ROUTE_MODULES_PATTERN.test(filename)) {
+        result.code = result.code.replace(IMPORT_META_HOT_REGEX, 'false');
+      }
+      if (SRC_CONFIG_PATTERN.test(filename)) {
+        result.code = result.code.replace(
+          IMPORT_META_ENV_MODE_REGEX,
+          'globalThis.import.meta.env.MODE',
+        );
+      }
     }
     return result;
   },

@@ -32,21 +32,19 @@ jest.mock('@/components/ProtectedLink', () => {
 });
 
 // Mock the theme system so the App's Navbar can use useTheme() without
-// bootstrapping a full provider + localStorage round-trip per test.
-jest.mock('@/theme/ThemeProvider', () => {
-  const React = require('react');
-  const useThemeMock = () => ({
-    theme: 'dark',
-    mode: 'dark',
+// bootstrapping a full provider + localStorage round-trip per test. The
+// theme value is switchable per test so both palette arms render.
+let mockTheme = 'dark';
+jest.mock('@/theme/ThemeProvider', () => ({
+  ThemeProvider: ({ children }) => children,
+  useTheme: () => ({
+    theme: mockTheme,
+    mode: mockTheme,
     setMode: jest.fn(),
     toggleTheme: jest.fn(),
     resetToOsPreference: jest.fn(),
-  });
-  return {
-    ThemeProvider: ({ children }) => children,
-    useTheme: useThemeMock,
-  };
-});
+  }),
+}));
 
 jest.mock('@/pages/Home', () => () => <div data-testid="home-page">Home Page</div>);
 jest.mock('@/pages/Dashboard', () => () => <div data-testid="mocked-dashboard-page">Dashboard Page</div>);
@@ -61,6 +59,7 @@ describe('App Component', () => {
   const originalTitle = document.title;
   beforeEach(() => {
     document.title = 'Test Page Title';
+    mockTheme = 'dark';
   });
   afterEach(() => {
     document.title = originalTitle;
@@ -211,10 +210,43 @@ describe('App Component', () => {
         <App />
       </MemoryRouter>
     );
-
+    
     // Settings is intentionally public (theme is a user-preference
     // concern, not a security one), so no ProtectedRoute wrapper.
     expect(screen.queryByTestId('mocked-protected-route')).not.toBeInTheDocument();
     expect(screen.getByTestId('mocked-settings-page')).toBeInTheDocument();
+  });
+
+  test('renders the navbar in the light palette when the theme is light', () => {
+    mockTheme = 'light';
+    render(
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <App />
+      </BrowserRouter>
+    );
+
+    const navbar = screen.getByTestId('main-navigation');
+    expect(navbar).toHaveClass('bg-light');
+    expect(navbar).toHaveClass('navbar-light');
+    expect(navbar).toHaveAttribute('data-bs-theme', 'light');
+
+    // The hamburger keeps its own variant pairing so it stays visible
+    // against the light chrome.
+    expect(screen.getByTestId('navbar-toggle')).toHaveClass('navbar-light');
+  });
+
+  test('renders the navbar in the dark palette when the theme is dark', () => {
+    mockTheme = 'dark';
+    render(
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <App />
+      </BrowserRouter>
+    );
+
+    const navbar = screen.getByTestId('main-navigation');
+    expect(navbar).toHaveClass('bg-dark');
+    expect(navbar).toHaveClass('navbar-dark');
+    expect(navbar).toHaveAttribute('data-bs-theme', 'dark');
+    expect(screen.getByTestId('navbar-toggle')).toHaveClass('navbar-dark');
   });
 });
