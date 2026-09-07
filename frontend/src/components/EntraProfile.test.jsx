@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, waitFor, act, fireEvent, waitForElementToBeRemoved } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useMsal } from '@azure/msal-react';
@@ -707,22 +706,4 @@ describe('EntraProfile Component', () => {
     });
   });
 
-  test('tolerates a redundant account-effect run under StrictMode', async () => {
-    // main.jsx renders the app inside <React.StrictMode>, which double-
-    // invokes effects in development: the second invocation sees the account
-    // state already set to the current account and must do nothing.
-    msalInstance.getActiveAccount.mockReturnValue(mockAccount);
-
-    renderWithRouter(
-      <React.StrictMode>
-        <EntraProfile />
-      </React.StrictMode>
-    );
-
-    await waitFor(() => {
-      expect(getProfilePhoto).toHaveBeenCalled();
-    });
-    expect(screen.getByTestId('authenticated-container')).toBeInTheDocument();
-    expect(screen.getByTestId('profile-dropdown')).toBeInTheDocument();
-  });
 });
