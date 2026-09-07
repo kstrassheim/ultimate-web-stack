@@ -1,6 +1,9 @@
 [tool.coverage.run]
 source = ["."]
-omit = ["*/mock/*", "*/venv/*", "setup.py"]
+omit = ["*/mock/*", "*/venv/*", "setup.py", "*_test.py"]
+# Measure branch coverage too: the issue asks for 100% *line and branch*
+# coverage, and branch data is only collected when this is enabled.
+branch = true
 
 [tool.coverage.report]
 exclude_lines = [

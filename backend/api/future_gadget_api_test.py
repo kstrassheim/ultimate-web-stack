@@ -846,3 +846,351 @@ class TestWorldlineEndpoints:
         
         # Verify no automatic response to Admin
         assert len(sent_messages) == 0
+
+# ---------------------------------------------------------------------------
+# Coverage gap closures (issue #147)
+# ---------------------------------------------------------------------------
+
+import os
+import importlib.util
+from pydantic import ValidationError
+
+from api.future_gadget_api import (
+    ExperimentCreate,
+    ExperimentUpdate,
+    get_reading_value,
+)
+
+
+class TestNonMockServiceInitialization:
+    """Cover the module-level `else` branch that builds the real
+    Cosmos-backed FutureGadgetLabDataService when MOCK is off.
+
+    The module is executed fresh (under a different module name) with
+    ``common.config.mock_enabled`` patched to False and a stubbed
+    ``FutureGadgetLabDataService`` constructor, so no network or real
+    Cosmos client is ever touched.
+    """
+
+    def _load_module_non_mock(self, monkeypatch, tfconfig_dict):
+        import common.config as config_module
+        import db.future_gadget_lab_data_service as fgl_db
+
+        monkeypatch.setattr(config_module, "mock_enabled", False)
+        monkeypatch.setattr(config_module, "tfconfig", tfconfig_dict)
+
+        fake_service = MagicMock(name="fgl_service")
+        fake_cls = MagicMock(return_value=fake_service)
+        monkeypatch.setattr(fgl_db, "FutureGadgetLabDataService", fake_cls)
+
+        module_path = os.path.join(os.path.dirname(__file__), "future_gadget_api.py")
+        spec = importlib.util.spec_from_file_location(
+            "api.future_gadget_api_nomock", module_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module, fake_cls, fake_service
+
+    def test_uses_cosmos_account_endpoint_when_present(self, monkeypatch):
+        tfconfig = {
+            "cosmos_account_endpoint": {"value": "https://acct.documents.azure.com:443/"},
+            "cosmos_database_name": {"value": "db"},
+            "cosmos_container_name": {"value": "container"},
+        }
+        module, fake_cls, fake_service = self._load_module_non_mock(monkeypatch, tfconfig)
+        fake_cls.assert_called_once_with(
+            cosmos_account_uri="https://acct.documents.azure.com:443/",
+            cosmos_database="db",
+            cosmos_container="container",
+        )
+        assert module.fgl_service is fake_service
+
+    def test_derives_endpoint_from_hostname_when_endpoint_missing(self, monkeypatch):
+        tfconfig = {
+            "cosmos_account_hostname": {"value": "acct.documents.azure.com"},
+            "cosmos_database_name": {"value": "db"},
+            "cosmos_container_name": {"value": "container"},
+        }
+        module, fake_cls, _ = self._load_module_non_mock(monkeypatch, tfconfig)
+        fake_cls.assert_called_once_with(
+            cosmos_account_uri="https://acct.documents.azure.com:443/",
+            cosmos_database="db",
+            cosmos_container="container",
+        )
+
+    def test_missing_hostname_raises_runtime_error(self, monkeypatch):
+        tfconfig = {
+            "cosmos_database_name": {"value": "db"},
+            "cosmos_container_name": {"value": "container"},
+        }
+        with pytest.raises(RuntimeError, match="cosmos_account_hostname"):
+            self._load_module_non_mock(monkeypatch, tfconfig)
+
+    def test_missing_database_name_raises_runtime_error(self, monkeypatch):
+        tfconfig = {
+            "cosmos_account_endpoint": {"value": "https://acct.documents.azure.com:443/"},
+            "cosmos_container_name": {"value": "container"},
+        }
+        with pytest.raises(RuntimeError, match="cosmos_database_name"):
+            self._load_module_non_mock(monkeypatch, tfconfig)
+
+    def test_missing_container_name_raises_runtime_error(self, monkeypatch):
+        tfconfig = {
+            "cosmos_account_endpoint": {"value": "https://acct.documents.azure.com:443/"},
+            "cosmos_database_name": {"value": "db"},
+        }
+        with pytest.raises(RuntimeError, match="cosmos_container_name"):
+            self._load_module_non_mock(monkeypatch, tfconfig)
+
+
+class TestWorldLineChangeValidators:
+    """Cover the string->float validators on the pydantic models."""
+
+    def test_experiment_create_accepts_numeric_string(self):
+        exp = ExperimentCreate(
+            name="X", description="Y", status="planned", creator_id="1",
+            world_line_change="0.337192",
+        )
+        assert exp.world_line_change == 0.337192
+
+    def test_experiment_create_rejects_non_numeric_string(self):
+        with pytest.raises(ValidationError):
+            ExperimentCreate(
+                name="X", description="Y", status="planned", creator_id="1",
+                world_line_change="not-a-float",
+            )
+
+    def test_experiment_update_none_passthrough(self):
+        update = ExperimentUpdate(world_line_change=None)
+        assert update.world_line_change is None
+
+    def test_experiment_update_accepts_numeric_string(self):
+        update = ExperimentUpdate(world_line_change="1.048596")
+        assert update.world_line_change == 1.048596
+
+    def test_experiment_update_rejects_non_numeric_string(self):
+        with pytest.raises(ValidationError):
+            ExperimentUpdate(world_line_change="abc")
+
+
+class TestExperimentEndpointGaps:
+    """404/500 branches and query-filter routing not previously exercised."""
+
+    def test_get_all_experiments_with_name_and_status_filters(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch(
+            "api.future_gadget_api.fgl_service.search_experiments", return_value=[{"id": "EXP-1"}]
+        ) as mock_search:
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-experiments?name=Phone&status=completed")
+            assert response.status_code == 200
+            assert response.json() == [{"id": "EXP-1"}]
+            from db.future_gadget_lab_data_service import ExperimentStatus
+            mock_search.assert_called_once_with(
+                {"name": "Phone", "status": ExperimentStatus.COMPLETED}
+            )
+
+    def test_get_all_experiments_with_name_filter_only(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch(
+            "api.future_gadget_api.fgl_service.search_experiments", return_value=[]
+        ) as mock_search:
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-experiments?name=Phone")
+            assert response.status_code == 200
+            mock_search.assert_called_once_with({"name": "Phone"})
+
+    def test_get_all_experiments_with_status_filter_only(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch(
+            "api.future_gadget_api.fgl_service.search_experiments", return_value=[]
+        ) as mock_search:
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-experiments?status=planned")
+            assert response.status_code == 200
+            from db.future_gadget_lab_data_service import ExperimentStatus
+            mock_search.assert_called_once_with({"status": ExperimentStatus.PLANNED})
+
+    def test_get_experiment_by_id_not_found(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch("api.future_gadget_api.fgl_service.get_experiment_by_id", return_value=None):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.get(f"{API_PREFIX}/lab-experiments/missing")
+            assert response.status_code == 404
+            assert "missing" in response.json()["detail"]
+
+    def test_update_experiment_not_found(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch("api.future_gadget_api.fgl_service.get_experiment_by_id", return_value=None):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.put(
+                f"{API_PREFIX}/lab-experiments/missing", json={"name": "New"}
+            )
+            assert response.status_code == 404
+
+    def test_delete_experiment_not_found(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch("api.future_gadget_api.fgl_service.get_experiment_by_id", return_value=None):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.delete(f"{API_PREFIX}/lab-experiments/missing")
+            assert response.status_code == 404
+
+    def test_delete_experiment_failure_returns_500(
+        self, client_with_overridden_dependencies, setup_fgl_service
+    ):
+        with patch(
+            "api.future_gadget_api.fgl_service.get_experiment_by_id",
+            return_value={"id": "EXP-1", "name": "PM"},
+        ), patch(
+            "api.future_gadget_api.fgl_service.delete_experiment", return_value=False
+        ), patch(
+            "api.future_gadget_api.experiment_connection_manager.broadcast_server", AsyncMock()
+        ), patch(
+            "api.future_gadget_api.broadcast_worldline_status", AsyncMock()
+        ):
+            test_client, _ = client_with_overridden_dependencies
+            response = test_client.delete(f"{API_PREFIX}/lab-experiments/EXP-1")
+            assert response.status_code == 500
+            assert "Failed to delete" in response.json()["detail"]
+
+
+class TestWebSocketGaps:
+    """WebSocket paths not previously exercised (issue #147)."""
+
+    @pytest.fixture
+    def mock_websocket(self):
+        mock_ws = MagicMock()
+        mock_ws.state = MagicMock()
+        mock_ws.state.user = MagicMock()
+        mock_ws.state.user.name = "Test User"
+        mock_ws.state.user.sub = "test-id"
+        mock_ws.state.user.roles = ["Admin"]
+
+        async def mock_send_text(message):
+            mock_ws.sent_messages = getattr(mock_ws, "sent_messages", [])
+            mock_ws.sent_messages.append(message)
+
+        async def mock_send_json(data):
+            mock_ws.sent_json = getattr(mock_ws, "sent_json", [])
+            mock_ws.sent_json.append(data)
+
+        mock_ws.send_text = mock_send_text
+        mock_ws.send_json = mock_send_json
+        return mock_ws
+
+    @pytest.mark.asyncio
+    async def test_experiment_websocket_echoes_message(self, monkeypatch, mock_websocket):
+        """A received text frame is echoed back prefixed with the channel name."""
+        mock_manager = MagicMock()
+        mock_manager.auth_connect = AsyncMock(return_value=None)
+        mock_manager.send_personal_message = AsyncMock()
+        mock_manager.active_connections = [mock_websocket]
+        mock_manager.disconnect = MagicMock()
+
+        monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
+        monkeypatch.setattr("api.future_gadget_api.logger", MagicMock())
+
+        mock_websocket.receive_text = AsyncMock(side_effect=["ping", WebSocketDisconnect()])
+
+        from api.future_gadget_api import experiment_websocket_endpoint
+        await experiment_websocket_endpoint(mock_websocket)
+
+        mock_manager.send_personal_message.assert_called_once_with(
+            "Experiment channel: ping", mock_websocket
+        )
+
+    @pytest.mark.asyncio
+    async def test_worldline_websocket_exception_handling(self, monkeypatch, mock_websocket):
+        """An unexpected error during worldline auth is logged and the socket
+        is disconnected from the worldline manager."""
+        mock_manager = MagicMock()
+
+        async def mock_auth_connect(websocket):
+            raise Exception("Worldline auth exploded")
+
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = MagicMock()
+        mock_manager.active_connections = [mock_websocket]
+
+        monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_manager)
+        mock_logger = MagicMock()
+        monkeypatch.setattr("api.future_gadget_api.logger", mock_logger)
+
+        from api.future_gadget_api import worldline_status_websocket_endpoint
+        await worldline_status_websocket_endpoint(mock_websocket)
+
+        assert mock_logger.error.call_count == 1
+        assert "Worldline auth exploded" in str(mock_logger.error.call_args[0][0])
+        mock_manager.disconnect.assert_called_once_with(mock_websocket)
+
+
+class TestGetReadingValue:
+    """Cover the value/string fallback branches of get_reading_value."""
+
+    def test_falls_back_to_value_field(self):
+        assert get_reading_value({"value": 2.5}) == 2.5
+
+    def test_converts_numeric_string(self):
+        assert get_reading_value({"reading": "1.048596"}) == 1.048596
+
+    def test_non_numeric_string_returns_zero(self):
+        assert get_reading_value({"reading": "not-a-float"}) == 0.0
+
+
+class TestWebSocketExceptionBranchGaps:
+    """Branch coverage: exception handlers where the socket is NOT tracked
+    in active_connections (no disconnect call)."""
+
+    @pytest.mark.asyncio
+    async def test_experiment_websocket_exception_without_active_connection(self, monkeypatch):
+        mock_ws = MagicMock()
+        mock_ws.state = MagicMock()
+        mock_ws.state.user = MagicMock()
+        mock_ws.state.user.name = "Test User"
+
+        mock_manager = MagicMock()
+
+        async def mock_auth_connect(websocket):
+            raise Exception("boom before registration")
+
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = MagicMock()
+        mock_manager.active_connections = []  # socket never registered
+
+        monkeypatch.setattr("api.future_gadget_api.experiment_connection_manager", mock_manager)
+        monkeypatch.setattr("api.future_gadget_api.logger", MagicMock())
+
+        from api.future_gadget_api import experiment_websocket_endpoint
+        await experiment_websocket_endpoint(mock_ws)
+
+        mock_manager.disconnect.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_worldline_websocket_exception_without_active_connection(self, monkeypatch):
+        mock_ws = MagicMock()
+        mock_ws.state = MagicMock()
+        mock_ws.state.user = MagicMock()
+        mock_ws.state.user.name = "Test User"
+
+        mock_manager = MagicMock()
+
+        async def mock_auth_connect(websocket):
+            raise Exception("boom before registration")
+
+        mock_manager.auth_connect = mock_auth_connect
+        mock_manager.disconnect = MagicMock()
+        mock_manager.active_connections = []
+
+        monkeypatch.setattr("api.future_gadget_api.worldline_connection_manager", mock_manager)
+        monkeypatch.setattr("api.future_gadget_api.logger", MagicMock())
+
+        from api.future_gadget_api import worldline_status_websocket_endpoint
+        await worldline_status_websocket_endpoint(mock_ws)
+
+        mock_manager.disconnect.assert_not_called()

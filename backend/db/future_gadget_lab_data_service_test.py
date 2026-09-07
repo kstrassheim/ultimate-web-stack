@@ -489,8 +489,7 @@ def test_worldline_history_with_experiment_details():
                 
                 # Call the function directly with our mock token
                 import asyncio
-                loop = asyncio.get_event_loop()
-                result = loop.run_until_complete(get_worldline_history(token=mock_token))
+                result = asyncio.run(get_worldline_history(token=mock_token))
                 
                 # Now validate the results
                 assert len(result) == 3  # Base state + 2 experiments
@@ -717,3 +716,540 @@ def test_query_cosmos_items_rejects_invalid_input_even_without_cosmos_container(
 
     with pytest.raises(ValueError, match="Invalid Cosmos DB ORDER BY clause"):
         service._query_cosmos_items("experiment", order_by="evil")
+
+# ---------------------------------------------------------------------------
+# Coverage gap closures (issue #147)
+#
+# The tests below exercise the paths no test previously called:
+#   * real ``_initialize_db`` validation (Cosmos config required)
+#   * ``_initialize_cosmos_backend`` success / failure / seeding branches
+#   * every Cosmos-backed CRUD branch (success, not-found, HTTP error)
+#   * the tinydb ``search_experiments`` / empty-latest-reading branches
+#   * payload-preparation edge cases (string->float, default status, uuid ids)
+#   * ``calculate_worldline_status`` reading-value fallbacks
+# All Cosmos access is stubbed with MagicMock containers — no network.
+# ---------------------------------------------------------------------------
+
+from azure.cosmos.exceptions import (
+    CosmosHttpResponseError,
+    CosmosResourceNotFoundError,
+)
+from azure.core.exceptions import AzureError
+import db.future_gadget_lab_data_service as fgl_module
+
+
+def test_initialize_db_requires_cosmos_configuration():
+    """The real data service refuses to start without Cosmos config."""
+    with pytest.raises(ValueError, match="Cosmos configuration is required"):
+        FutureGadgetLabDataService()
+
+    # Partial configuration is still rejected.
+    with pytest.raises(ValueError, match="Cosmos configuration is required"):
+        FutureGadgetLabDataService(cosmos_account_uri="https://example.documents.azure.com:443/")
+
+
+def test_initialize_db_requires_azure_cosmos_package(monkeypatch):
+    """If azure-cosmos is not installed the service fails fast with ImportError."""
+    monkeypatch.setattr(fgl_module, "CosmosClient", None)
+    with pytest.raises(ImportError, match="azure-cosmos is required"):
+        FutureGadgetLabDataService(
+            cosmos_account_uri="https://example.documents.azure.com:443/",
+            cosmos_database="db",
+            cosmos_container="container",
+        )
+
+
+def test_initialize_db_requires_azure_identity_package(monkeypatch):
+    """If azure-identity is not installed the service fails fast with ImportError."""
+    monkeypatch.setattr(fgl_module, "DefaultAzureCredential", None)
+    with pytest.raises(ImportError, match="azure-identity is required"):
+        FutureGadgetLabDataService(
+            cosmos_account_uri="https://example.documents.azure.com:443/",
+            cosmos_database="db",
+            cosmos_container="container",
+        )
+
+
+def _make_cosmos_service(monkeypatch, query_items_side_effect=None):
+    """Build a real FutureGadgetLabDataService wired to a stubbed Cosmos client."""
+    container = MagicMock()
+    if query_items_side_effect is not None:
+        container.query_items.side_effect = query_items_side_effect
+    else:
+        # Default: container already holds data, so no seeding happens.
+        container.query_items.return_value = iter([{"id": "existing"}])
+
+    database = MagicMock()
+    database.create_container_if_not_exists.return_value = container
+    cosmos_client = MagicMock()
+    cosmos_client.create_database_if_not_exists.return_value = database
+
+    monkeypatch.setattr(fgl_module, "CosmosClient", MagicMock(return_value=cosmos_client))
+    monkeypatch.setattr(fgl_module, "DefaultAzureCredential", MagicMock())
+
+    service = FutureGadgetLabDataService(
+        cosmos_account_uri="https://example.documents.azure.com:443/",
+        cosmos_database="db",
+        cosmos_container="container",
+        credential=object(),
+    )
+    return service, container, cosmos_client
+
+
+def test_initialize_cosmos_backend_success_skips_seeding_when_not_empty(monkeypatch):
+    service, container, cosmos_client = _make_cosmos_service(monkeypatch)
+
+    assert service.storage_backend == "cosmos"
+    assert service.cosmos_container is container
+    cosmos_client.create_database_if_not_exists.assert_called_once_with(id="db")
+    database = cosmos_client.create_database_if_not_exists.return_value
+    database.create_container_if_not_exists.assert_called_once()
+
+
+def test_initialize_cosmos_backend_uses_default_credential_when_none_passed(monkeypatch):
+    default_cred = MagicMock()
+    monkeypatch.setattr(fgl_module, "DefaultAzureCredential", default_cred)
+    cosmos_client_cls = MagicMock()
+    cosmos_client_cls.return_value.create_database_if_not_exists.return_value.create_container_if_not_exists.return_value.query_items.return_value = iter([{"id": "x"}])
+    monkeypatch.setattr(fgl_module, "CosmosClient", cosmos_client_cls)
+
+    FutureGadgetLabDataService(
+        cosmos_account_uri="https://example.documents.azure.com:443/",
+        cosmos_database="db",
+        cosmos_container="container",
+    )
+    default_cred.assert_called_once_with(exclude_interactive_browser_credential=True)
+
+
+def test_initialize_cosmos_backend_seeds_when_empty(monkeypatch):
+    service, container, _ = _make_cosmos_service(
+        monkeypatch, query_items_side_effect=lambda **kwargs: iter([])
+    )
+    # The empty container must have been seeded with the sample dataset.
+    assert container.upsert_item.call_count > 0
+    types = {call.args[0]["type"] for call in container.upsert_item.call_args_list}
+    assert types == {"experiment", "divergence_reading"}
+
+
+def test_initialize_cosmos_backend_raises_on_azure_error(monkeypatch):
+    monkeypatch.setattr(
+        fgl_module,
+        "CosmosClient",
+        MagicMock(side_effect=AzureError("nope")),
+    )
+    monkeypatch.setattr(fgl_module, "DefaultAzureCredential", MagicMock())
+    with pytest.raises(AzureError):
+        FutureGadgetLabDataService(
+            cosmos_account_uri="https://example.documents.azure.com:443/",
+            cosmos_database="db",
+            cosmos_container="container",
+            credential=object(),
+        )
+
+
+def test_seed_cosmos_if_empty_without_container_is_noop(db_service):
+    db_service.cosmos_container = None
+    db_service._seed_cosmos_if_empty()  # must simply return
+
+
+def test_seed_cosmos_if_empty_logs_and_returns_on_query_error(monkeypatch, db_service):
+    container = MagicMock()
+    container.query_items.side_effect = CosmosHttpResponseError(message="boom")
+    db_service.cosmos_container = container
+    with patch.object(fgl_module, "generate_test_data") as mock_generate:
+        db_service._seed_cosmos_if_empty()
+        mock_generate.assert_not_called()
+
+
+# ---- Cosmos-backed CRUD branches --------------------------------------------
+
+
+@pytest.fixture
+def cosmos_service(db_service):
+    """A mock-backed service switched into Cosmos mode with a stub container."""
+    db_service.storage_backend = "cosmos"
+    db_service.cosmos_container = MagicMock()
+    return db_service
+
+
+def test_cosmos_get_all_experiments(cosmos_service):
+    cosmos_service.cosmos_container.query_items.return_value = iter(
+        [{"id": "EXP-1", "type": "experiment", "name": "PM"}]
+    )
+    items = cosmos_service.get_all_experiments()
+    assert items == [{"id": "EXP-1", "name": "PM"}]  # `type` stripped
+
+
+def test_cosmos_get_experiment_by_id(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {
+        "id": "EXP-1",
+        "type": "experiment",
+        "name": "PM",
+    }
+    item = cosmos_service.get_experiment_by_id("EXP-1")
+    assert item == {"id": "EXP-1", "name": "PM"}
+    cosmos_service.cosmos_container.read_item.assert_called_once_with(
+        item="EXP-1", partition_key="experiment"
+    )
+
+
+def test_cosmos_get_experiment_by_id_not_found(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = CosmosResourceNotFoundError(message="nf")
+    assert cosmos_service.get_experiment_by_id("missing") is None
+
+
+def test_cosmos_get_experiment_by_id_http_error_returns_none(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = CosmosHttpResponseError(message="boom")
+    assert cosmos_service.get_experiment_by_id("EXP-1") is None
+
+
+def test_cosmos_search_experiments(cosmos_service):
+    cosmos_service.cosmos_container.query_items.return_value = iter([])
+    assert cosmos_service.search_experiments({"status": "completed"}) == []
+    call = cosmos_service.cosmos_container.query_items.call_args
+    assert "c.status = @p0" in call.kwargs["query"]
+
+
+def test_cosmos_create_experiment(cosmos_service):
+    created = cosmos_service.create_experiment({"id": "EXP-9", "name": "X"})
+    assert created["type"] == "experiment"
+    cosmos_service.cosmos_container.upsert_item.assert_called_once_with(created)
+
+
+def test_cosmos_create_experiment_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.upsert_item.side_effect = CosmosHttpResponseError(message="boom")
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.create_experiment({"id": "EXP-9", "name": "X"})
+
+
+def test_cosmos_update_experiment_success(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {"id": "EXP-1", "type": "experiment", "name": "Old"}
+    cosmos_service.cosmos_container.replace_item.return_value = {"id": "EXP-1", "type": "experiment", "name": "New"}
+    updated = cosmos_service.update_experiment("EXP-1", {"name": "New"})
+    assert updated == {"id": "EXP-1", "name": "New"}
+    body = cosmos_service.cosmos_container.replace_item.call_args.kwargs["body"]
+    assert body["type"] == "experiment"
+    assert "updated_at" in body
+
+
+def test_cosmos_update_experiment_not_found_on_lookup(cosmos_service):
+    # get_experiment_by_id (cosmos read) reports the item as missing.
+    cosmos_service.cosmos_container.read_item.side_effect = CosmosResourceNotFoundError(message="nf")
+    assert cosmos_service.update_experiment("missing", {"name": "X"}) is None
+
+
+def test_cosmos_update_experiment_not_found_on_reread(cosmos_service):
+    # First read (existence check) succeeds, the update-time read 404s.
+    cosmos_service.cosmos_container.read_item.side_effect = [
+        {"id": "EXP-1", "type": "experiment"},
+        CosmosResourceNotFoundError(message="nf"),
+    ]
+    assert cosmos_service.update_experiment("EXP-1", {"name": "X"}) is None
+
+
+def test_cosmos_update_experiment_read_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = [
+        {"id": "EXP-1", "type": "experiment"},
+        CosmosHttpResponseError(message="boom"),
+    ]
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.update_experiment("EXP-1", {"name": "X"})
+
+
+def test_cosmos_update_experiment_replace_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {"id": "EXP-1", "type": "experiment"}
+    cosmos_service.cosmos_container.replace_item.side_effect = CosmosHttpResponseError(message="boom")
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.update_experiment("EXP-1", {"name": "X"})
+
+
+def test_cosmos_delete_experiment(cosmos_service):
+    assert cosmos_service.delete_experiment("EXP-1") is True
+    cosmos_service.cosmos_container.delete_item.assert_called_once_with(
+        item="EXP-1", partition_key="experiment"
+    )
+
+
+def test_cosmos_delete_experiment_not_found(cosmos_service):
+    cosmos_service.cosmos_container.delete_item.side_effect = CosmosResourceNotFoundError(message="nf")
+    assert cosmos_service.delete_experiment("missing") is False
+
+
+def test_cosmos_delete_experiment_http_error_returns_false(cosmos_service):
+    cosmos_service.cosmos_container.delete_item.side_effect = CosmosHttpResponseError(message="boom")
+    assert cosmos_service.delete_experiment("EXP-1") is False
+
+
+def test_cosmos_get_all_divergence_readings(cosmos_service):
+    cosmos_service.cosmos_container.query_items.return_value = iter(
+        [{"id": "DR-1", "type": "divergence_reading", "reading": 1.0}]
+    )
+    assert cosmos_service.get_all_divergence_readings() == [{"id": "DR-1", "reading": 1.0}]
+
+
+def test_cosmos_get_divergence_reading_by_id(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {
+        "id": "DR-1",
+        "type": "divergence_reading",
+        "reading": 1.0,
+    }
+    item = cosmos_service.get_divergence_reading_by_id("DR-1")
+    assert item == {"id": "DR-1", "reading": 1.0}
+
+
+def test_cosmos_create_divergence_reading(cosmos_service):
+    created = cosmos_service.create_divergence_reading({"reading": 1.048596})
+    assert created["type"] == "divergence_reading"
+    assert created["id"].startswith("DR-")  # uuid fallback id on non-tinydb backend
+    cosmos_service.cosmos_container.upsert_item.assert_called_once_with(created)
+
+
+def test_cosmos_create_divergence_reading_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.upsert_item.side_effect = CosmosHttpResponseError(message="boom")
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.create_divergence_reading({"reading": 1.0})
+
+
+def test_cosmos_update_divergence_reading_success(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {"id": "DR-1", "type": "divergence_reading", "reading": 1.0}
+    cosmos_service.cosmos_container.replace_item.return_value = {"id": "DR-1", "type": "divergence_reading", "reading": 1.1}
+    updated = cosmos_service.update_divergence_reading("DR-1", {"reading": 1.1})
+    assert updated == {"id": "DR-1", "reading": 1.1}
+    body = cosmos_service.cosmos_container.replace_item.call_args.kwargs["body"]
+    assert body["type"] == "divergence_reading"
+
+
+def test_cosmos_update_divergence_reading_not_found_on_lookup(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = CosmosResourceNotFoundError(message="nf")
+    assert cosmos_service.update_divergence_reading("missing", {"reading": 1.0}) is None
+
+
+def test_cosmos_update_divergence_reading_not_found_on_reread(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = [
+        {"id": "DR-1", "type": "divergence_reading"},
+        CosmosResourceNotFoundError(message="nf"),
+    ]
+    assert cosmos_service.update_divergence_reading("DR-1", {"reading": 1.0}) is None
+
+
+def test_cosmos_update_divergence_reading_read_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.read_item.side_effect = [
+        {"id": "DR-1", "type": "divergence_reading"},
+        CosmosHttpResponseError(message="boom"),
+    ]
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.update_divergence_reading("DR-1", {"reading": 1.0})
+
+
+def test_cosmos_update_divergence_reading_replace_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.read_item.return_value = {"id": "DR-1", "type": "divergence_reading"}
+    cosmos_service.cosmos_container.replace_item.side_effect = CosmosHttpResponseError(message="boom")
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service.update_divergence_reading("DR-1", {"reading": 1.0})
+
+
+def test_cosmos_delete_divergence_reading(cosmos_service):
+    assert cosmos_service.delete_divergence_reading("DR-1") is True
+    cosmos_service.cosmos_container.delete_item.assert_called_once_with(
+        item="DR-1", partition_key="divergence_reading"
+    )
+
+
+def test_cosmos_delete_divergence_reading_not_found(cosmos_service):
+    cosmos_service.cosmos_container.delete_item.side_effect = CosmosResourceNotFoundError(message="nf")
+    assert cosmos_service.delete_divergence_reading("missing") is False
+
+
+def test_cosmos_delete_divergence_reading_http_error_returns_false(cosmos_service):
+    cosmos_service.cosmos_container.delete_item.side_effect = CosmosHttpResponseError(message="boom")
+    assert cosmos_service.delete_divergence_reading("DR-1") is False
+
+
+def test_cosmos_get_latest_divergence_reading(cosmos_service):
+    cosmos_service.cosmos_container.query_items.return_value = iter(
+        [{"id": "DR-9", "type": "divergence_reading", "reading": 1.048596, "timestamp": "2025-01-01T00:00:00.000Z"}]
+    )
+    latest = cosmos_service.get_latest_divergence_reading()
+    assert latest["id"] == "DR-9"
+    call = cosmos_service.cosmos_container.query_items.call_args
+    assert "ORDER BY c.timestamp DESC" in call.kwargs["query"]
+    assert "SELECT TOP 1 *" in call.kwargs["query"]
+
+
+def test_cosmos_get_latest_divergence_reading_empty(cosmos_service):
+    cosmos_service.cosmos_container.query_items.return_value = iter([])
+    assert cosmos_service.get_latest_divergence_reading() is None
+
+
+# ---- tinydb branches that were never exercised ------------------------------
+
+
+def test_tinydb_search_experiments_with_filters(db_service):
+    db_service.experiments_table.truncate()
+    db_service.create_experiment({"name": "Phone Microwave", "status": "completed"})
+    db_service.create_experiment({"name": "Time Leap Machine", "status": "in_progress"})
+
+    results = db_service.search_experiments({"name": "Phone Microwave"})
+    assert len(results) == 1
+    assert results[0]["name"] == "Phone Microwave"
+
+    # Multiple filters are ANDed together.
+    results = db_service.search_experiments({"name": "Phone Microwave", "status": "completed"})
+    assert len(results) == 1
+
+    results = db_service.search_experiments({"name": "Phone Microwave", "status": "planned"})
+    assert results == []
+
+
+def test_tinydb_search_experiments_without_filters_returns_all(db_service):
+    assert db_service.search_experiments({}) == db_service.get_all_experiments()
+
+
+def test_tinydb_update_experiment_returns_none_for_unknown_id(db_service):
+    assert db_service.update_experiment("does-not-exist", {"name": "X"}) is None
+
+
+def test_tinydb_update_divergence_reading_returns_none_for_unknown_id(db_service):
+    assert db_service.update_divergence_reading("does-not-exist", {"reading": 1.0}) is None
+
+
+def test_tinydb_get_latest_divergence_reading_empty(db_service):
+    db_service.divergence_readings_table.truncate()
+    assert db_service.get_latest_divergence_reading() is None
+
+
+def test_prepare_divergence_payload_string_conversion_and_default_status(db_service):
+    created = db_service.create_divergence_reading({"reading": "1.048596", "value": "0.5"})
+    assert created["reading"] == 1.048596
+    assert created["value"] == 0.5
+    # Neither `status` nor `world_line_status` given -> default alpha.
+    assert created["status"] == WorldLineStatus.ALPHA.value
+
+
+def test_prepare_divergence_update_payload_string_conversion(db_service):
+    created = db_service.create_divergence_reading({"reading": 1.0})
+    updated = db_service.update_divergence_reading(created["id"], {"reading": "1.1", "value": "2.2"})
+    assert updated["reading"] == 1.1
+    assert updated["value"] == 2.2
+
+
+# ---- internal helpers --------------------------------------------------------
+
+
+def test_query_cosmos_items_without_container_returns_empty_list(db_service):
+    db_service.cosmos_container = None
+    assert db_service._query_cosmos_items("experiment") == []
+
+
+def test_query_cosmos_items_http_error_returns_empty_list(cosmos_service):
+    cosmos_service.cosmos_container.query_items.side_effect = CosmosHttpResponseError(message="boom")
+    assert cosmos_service._query_cosmos_items("experiment") == []
+
+
+def test_read_cosmos_item_without_container_returns_none(db_service):
+    db_service.cosmos_container = None
+    assert db_service._read_cosmos_item("EXP-1", "experiment") is None
+
+
+def test_upsert_cosmos_item_without_container_raises(db_service):
+    db_service.cosmos_container = None
+    with pytest.raises(RuntimeError, match="Cosmos container is not initialized"):
+        db_service._upsert_cosmos_item({"id": "EXP-1"})
+
+
+def test_upsert_cosmos_item_generates_missing_id(cosmos_service):
+    item = {"name": "No ID"}
+    cosmos_service._upsert_cosmos_item(item)
+    assert "id" in item
+    cosmos_service.cosmos_container.upsert_item.assert_called_once_with(item)
+
+
+def test_upsert_cosmos_item_http_error_reraises(cosmos_service):
+    cosmos_service.cosmos_container.upsert_item.side_effect = CosmosHttpResponseError(message="boom")
+    with pytest.raises(CosmosHttpResponseError):
+        cosmos_service._upsert_cosmos_item({"id": "EXP-1"})
+
+
+def test_cosmos_clean_item(db_service):
+    assert db_service._cosmos_clean_item(None) is None
+    assert db_service._cosmos_clean_item({"id": "X", "type": "experiment", "name": "Y"}) == {
+        "id": "X",
+        "name": "Y",
+    }
+
+
+# ---- calculate_worldline_status reading-value fallbacks ----------------------
+
+
+def test_calculate_worldline_status_reading_value_fallbacks():
+    from db.future_gadget_lab_data_service import calculate_worldline_status
+
+    experiments = [{"id": "EXP-1", "world_line_change": 0.1, "timestamp": "2025-01-01T00:00:00.000Z"}]
+    readings = [
+        {"id": "DR-1", "value": 1.05},           # `value` used when `reading` absent
+        {"id": "DR-2"},                           # neither field -> 0.0
+        {"id": "DR-3", "reading": "1.09"},        # numeric string -> float
+        {"id": "DR-4", "reading": "not-a-number"} # unparsable string -> 0.0
+    ]
+    result = calculate_worldline_status(experiments, readings)
+    # current worldline = 1.1; closest reading is DR-3 (1.09, distance 0.01)
+    assert result["current_worldline"] == 1.1
+    assert result["closest_reading"]["value"] == "1.09"
+    assert result["closest_reading"]["status"] is None
+    assert result["closest_reading"]["recorded_by"] == "Unknown"
+    assert result["closest_reading"]["notes"] == ""
+
+
+def test_calculate_worldline_status_placeholder_when_no_closest_reading():
+    """A NaN reading can never win the min-distance comparison, so the
+    placeholder branch (no closest reading) is exercised deterministically."""
+    from db.future_gadget_lab_data_service import calculate_worldline_status
+
+    result = calculate_worldline_status(
+        [{"id": "EXP-1", "world_line_change": 0.1}],
+        [{"id": "DR-1", "reading": float("nan"), "status": "alpha"}],
+    )
+    closest = result["closest_reading"]
+    assert closest["status"] == "unknown"
+    assert closest["recorded_by"] == "System"
+    assert closest["notes"] == "No divergence readings available for comparison"
+
+
+def test_seed_test_data_if_empty_seeds_and_logs(db_service):
+    from db.future_gadget_lab_data_service import seed_test_data_if_empty
+
+    db_service.experiments_table.truncate()
+    db_service.divergence_readings_table.truncate()
+
+    assert seed_test_data_if_empty(db_service, logger) is True
+    assert len(db_service.get_all_experiments()) > 0
+    assert len(db_service.get_all_divergence_readings()) > 0
+
+
+def test_seed_test_data_if_empty_noop_when_data_present(db_service):
+    from db.future_gadget_lab_data_service import seed_test_data_if_empty
+
+    if not db_service.get_all_experiments():
+        db_service.create_experiment({"name": "existing"})
+    assert seed_test_data_if_empty(db_service, logger) is False
+
+
+# ---- branch-coverage closures (issue #147) -----------------------------------
+
+
+def test_prepare_experiment_payload_preserves_explicit_created_at(db_service):
+    created = db_service.create_experiment({
+        "name": "X",
+        "created_at": "2025-01-01T00:00:00+00:00",
+    })
+    assert created["created_at"] == "2025-01-01T00:00:00+00:00"
+
+
+def test_prepare_divergence_payload_preserves_explicit_id_and_timestamp(db_service):
+    created = db_service.create_divergence_reading({
+        "id": "DR-CUSTOM",
+        "timestamp": "2025-01-01T00:00:00.000Z",
+        "reading": 1.0,
+    })
+    assert created["id"] == "DR-CUSTOM"
+    assert created["timestamp"] == "2025-01-01T00:00:00.000Z"
